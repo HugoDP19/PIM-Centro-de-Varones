@@ -4,7 +4,7 @@
 
 I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; el personal y los reportantes pueden ser hombres o mujeres. Utilizar el escudo oficial de image/.
 
-Repositorio exclusivo: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Fase 1 limitada a estructura, configuración, portada y documentación. Los siguientes requisitos son futuros, no funcionalidades implementadas.
+Repositorio exclusivo: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Fase 1 implementada; fases 2.1 y 2.2 documentadas como propuestas pendientes de aprobación. Los siguientes requisitos son futuros, no funcionalidades implementadas.
 
 ## Requisitos funcionales pendientes
 
@@ -31,8 +31,8 @@ Repositorio exclusivo: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Fa
 
 ## Fases propuestas
 
-1. Estructura, configuración y documentación (actual).
-2. Validación del modelo MySQL, permisos, autenticación y usuarios.
+1. Estructura, configuración y documentación (completada).
+2. Diseño MySQL y reglas funcionales (documentados; pendientes de aprobación), seguidos de esquema, autenticación y usuarios cuando se autoricen.
 3. Registro y confirmación de incidencias, categorías y seguimiento.
 4. Solicitudes de rectificación, aprobaciones independientes, conflictos de interés, actas y auditoría.
 5. Reportes PDF con PDFKit y revisión integral de seguridad y accesibilidad.
@@ -50,4 +50,29 @@ Fase 1 completada con estas verificaciones:
 - SHA-256 del logo copiado idéntico al original: 4AF20CD70E5B21972773FC973E52F439D2870CDE75FC9E4F09955E4F290C211B.
 - Instalación npm: 0 vulnerabilidades reportadas en ese momento. package-lock.json conserva las versiones resueltas.
 - `npm run db:check`: fallo esperado por ausencia de DB_HOST, DB_NAME, DB_USER y DB_PASSWORD; confirmar también DB_PORT. No se ha verificado una conexión real ni la versión del servidor MySQL. Repetir la comprobación con los datos reales.
-- Trabajo local, sin push, Pull Request ni publicación. Cambios agrupados en commits de configuración del servidor, portada y documentación.
+- La Fase 1 se preparó inicialmente en local, con commits de servidor, portada y documentación.
+
+## Avances de las fases 2.1 y 2.2
+
+- `database/DISENO.md`: propuesta consolidada de 19 tablas, con identidad común, aulas, apoderados múltiples, participantes, versiones, solicitudes y auditoría. Revisión conceptual de 15 casos: 14 recorridos operativos y el bloqueo cuando ambas autoridades están impedidas.
+- `database/REGLAS_FUNCIONALES.md`: matriz de permisos de seis roles, edición por niveles, seis formularios, confidencialidad y aprobación independiente. No se ha aprobado el modelo ni generado esquema SQL, migraciones o datos demo.
+- Se proponen tres columnas adicionales, todavía no incorporadas a DISENO.md: `solicitudes_cambio.id_evaluador`, `solicitudes_cambio.evaluada_en` y `revisiones.requiere_reunion`. No requieren nuevas tablas.
+- Commits conservados: `ab0d754` (diseño inicial), `44a56de` (simplificación), `b9d0e51` (revisión integral) y `cf51f7e` (reglas funcionales). La propuesta vigente sustituye las alternativas anteriores sin reescribir su historial.
+
+## Decisiones antes de generar el esquema
+
+1. Aprobar las 19 tablas y los tres ajustes de columnas; contrastar ambos documentos antes de elaborar SQL.
+2. Aprobar permisos, alcance de Docente/Auxiliar y Coordinador, acceso restringido, exportación PDF y recepción de reportes sensibles sin acceso posterior del registrador.
+3. Definir revisión documental frente a reunión/acta, composición, quórum, cierre/reapertura y escalamiento si Director y Subdirector están impedidos. Hasta entonces, la decisión queda bloqueada; no se delega al Administrador.
+4. Validar formularios, mínimos por tipo, identidad provisional, campos obligatorios y conservación de datos sensibles.
+5. Acordar autorización de cuentas/permisos y si se necesita un flujo administrativo automatizado adicional. No se implementan funcionalidades nuevas durante el cierre de jornada.
+
+## Cierre de jornada y continuidad
+
+- El usuario autorizó publicar `main`, `develop` y `feature/base-datos`, crear un PR hacia `develop` e integrarlo tras verificar alcance, pruebas y ausencia de conflictos. `main` permanece en la Fase 1 (`afd2daa`); no recibe cambios de esta fase.
+- Flujo: una rama `feature/` por funcionalidad, commits por cambio lógico e integración en `develop` tras validar. No desarrollar directamente en `main`, no reescribir historial ni usar push forzado.
+- Antes de publicar se comprobó que el remoto no tenía ramas, se revisaron los archivos versionados y `npm test` aprobó sus dos pruebas. La conexión real a MySQL sigue pendiente de credenciales; no se ha simulado.
+- Se revisó la exclusión local `test/` en .gitignore y se retiró: ocultaba pruebas nuevas y no correspondía al proyecto compartido. La prueba existente permanece versionada. `.env`, secretos y node_modules no se publican; `.env.example` contiene únicamente configuración sin credenciales.
+- El PR de cierre se titula `docs(database): definir modelo y reglas funcionales`. La publicación e integración se verifican contra GitHub y las referencias remotas al terminar; esta actualización se prepara antes del merge.
+- En otra computadora: clonar el repositorio, cambiar a `develop`, ejecutar `npm ci` y `npm test`. Consultar README.md, AGENTS.md y ambos documentos de database/ antes de continuar. Crear una nueva rama `feature/` para la siguiente tarea autorizada.
+- Configurar `.env` localmente a partir de `.env.example`; nunca copiar credenciales al repositorio. No comenzar SQL ni migraciones hasta aprobar las decisiones pendientes.
