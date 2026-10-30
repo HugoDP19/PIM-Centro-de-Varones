@@ -1,0 +1,6 @@
+:root { color-scheme: light; }
+body { background: #f5f4f1; color: #252525; }
+.welcome { max-width: 48rem; background: #fff; border-top: 0.35rem solid #a91e23; border-radius: 0.75rem; box-shadow: 0 0.5rem 2rem #2525250d; }
+.school-logo { width: 8rem; height: auto; }
+h1 { color: #a91e23; }
+.school-name { overflow-wrap: anywhere; }
