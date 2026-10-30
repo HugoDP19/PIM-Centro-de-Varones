@@ -1,181 +1,207 @@
-# SICE-Local: propuesta de modelo relacional
+# SICE-Local: diseño simplificado de la base de datos
 
-Fase 2.1 · 30 de octubre de 2026 · Propuesta pendiente de revisión.
+Fase 2.1 · 30 de octubre de 2026 · **Propuesta pendiente de aprobación**.
 
 Institución: I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
 
-Este documento propone **25 tablas** para MySQL 8. No crea tablas, migraciones, datos de demostración ni código de acceso a datos. Los requisitos de seguridad descritos son obligaciones de la implementación futura, no capacidades ya disponibles.
+El objetivo son las **16 tablas solicitadas**. Se documenta esa base, pero no se declara suficiente: faltan las relaciones estudiantes–apoderados y participantes de revisiones del alcance original. La corrección mínima recomendada, manteniendo responsabilidades sencillas, añade dos tablas de relación: **18 tablas**. Esta ampliación es una propuesta, no una decisión aprobada. Aulas e identidad común requieren además definir su alcance.
 
-## 1. Convenciones
+Solo diseño documental: sin SQL ejecutable, migraciones, datos demo ni código. Las garantías indicadas deberán implementarse y probarse posteriormente.
 
-- Tablas y columnas en español, minúsculas y snake_case, sin tildes. Motor InnoDB y texto utf8mb4.
-- `id` significa `BIGINT UNSIGNED`, clave primaria autoincremental, salvo claves compuestas indicadas. Las referencias usan el mismo tipo que la clave destino.
-- `FK` indica clave foránea; `UQ`, unicidad; `?`, campo opcional que admite NULL. Los demás campos son obligatorios. Las claves FK apuntan al `id` de la tabla indicada salvo aclaración.
-- Fechas civiles: `DATE`. Instantes: `DATETIME(6)` en UTC generados por el servidor; presentación en America/Lima. La fecha de ocurrencia es declarada y puede ser desconocida; no se confunde con la fecha automática de registro.
-- `BOOLEAN` para indicadores con valores 0 o 1; `VARCHAR` para textos breves y códigos; `TEXT` para descripciones. No usar números para documentos de identidad ni teléfonos.
-- Los estados de flujos internos usan códigos `VARCHAR(20)` restringidos a los valores indicados. No requieren tablas adicionales si no son configurables.
-- `activo` permite deshabilitar maestros sin romper relaciones históricas. No se usan borrados en cascada sobre datos de incidencias.
+## 1. Convenciones y decisiones de simplificación
 
-## 2. Tablas y columnas principales
+- MySQL 8, InnoDB y utf8mb4; nombres en español, snake_case y sin tildes.
+- `id`: PK `BIGINT UNSIGNED` autoincremental, salvo PK compuesta indicada. Las FK tienen el tipo de su destino. `UQ`: unicidad; `?`: admite NULL. Los demás campos son obligatorios.
+- `DATE` para fechas civiles; `DATETIME(6)` para instantes UTC, presentados en America/Lima. Los instantes de registro los genera el servidor, a diferencia de la fecha de ocurrencia declarada.
+- Códigos de dominio en `VARCHAR` con valores cerrados y restricciones; `BOOLEAN` limitado a 0/1. Documentos y teléfonos son texto, no números.
+- Un rol vigente por usuario y permisos configurables por rol, sin excepciones individuales. Categorías, estados y prioridades son dominios fijos, sin tablas de catálogo adicionales.
+- La decisión final se integra en solicitudes_cambio, pues hay como máximo una por solicitud. Cada revisión conserva su acta opcional; no se necesita una tabla separada para ese documento único.
+- Sin tabla personas: usuarios, estudiantes y apoderados mantienen identidad propia. El reportante usa FK alternativas explícitas; las limitaciones de identidad transversal se reconocen en la sección 6.
+- Sin tabla aulas: matriculas guarda año/nivel/grado/sección como contexto histórico estructurado. Esto no equivale a un catálogo de aulas con integridad referencial.
+- No utilizar JSON, listas de IDs, columnas repetidas ni referencias genéricas sin FK para representar relaciones. El texto narrativo es válido para hechos, motivos y actas, pero no sustituye participantes, apoderados, votos o bienes individualizados.
 
-### Identidad y autorización (1–6)
+## 2. Las 16 tablas objetivo
 
-| N.º | Tabla y finalidad | Columnas principales |
-| --- | --- | --- |
-| 1 | `personas`: identidad común de personal, estudiantes, apoderados y externos, sin duplicar una persona por cada condición | `id`; `nombres VARCHAR(100)`; `apellidos VARCHAR(150)`; `tipo_documento VARCHAR(20)?`; `numero_documento VARCHAR(40)?`; `pais_documento CHAR(2)?`; `codigo_interno VARCHAR(30) UQ`; `es_personal BOOLEAN`; `telefono VARCHAR(30)?`; `correo VARCHAR(254)?`; `activo BOOLEAN` |
-| 2 | `roles`: seis perfiles institucionales fijos | `id`; `codigo VARCHAR(30) UQ`; `nombre VARCHAR(60) UQ` |
-| 3 | `usuarios`: cuentas del personal | `id`; `id_persona FK personas UQ`; `id_rol FK roles`; `nombre_usuario VARCHAR(60) UQ`; `contrasena_hash VARCHAR(255)`; `activo BOOLEAN`; `creado_en DATETIME(6)` |
-| 4 | `permisos`: catálogo técnico de acciones autorizables | `id`; `codigo VARCHAR(80) UQ`; `descripcion VARCHAR(255)` |
-| 5 | `roles_permisos`: permisos base concedidos a cada rol | `id_rol FK roles`; `id_permiso FK permisos`; PK compuesta `(id_rol, id_permiso)` |
-| 6 | `usuarios_permisos`: excepciones explícitas por usuario | `id_usuario FK usuarios`; `id_permiso FK permisos`; `permitido BOOLEAN`; `id_asignador FK usuarios`; `asignado_en DATETIME(6)`; `justificacion VARCHAR(500)`; PK compuesta `(id_usuario, id_permiso)` |
-
-Roles: Director, Subdirector, Coordinador de Tutoría, Docente, Auxiliar y Administrador. Se propone un rol vigente por usuario; el rol ejercido al registrar o decidir se conserva como dato histórico. No se deduce autoridad a partir del orden o del número del rol.
-
-El permiso efectivo parte del rol y admite una excepción de usuario. Por encima de ambos se aplican las restricciones obligatorias: confidencialidad, conflicto de interés, independencia y prohibiciones del Administrador. Un permiso configurable nunca las anula. El Administrador administra cuentas y permisos dentro de un conjunto autorizado; no registra, rectifica, anula, aprueba ni agrega seguimiento a incidencias. Cambiar el rol de una cuenta no permite aprobar solicitudes propias. Los cambios de permisos y roles se auditan.
-
-### Organización escolar (7–10)
+### Acceso y organización escolar
 
 | N.º | Tabla y finalidad | Columnas principales |
 | --- | --- | --- |
-| 7 | `estudiantes`: condición de estudiante de una persona | `id_persona FK personas`, también PK; `codigo_estudiante VARCHAR(30) UQ`; `fecha_nacimiento DATE?`; `activo BOOLEAN` |
-| 8 | `estudiantes_apoderados`: relación entre estudiantes y personas responsables | `id_estudiante FK estudiantes(id_persona)`; `id_apoderado FK personas`; `vinculo VARCHAR(40)`; `es_principal BOOLEAN`; `vigente_desde DATE`; `vigente_hasta DATE?`; PK compuesta `(id_estudiante, id_apoderado, vigente_desde)` |
-| 9 | `aulas`: grupos por año lectivo | `id`; `anio_lectivo SMALLINT UNSIGNED`; `nivel VARCHAR(20)`; `grado TINYINT UNSIGNED`; `seccion VARCHAR(20)`; `activo BOOLEAN`; UQ `(anio_lectivo, nivel, grado, seccion)` |
-| 10 | `matriculas`: pertenencia histórica de un estudiante a un aula | `id`; `id_estudiante FK estudiantes(id_persona)`; `id_aula FK aulas`; `fecha_inicio DATE`; `fecha_fin DATE?`; UQ `(id_estudiante, id_aula, fecha_inicio)` |
+| 1 | `roles`: seis perfiles institucionales | `id`; `codigo VARCHAR(30) UQ`; `nombre VARCHAR(60) UQ` |
+| 2 | `usuarios`: cuentas del personal | `id`; `id_rol FK roles`; `nombres VARCHAR(100)`; `apellidos VARCHAR(150)`; `tipo_documento VARCHAR(20)?`; `numero_documento VARCHAR(40)?`; `pais_documento CHAR(2)?`; `nombre_usuario VARCHAR(60) UQ`; `contrasena_hash VARCHAR(255)`; `activo BOOLEAN`; `creado_en DATETIME(6)` |
+| 3 | `permisos`: acciones configurables autorizadas | `id`; `codigo VARCHAR(80) UQ`; `descripcion VARCHAR(255)` |
+| 4 | `roles_permisos`: concesiones de permisos | `id_rol FK roles`; `id_permiso FK permisos`; PK `(id_rol, id_permiso)` |
+| 5 | `estudiantes`: identidad de estudiantes varones | `id`; `codigo_estudiante VARCHAR(30) UQ`; `nombres VARCHAR(100)`; `apellidos VARCHAR(150)`; `tipo_documento VARCHAR(20)?`; `numero_documento VARCHAR(40)?`; `pais_documento CHAR(2)?`; `fecha_nacimiento DATE?`; `activo BOOLEAN` |
+| 6 | `apoderados`: identidad de responsables | `id`; `codigo_apoderado VARCHAR(30) UQ`; `id_usuario FK usuarios? UQ`; `nombres VARCHAR(100)`; `apellidos VARCHAR(150)`; `tipo_documento VARCHAR(20)?`; `numero_documento VARCHAR(40)?`; `pais_documento CHAR(2)?`; `telefono VARCHAR(30)?`; `correo VARCHAR(254)?`; `activo BOOLEAN` |
+| 7 | `matriculas`: ubicación escolar histórica | `id`; `id_estudiante FK estudiantes`; `anio_lectivo SMALLINT UNSIGNED`; `nivel VARCHAR(20)`; `grado TINYINT UNSIGNED`; `seccion VARCHAR(20)`; `fecha_inicio DATE`; `fecha_fin DATE?`; UQ `(id_estudiante, fecha_inicio)` y `(id_estudiante, id)` |
 
-No se necesita una tabla `apoderados` que solo replique personas: la condición queda expresada por `estudiantes_apoderados`. Una persona puede ser personal y apoderado a la vez. Los estudiantes del colegio son varones; no se extiende esta restricción al resto de personas ni se almacena una columna constante de sexo en estudiantes.
+Roles: Director, Subdirector, Coordinador de Tutoría, Docente, Auxiliar y Administrador. Director y Subdirector son las máximas autoridades; la jerarquía no se deduce de sus identificadores.
 
-La identidad admite DNI, carné de extranjería, pasaporte u otro documento autorizado, con país emisor. Los tres campos documentales se completan juntos o permanecen juntos en NULL. UQ `(pais_documento, tipo_documento, numero_documento)` cuando se conocen; normalizar formato antes de guardar. El código interno obligatorio identifica también a extranjeros sin DNI y a personas sin documento aún verificado: no inventar un DNI ni usar valores ficticios. La identidad provisional requiere revisión de duplicados.
+El Administrador gestiona cuentas y permisos dentro de facultades autorizadas; no registra, modifica, anula, aprueba ni agrega actuaciones a incidencias. Ningún permiso configurable anula esa restricción, la independencia o la confidencialidad. Cambios sensibles de rol/permisos requieren autorización institucional y auditoría; no se permite autoasignación para eludir prohibiciones.
 
-### Clasificación e incidencias (11–17)
+En cada tabla de identidad, los tres campos documentales se completan juntos o quedan juntos en NULL. UQ `(pais_documento, tipo_documento, numero_documento)` cuando se conocen; normalizar formato. Admitir DNI, carné de extranjería, pasaporte u otro documento autorizado. Un estudiante extranjero sin DNI usa su documento disponible o código interno con identidad provisional por verificar; nunca un DNI ficticio. La condición de estudiantes varones no se extiende a usuarios, apoderados o reportantes.
 
-| N.º | Tabla y finalidad | Columnas principales |
-| --- | --- | --- |
-| 11 | `categorias_incidencia`: clasificación general | `id`; `nombre VARCHAR(60) UQ`; `activo BOOLEAN` |
-| 12 | `tipos_incidencia`: clasificación específica dentro de una categoría | `id`; `id_categoria FK categorias_incidencia`; `nombre VARCHAR(100)`; `minimo_estudiantes SMALLINT UNSIGNED`; `activo BOOLEAN`; UQ `(id_categoria, nombre)` |
-| 13 | `estados_incidencia`: estados operativos con significado fijo | `id`; `codigo VARCHAR(30) UQ`; `nombre VARCHAR(60)` |
-| 14 | `prioridades_incidencia`: urgencia de atención | `id`; `codigo VARCHAR(20) UQ`; `nombre VARCHAR(40)`; `orden TINYINT UNSIGNED UQ` |
-| 15 | `incidencias`: identidad estable, autoría inicial y estado operativo | `id`; `id_registrador FK usuarios`; `id_rol_registrador FK roles`; `nombre_registrador VARCHAR(251)` histórico; `registrada_en DATETIME(6)`; `confirmada_en DATETIME(6)?`; `id_estado FK estados_incidencia`; `id_prioridad FK prioridades_incidencia`; `id_version_vigente BIGINT UNSIGNED?`; `nivel_confidencialidad VARCHAR(20)` |
-| 16 | `versiones_incidencia`: contenido del borrador, propuesta o hechos confirmados | `id`; `id_incidencia FK incidencias`; `numero_version INT UNSIGNED`; `estado_version VARCHAR(20)`; `id_autor FK usuarios`; `creada_en DATETIME(6)`; `id_tipo FK tipos_incidencia`; `titulo VARCHAR(200)`; `descripcion TEXT`; `ocurrida_en DATETIME(6)?`; `lugar VARCHAR(255)?`; `id_reportante FK personas`; `condicion_reportante VARCHAR(20)`; `nombre_reportante VARCHAR(251)` histórico; `gravedad_disciplinaria VARCHAR(20)?`; UQ `(id_incidencia, numero_version)` y `(id_incidencia, id)` |
-| 17 | `versiones_estudiantes`: estudiantes involucrados en cada versión, con su contexto escolar | `id_version FK versiones_incidencia`; `id_estudiante FK estudiantes(id_persona)`; `id_matricula BIGINT UNSIGNED?`; `participacion VARCHAR(30)`; PK compuesta `(id_version, id_estudiante)` |
+`apoderados.id_usuario` enlaza al responsable que también tiene cuenta de personal, sin exigir cuentas a todos los apoderados. La duplicación de identidad entre ambos perfiles requiere conciliación y auditoría; no se presenta como normalización perfecta. **Falta todavía el vínculo con los estudiantes**: no se fuerza un único responsable ni se duplica al apoderado por cada hijo.
 
-Categorías previstas: Convivencia, Disciplina, Salud, Seguridad, Bienes y Protección estudiantil. La categoría se obtiene por el tipo; no se duplica en la incidencia. Los tipos usados históricamente se desactivan; no se reasignan a otra categoría.
-
-Estados operativos propuestos: `borrador`, `confirmada`, `en_seguimiento`, `cerrada`, `anulada`. Prioridades propuestas: baja, normal, alta y urgente. Gravedad disciplinaria: NULL cuando no aplica, o `por_evaluar`, `leve`, `grave`, `muy_grave`, pendiente de validación institucional. La urgencia no se deriva de la gravedad; una incidencia de salud puede ser urgente sin tener gravedad disciplinaria.
-
-La prioridad y el estado pueden cambiar con autorización y auditoría sin reescribir los hechos. La clasificación, el reportante, la gravedad y los estudiantes forman parte de la versión; cambiar cualquiera tras confirmar exige rectificación. La confidencialidad usa `interna` o `restringida`: elevarla es una acción protectora auditada; reducirla requiere autorización independiente y motivo, mediante una solicitud de rectificación con el nivel propuesto explícito.
-
-El reportante es obligatorio al confirmar y se propone una persona por versión; `condicion_reportante` indica cómo reportó: `personal`, `estudiante`, `apoderado` o `externo`. No implica tener cuenta. Se valida esa condición contra usuarios/personas, estudiantes o la relación de apoderados según corresponda. La condición y el nombre se conservan como hechos históricos; los teléfonos y documentos no se copian en cada versión. Los nombres históricos son la excepción justificada a la derivación por relaciones.
-
-Una versión puede tener **cero, uno o varios estudiantes**; no existe una obligación global de registrar dos. Al confirmar se verifica el mínimo del tipo. La participación describe el vínculo con el hecho, sin presumir responsabilidad: por ejemplo involucrado, afectado o testigo; vocabulario por acordar.
-
-`id_matricula` puede ser NULL cuando no se conoce el aula histórica; si existe, debe corresponder al mismo estudiante, mediante FK compuesta `(id_estudiante, id_matricula)` hacia una clave UQ equivalente en matriculas. No se infiere el aula histórica desde la matrícula vigente hoy.
-
-### Seguimiento y control de cambios (18–20)
+### Incidencias y versiones
 
 | N.º | Tabla y finalidad | Columnas principales |
 | --- | --- | --- |
-| 18 | `actuaciones`: acciones y observaciones autorizadas de seguimiento | `id`; `id_incidencia FK incidencias`; `id_autor FK usuarios`; `id_rol_autor FK roles`; `tipo VARCHAR(20)` (`actuacion` u `observacion`); `detalle TEXT`; `realizada_en DATETIME(6)`; `registrada_en DATETIME(6)`; `id_responsable FK usuarios?`; `fecha_limite DATE?`; `id_actuacion_corregida FK actuaciones?` |
-| 19 | `historial_cambios`: bitácora inmutable de operaciones relevantes | `id`; `id_incidencia FK incidencias?`; `id_actor FK usuarios`; `id_rol_actor FK roles`; `ocurrido_en DATETIME(6)`; `accion VARCHAR(60)`; `entidad VARCHAR(60)`; `id_registro BIGINT UNSIGNED`; `campo VARCHAR(60)?`; `valor_anterior TEXT?`; `valor_nuevo TEXT?`; `motivo TEXT?` |
-| 20 | `solicitudes_cambio`: peticiones justificadas de rectificación o anulación | `id`; `id_incidencia FK incidencias`; `id_solicitante FK usuarios`; `id_rol_solicitante FK roles`; `tipo VARCHAR(20)`; `justificacion TEXT`; `creada_en DATETIME(6)`; `estado VARCHAR(20)`; `id_version_base BIGINT UNSIGNED`; `id_version_propuesta BIGINT UNSIGNED? UQ`; `confidencialidad_propuesta VARCHAR(20)?`; `requiere_revision_formal BOOLEAN`; `motivo_revision VARCHAR(500)?`; UQ `(id_incidencia, id)` |
+| 8 | `tipos_incidencia`: clasificación específica y categoría fija | `id`; `categoria VARCHAR(30)`; `nombre VARCHAR(100)`; `minimo_estudiantes SMALLINT UNSIGNED`; `activo BOOLEAN`; UQ `(categoria, nombre)` |
+| 9 | `incidencias`: identidad estable, autoría inicial y estado operativo | `id`; `id_registrador FK usuarios`; `id_rol_registrador FK roles`; `nombre_registrador VARCHAR(251)` histórico; `registrada_en DATETIME(6)`; `confirmada_en DATETIME(6)?`; `estado VARCHAR(20)`; `prioridad VARCHAR(10)`; `confidencialidad VARCHAR(20)`; `id_version_vigente BIGINT UNSIGNED?` |
+| 10 | `versiones_incidencia`: borrador, propuesta o hechos confirmados | `id`; `id_incidencia FK incidencias`; `numero_version INT UNSIGNED`; `estado_version VARCHAR(20)`; `id_autor FK usuarios`; `creada_en DATETIME(6)`; `id_tipo FK tipos_incidencia`; `titulo VARCHAR(200)`; `descripcion TEXT`; `ocurrida_en DATETIME(6)?`; `lugar VARCHAR(255)?`; `gravedad_disciplinaria VARCHAR(20)?`; campos de reportante y categoría detallados abajo; UQ `(id_incidencia, numero_version)` y `(id_incidencia, id)` |
+| 11 | `involucrados`: estudiantes de cada versión | `id_version FK versiones_incidencia`; `id_estudiante FK estudiantes`; `id_matricula BIGINT UNSIGNED?`; `participacion VARCHAR(30)`; PK `(id_version, id_estudiante)` |
+| 12 | `actuaciones`: acciones y observaciones de seguimiento | `id`; `id_incidencia FK incidencias`; `id_autor FK usuarios`; `id_rol_autor FK roles`; `tipo VARCHAR(20)`; `detalle TEXT`; `realizada_en DATETIME(6)`; `registrada_en DATETIME(6)`; `id_responsable FK usuarios?`; `fecha_limite DATE?`; `id_actuacion_corregida FK actuaciones?` |
 
-Las actuaciones se agregan, no se sobrescriben; una corrección enlaza la actuación anterior de la misma incidencia y explica el motivo. No se usa esta vía para alterar los hechos confirmados. El responsable y plazo son opcionales; el cumplimiento se describe mediante nuevas actuaciones, sin introducir aún un subsistema de tareas.
+Estados de incidencia: `borrador`, `confirmada`, `en_seguimiento`, `cerrada`, `anulada`. Prioridades: `baja`, `normal`, `alta`, `urgente`. Gravedad disciplinaria: NULL si no aplica; en otro caso `por_evaluar`, `leve`, `grave`, `muy_grave`, sujeto a validación institucional. Una urgencia de salud no implica gravedad disciplinaria. Tipos de actuación: `actuacion` y `observacion`.
 
-La bitácora registra confirmación, estados, prioridad, acceso sensible, permisos, solicitudes y decisiones. Una operación sobre varios campos puede producir varias filas dentro de la misma transacción. Los hechos completos anteriores se conservan en versiones; no se duplican enteros en la bitácora. `entidad` e `id_registro` identifican el objeto auditado de distintas tablas y no constituyen una FK polimórfica: la aplicación valida el destino. Es una excepción limitada a auditoría, no sustituye relaciones funcionales. No se guardan contraseñas, hashes de contraseñas ni tokens en valores auditados.
+El registrador, su rol, nombre histórico e instante se obtienen de sesión/servidor, nunca del formulario. Su identidad inicial no se sustituye al rectificar; el autor de cada nueva versión se conserva por separado.
 
-Tipos de solicitud: `rectificacion` y `anulacion`. Estados: `pendiente`, `aprobada`, `rechazada`, `retirada`, `obsoleta`. Toda rectificación de hechos confirmados usa una nueva versión completa con sus estudiantes; una rectificación solo de confidencialidad puede no crear versión. La anulación no crea una versión de hechos ni elimina datos.
+Cada versión incorpora columnas para **un reportante independiente**:
 
-### Revisión e independencia (21–25)
+- `tipo_reportante VARCHAR(20)`: `personal`, `estudiante`, `apoderado` o `externo`.
+- `id_reportante_usuario FK usuarios?`, `id_reportante_estudiante FK estudiantes?`, `id_reportante_apoderado FK apoderados?`.
+- `nombre_reportante VARCHAR(251)` histórico obligatorio; `contacto_reportante VARCHAR(254)?`, solo si es necesario y con acceso restringido.
+
+Para personal/estudiante/apoderado se exige exactamente la FK correspondiente, con las otras dos NULL. Para externo, las tres son NULL; el nombre conserva la identidad declarada en ese hecho, sin crear una entidad externa reutilizable. Esa instantánea histórica es deliberada, no una relación oculta. Personal sin cuenta no debe etiquetarse falsamente como externo: es una limitación pendiente de identidad común. Reportantes anónimos o múltiples requieren una decisión de alcance.
+
+`involucrados` pertenece a la **versión**, preservando el conjunto anterior al rectificar. Se admiten cero filas, una o varias; el mínimo se verifica por tipo al confirmar y puede ser cero. Participaciones propuestas: `afectado`, `testigo`, `involucrado`, sin presumir responsabilidad. Se propone una participación principal por estudiante y versión; varias simultáneas exigirían ajustar la clave.
+
+Cuando exista matrícula, `(id_estudiante, id_matricula)` será FK a la UQ equivalente de matriculas. No se acepta una matrícula ajena ni se infiere el aula histórica desde la matrícula actual.
+
+### Solicitudes, revisiones y control
 
 | N.º | Tabla y finalidad | Columnas principales |
 | --- | --- | --- |
-| 21 | `revisiones_formales`: proceso formal cuando la situación lo requiere | `id`; `id_incidencia FK incidencias`; `id_solicitud BIGINT UNSIGNED?`; `id_convocante FK usuarios`; `motivo TEXT`; `abierta_en DATETIME(6)`; `cerrada_en DATETIME(6)?`; `estado VARCHAR(20)` (`abierta`, `concluida`); `requiere_acta BOOLEAN`; `fundamento_acta VARCHAR(500)`; `conclusion TEXT?`; UQ `(id_incidencia, id)` |
-| 22 | `participantes_revision`: personas convocadas y su intervención | `id_revision FK revisiones_formales`; `id_persona FK personas`; `funcion VARCHAR(60)`; `asistio BOOLEAN`; `intervencion TEXT?`; PK compuesta `(id_revision, id_persona)` |
-| 23 | `decisiones_solicitud`: resolución independiente de una solicitud | `id`; `id_solicitud FK solicitudes_cambio UQ`; `id_incidencia FK incidencias`; `id_revision BIGINT UNSIGNED?`; `id_decisor FK usuarios`; `id_rol_decisor FK roles`; `resultado VARCHAR(20)` (`aprobada`, `rechazada`); `fundamento TEXT`; `decidida_en DATETIME(6)` |
-| 24 | `actas_revision`: acta opcional y sus sustituciones documentales | `id`; `id_revision FK revisiones_formales`; `numero_version INT UNSIGNED`; `contenido TEXT`; `id_autor FK usuarios`; `emitida_en DATETIME(6)`; `id_acta_anterior FK actas_revision? UQ`; UQ `(id_revision, numero_version)` |
-| 25 | `conflictos_interes`: declaración de conflicto e inhibición por incidencia | `id`; `id_incidencia FK incidencias`; `id_usuario_afectado FK usuarios`; `id_declarante FK usuarios`; `motivo TEXT`; `declarado_en DATETIME(6)`; `estado VARCHAR(20)` (`pendiente`, `inhibido`, `descartado`); `id_resolutor FK usuarios?`; `resuelto_en DATETIME(6)?`; `fundamento_resolucion TEXT?` |
+| 13 | `solicitudes_cambio`: petición y única resolución final | `id`; `id_incidencia FK incidencias`; `id_solicitante FK usuarios`; `id_rol_solicitante FK roles`; `tipo VARCHAR(20)`; `justificacion TEXT`; `creada_en DATETIME(6)`; `estado VARCHAR(20)`; `id_version_base BIGINT UNSIGNED`; `id_version_propuesta BIGINT UNSIGNED? UQ`; `confidencialidad_propuesta VARCHAR(20)?`; `requiere_revision BOOLEAN`; `motivo_revision VARCHAR(500)?`; `id_revision_resolutiva BIGINT UNSIGNED?`; `id_decisor FK usuarios?`; `id_rol_decisor FK roles?`; `fundamento_decision TEXT?`; `decidida_en DATETIME(6)?`; UQ `(id_incidencia, id)` |
+| 14 | `revisiones`: evaluación formal y acta opcional | `id`; `id_incidencia FK incidencias`; `id_solicitud BIGINT UNSIGNED?`; `id_responsable FK usuarios`; `motivo TEXT`; `abierta_en DATETIME(6)`; `cerrada_en DATETIME(6)?`; `estado VARCHAR(20)`; `hubo_reunion BOOLEAN`; `reunion_en DATETIME(6)?`; `requiere_acta BOOLEAN`; `fundamento_acta VARCHAR(500)`; `acta TEXT?`; `id_emisor_acta FK usuarios?`; `acta_emitida_en DATETIME(6)?`; `conclusion TEXT?`; `id_revision_anterior FK revisiones? UQ`; UQ `(id_incidencia, id)` |
+| 15 | `historial`: eventos y cambios auditados | `id`; `id_incidencia FK incidencias?`; `id_actor FK usuarios`; `id_rol_actor FK roles`; `ocurrido_en DATETIME(6)`; `accion VARCHAR(60)`; `id_usuario_afectado FK usuarios?`; `id_rol_afectado FK roles?`; `id_permiso_afectado FK permisos?`; `id_solicitud FK solicitudes_cambio?`; `id_revision FK revisiones?`; `campo VARCHAR(60)?`; `valor_anterior TEXT?`; `valor_nuevo TEXT?`; `motivo TEXT?` |
+| 16 | `conflictos_interes`: impedimentos e inhibiciones por incidencia | `id`; `id_incidencia FK incidencias`; `id_usuario_afectado FK usuarios`; `id_declarante FK usuarios`; `motivo TEXT`; `declarado_en DATETIME(6)`; `estado VARCHAR(20)`; `id_resolutor FK usuarios?`; `resuelto_en DATETIME(6)?`; `fundamento_resolucion TEXT?` |
 
-La revisión formal puede estudiar la incidencia directamente o una solicitud concreta; una solicitud puede tener varias revisiones, pero solo una decisión final. Ser participante no otorga facultad de decidir. La conclusión de una revisión recoge acuerdos; la aprobación efectiva de una solicitud queda en decisiones_solicitud. Las decisiones no se editan; una petición rechazada puede motivar una nueva solicitud.
+Tipos de solicitud: `rectificacion`, `anulacion`. Estados: `pendiente`, `aprobada`, `rechazada`, `retirada`, `obsoleta`. Decisor, rol, fundamento y fecha se completan juntos únicamente al aprobar/rechazar. La decisión final es inmutable; una nueva petición usa otra fila. No hace falta una tabla de decisiones para esta relación 1–0..1.
 
-El acta es texto conservado en la base, no un PDF generado en esta fase. Cada versión emitida es inmutable, y una corrección referencia la anterior dentro de la misma revisión. No se exige reunión, revisión ni acta en todas las incidencias.
+Revisiones: `abierta`, `concluida`; pueden evaluar una incidencia o una solicitud. No toda incidencia requiere revisión, no toda revisión requiere reunión ni toda reunión acta. Los criterios institucionales decidirán cuándo son obligatorias. Fecha de reunión obligatoria si hubo reunión; acta, emisor y fecha obligatorios juntos si se emite, y antes de concluir si se exige. Conclusión y fecha de cierre son obligatorias al concluir.
 
-Un conflicto pendiente bloquea preventivamente la decisión del afectado. `inhibido` confirma su apartamiento; `descartado` exige fundamento de un resolutor independiente. El usuario afectado no puede resolver su propio conflicto. Los conflictos se aplican a todas las solicitudes y revisiones de la incidencia, y no se eluden reasignando el rol del usuario.
+Revisión concluida y acta emitida son inmutables. Una subsanación crea revisión complementaria enlazada a la anterior, conservando ambas sin alterar decisiones previas. Esta simplificación no modela varias ediciones independientes de acta en una revisión ni firmas individuales. **El texto del acta no reemplaza las relaciones de participantes que faltan.**
 
-## 3. Relaciones y cardinalidades
+Conflictos: `pendiente`, `inhibido`, `descartado`. Pendiente e inhibido bloquean decisiones del afectado; descarte exige resolución independiente fundamentada. El afectado no resuelve su propio conflicto. Se aplican a todas las solicitudes/revisiones de la incidencia aunque cambie el rol del usuario.
 
-- personas 1–0..1 usuarios y 1–0..1 estudiantes; estudiantes N–M personas apoderadas mediante estudiantes_apoderados.
-- roles 1–N usuarios; roles N–M permisos mediante roles_permisos; usuarios N–M permisos mediante usuarios_permisos.
-- estudiantes 1–N matriculas; aulas 1–N matriculas. Se conserva la secuencia de traslados por fechas.
-- categorias_incidencia 1–N tipos_incidencia; tipos_incidencia 1–N versiones_incidencia.
-- usuarios 1–N incidencias como registradores; estados y prioridades 1–N incidencias.
-- incidencias 1–N versiones_incidencia; cada incidencia confirmada apunta a exactamente una versión vigente. Una versión referencia una persona reportante y 0..N estudiantes mediante versiones_estudiantes.
-- incidencias 1–N actuaciones, historial_cambios, solicitudes_cambio, revisiones_formales y conflictos_interes.
-- solicitudes_cambio referencia una versión base y, opcionalmente, una versión propuesta; tiene 0..1 decisión y 0..N revisiones.
-- revisiones_formales N–M personas mediante participantes_revision y 1–0..N actas_revision. Una decisión puede referenciar una revisión concluida de la misma solicitud.
+El historial registra estados, prioridad, permisos, solicitudes y decisiones; los hechos completos están en versiones. Sus valores anterior/nuevo son escalares o narrativos, nunca listas de relaciones; permisos y actores usan sus FK. No guardar contraseñas, hashes ni tokens. Otros eventos que necesiten referenciar una entidad deberán añadir la FK concreta, no esconder el vínculo en motivo.
 
-Las FK compuestas `(id_incidencia, id_version_vigente)`, `(id_incidencia, id_version_base)` y `(id_incidencia, id_version_propuesta)` apuntarán a `(id_incidencia, id)` de versiones_incidencia. Así ninguna referencia puede cruzarse a otra incidencia. La versión vigente será NULL solo durante la creación transaccional o mientras aún no haya contenido de borrador.
+## 3. Seis categorías y campos pertinentes
 
-Aplicar el mismo patrón compuesto a revisión–solicitud y decisión–solicitud/revisión para impedir cruces entre incidencias. La aplicación comprueba además que la revisión citada por una decisión corresponde a esa solicitud concreta, no solo a la misma incidencia. Las referencias de correcciones de actuaciones y actas deben permanecer en su incidencia/revisión y apuntar a una fila anterior, sin ciclos.
+`tipos_incidencia.categoria` admite exactamente `convivencia`, `disciplina`, `salud`, `seguridad`, `bienes`, `proteccion_estudiantil`. Se obtiene por el tipo, sin duplicarla en versiones. Un tipo usado no cambia de significado o categoría; se desactiva y se crea otro.
 
-## 4. Integridad, seguridad e índices
+Campos escalares propuestos en versiones_incidencia, además de descripción, fecha, lugar y reportante comunes:
 
-### Garantías declarativas previstas
+| Categoría | Columnas específicas | Alcance y validación |
+| --- | --- | --- |
+| Convivencia | `ambito_convivencia VARCHAR(20)?`; `requiere_mediacion BOOLEAN?` | Ámbito: `presencial`, `digital`, `mixto`. Estudiantes vinculados mediante involucrados, no mediante nombres en texto. |
+| Disciplina | `norma_referida VARCHAR(100)?`; `gravedad_disciplinaria VARCHAR(20)?` | Referencia normativa histórica; no catálogo de sanciones ni responsabilidad presunta. Gravedad independiente de prioridad. |
+| Salud | `sintomas_observados TEXT?`; `requiere_atencion_inmediata BOOLEAN?` | Observaciones del hecho, no historia clínica ni diagnósticos inventados. Atención posterior en actuaciones. |
+| Seguridad | `riesgo_identificado TEXT?`; `riesgo_persistente BOOLEAN?` | Riesgo narrado y un indicador por hecho; no listas de entidades que necesiten FK. |
+| Bienes | `descripcion_dano TEXT?`; `monto_estimado DECIMAL(12,2)?`; `moneda CHAR(3)?` | Estimación total no negativa; moneda obligatoria con importe. No representa inventario ni daños por bien individualizado. |
+| Protección estudiantil | `riesgo_inmediato BOOLEAN?`; `requiere_derivacion BOOLEAN?` | Datos mínimos y acceso restringido. Acciones posteriores en actuaciones, sin listas de destinatarios que requieran relación. |
 
-- PK, FK, UQ y campos obligatorios según las tablas. `ON DELETE RESTRICT` para relaciones históricas. Identificadores inmutables; cuentas y catálogos se desactivan.
-- Restricciones de dominio para estados, tipos, niveles y valores booleanos; números de versión positivos, mínimos de estudiantes no negativos y fechas finales iguales o posteriores a iniciales.
-- En solicitudes: anulación sin versión ni confidencialidad propuestas; rectificación con al menos una de ambas. Decisiones con resultado aprobado o rechazado. El estado final de solicitud debe coincidir con la decisión.
-- No emplear JSON para estudiantes, participantes, permisos, cambios propuestos ni versiones. No se necesitan triggers ni procedimientos almacenados para esta propuesta.
+Son columnas anulables por categoría, no una tabla genérica de atributos. Al confirmar se exigen los campos acordados y se rechazan valores ajenos al formulario. Como la categoría está en otra tabla, esta validación corresponde al servidor y a la transacción, no a un CHECK entre tablas. Cambiar de tipo en borrador/propuesta obliga a revisar sus campos específicos.
 
-### Reglas entre filas y autorización en el servidor
+Queda pendiente acordar campos obligatorios por formulario. Si se requieren varios bienes con código/custodio/daño individual, o derivaciones a entidades registradas, se necesitan relaciones adicionales; los textos no pueden sustituirlas. No se da por cubierto un formulario cuyo contenido aún no está definido.
 
-Las FK y restricciones de una fila no bastan para controlar permisos, inmutabilidad o independencia. Implementar estas reglas mediante validación y transacciones en el servidor; la cuenta SQL de la aplicación no tendrá DELETE sobre registros históricos ni DDL. RESTRICT por sí solo no protege una fila que no tenga dependientes.
+## 4. Relaciones, integridad y seguridad
 
-- No eliminar físicamente incidencias confirmadas, versiones presentadas, decisiones, actuaciones, actas ni historial. Los borradores también se conservan por simplicidad; decidir después una política de descarte.
-- Estados de versión: `borrador`, `propuesta`, `confirmada`. Solo el borrador es editable. Al presentar una solicitud, congelar la versión propuesta y sus estudiantes; al aprobar, cambiar solo su estado a confirmada y el puntero vigente. Las propuestas rechazadas permanecen disponibles como evidencia.
-- Las versiones confirmadas anteriores siguen confirmadas: cuál está vigente se obtiene del puntero de la incidencia, sin duplicar una bandera `vigente` por versión.
-- Exigir reportante, contenido válido y mínimo de estudiantes solo al confirmar/presentar; durante edición usar un borrador con valores aún incompletos únicamente en memoria del formulario. El borrador persistido debe cumplir los campos obligatorios de esta propuesta. Revisar esta decisión antes de implementar autoguardado.
-- Como propuesta conservadora, Director o Subdirector resuelven solicitudes; nunca el solicitante ni alguien con conflicto pendiente o inhibición. Comparar identidad de persona además del usuario, y aplicar las restricciones aunque cambie su rol. Las demás facultades deben concretarse en la matriz institucional.
-- No basta con no ser solicitante: detectar si el decisor es reportante, persona involucrada, apoderado vinculado u otro caso que genere conflicto. La detección automática se complementa con declaración y revisión humana. Si ambas autoridades están impedidas, bloquear y escalar según un procedimiento aún por acordar, sin otorgar aprobación al Administrador.
-- No permitir una decisión si falta revisión formal obligatoria, si sigue abierta o si no existe acta cuando es requerida. Un acta y la asistencia de participantes no sustituyen la aprobación independiente.
-- Bloquear la fila de incidencia durante confirmación, presentación y resolución. Verificar que la versión base sigue vigente. Serializar solicitudes pendientes por incidencia (máximo una) y números de versión mediante la misma transacción; no confiar solo en una validación previa desde el formulario.
-- Al resolver, actualizar versión vigente o estado anulado, insertar decisión, cerrar solicitud y registrar auditoría en una sola transacción. Si cambia la versión base por otra operación, marcar la solicitud obsoleta y solicitar una nueva evaluación; no aplicar silenciosamente cambios sobre otros hechos.
-- Validar matrículas no superpuestas para un estudiante y apoderados principales no superpuestos por periodo; estas reglas temporales requieren transacción, no solo UQ. Conservar las matrículas usadas como contexto histórico.
-- En registros y decisiones, tomar usuario, rol e instante de la sesión y del servidor, nunca de campos editables del cliente.
-- Restringir consultas por autorización, nivel de confidencialidad y conflicto, incluso para reportes y auditoría. El Administrador no recibe acceso al contenido confidencial por administrar cuentas. Los catálogos y permisos no conceden acceso implícito a todos los expedientes.
-- Reducir datos personales al mínimo, usar hash seguro para contraseñas, proteger sesiones/cookies httpOnly en la futura autenticación, cifrar transporte y respaldos y limitar acceso a la cuenta MySQL. El modelo relacional por sí solo no garantiza confidencialidad.
+### Cardinalidades
 
-Índices propuestos: todas las FK; `incidencias(id_estado, id_prioridad, registrada_en)`; `incidencias(id_registrador, registrada_en)`; `versiones_estudiantes(id_estudiante, id_version)`; `actuaciones(id_incidencia, registrada_en)`; `solicitudes_cambio(id_incidencia, estado)`; `historial_cambios(id_incidencia, ocurrido_en)` y `(entidad, id_registro, ocurrido_en)`; `conflictos_interes(id_incidencia, id_usuario_afectado, estado)`. Reutilizar índices PK/UQ existentes y ajustar los adicionales a consultas reales, sin indexar todos los textos.
+- roles 1–N usuarios; roles N–M permisos mediante roles_permisos.
+- estudiantes 1–N matriculas. Estudiantes N–M apoderados **no está representado** en el objetivo de 16.
+- usuarios 1–N incidencias como registradores; incidencias 1–N versiones; tipos_incidencia 1–N versiones.
+- versiones N–M estudiantes mediante involucrados; un reportante por versión mediante una alternativa explícita.
+- incidencias 1–N actuaciones, solicitudes, revisiones, historial y conflictos. Solicitudes 1–0..N revisiones y 0..1 decisión integrada.
+- Un responsable o emisor de acta no equivale al conjunto de participantes de una revisión; ese N–M está pendiente.
 
-## 5. Flujos propuestos
+Los pares `(id_incidencia, id_version_vigente/base/propuesta)` usarán FK compuestas hacia `(id_incidencia, id)` de versiones. Aplicar el mismo patrón a revisión–solicitud y solicitud–revisión resolutiva, impidiendo cruces de incidencias. El servidor comprueba además que la revisión resolutiva corresponde a esa solicitud concreta. Las autorreferencias de actuaciones y revisiones apuntan a una fila anterior del mismo expediente, sin ciclos. El historial valida la coherencia de sus referencias de contexto.
 
-### Registro y seguimiento
+### Restricciones declarativas previstas
 
-1. Un usuario autorizado inicia una incidencia borrador; el servidor identifica registrador, rol, nombre histórico e instante. Selecciona por separado la persona reportante y su condición.
-2. Guarda contenido y 0..N estudiantes según el caso. Corrige el borrador antes de confirmar; no se guarda una versión por cada pulsación.
-3. Al confirmar, valida identidad, contenido, mínimo de estudiantes y autorización. Congela versión y participantes, fija confirmada_en y cambia el estado a confirmada dentro de una transacción auditada.
-4. Agrega actuaciones y observaciones autorizadas. Puede pasar a en_seguimiento y cerrada sin alterar hechos; la reapertura requiere permiso y motivo auditado. Una incidencia anulada no admite seguimiento ordinario ni reapertura automática.
+- PK, FK, UQ y obligatoriedad indicadas; `ON DELETE RESTRICT` en relaciones históricas, sin cascadas. Cuentas y catálogos se desactivan.
+- Versiones positivas, mínimos de estudiantes no negativos, fechas finales no anteriores a iniciales, importes no negativos, códigos/indicadores restringidos a su dominio.
+- Combinación de FK del reportante según tipo; identidad documental completa o enteramente NULL.
+- Anulación sin versión/confidencialidad propuestas. Rectificación con al menos una de ambas; versión propuesta distinta de base. Decisor distinto del solicitante cuando exista y datos de resolución completos según estado.
+- Conflicto resuelto con fundamento, fecha y resolutor distinto del afectado; estados no sustituyen autorización ni control de transiciones.
+- Puntero vigente NULL solo durante creación o borrador sin versión. Una confirmada debe terminar la transacción con versión vigente válida; esta condición entre filas requiere servidor.
 
-### Rectificación
+### Controles de servidor y transacciones
 
-1. Un usuario autorizado presenta justificación y una copia completa corregida de la versión vigente, incluidos estudiantes, o el nuevo nivel de confidencialidad. Se registra la versión base; la propuesta queda congelada y aún no reemplaza los hechos.
-2. Se evalúan conflictos y necesidad de revisión formal. Cuando corresponde, se registran participantes, conclusión y acta. El solicitante puede explicar su petición pero no resolverla.
-3. Una autoridad independiente aprueba o rechaza con fundamento. Si aprueba, la transacción activa la nueva versión y/o el nivel de confidencialidad; conserva la anterior y toda evidencia. Si rechaza o se retira, los hechos vigentes no cambian.
+Las FK no garantizan independencia, inmutabilidad ni permisos. Se implementarán validaciones y transacciones con SQL parametrizado, sin triggers ni procedimientos almacenados innecesarios.
 
-### Anulación
+1. Estados de versión: `borrador`, `propuesta`, `confirmada`. Solo borrador admite edición de contenido e involucrados. Al presentar una propuesta se congela; aprobar cambia su estado y el puntero vigente, conservando versiones anteriores. No duplicar un indicador vigente por versión.
+2. Persistir borradores con campos comunes obligatorios completos; se pueden corregir antes de confirmar. Autoguardado incompleto pendiente; no fabricar personas/documentos para satisfacer restricciones.
+3. Bloquear la incidencia al confirmar, presentar o resolver. Una solicitud pendiente por incidencia, numeración única y validación de versión base dentro de la transacción. Una base obsoleta exige reevaluación; nunca sobrescribir cambios concurrentes.
+4. Director o Subdirector independientes resuelven solicitudes, como propuesta inicial. Nadie aprueba su propia petición, tampoco tras cambiar de rol. Exigir una cuenta por persona verificada: nombre_usuario único no evita dos cuentas de la misma autoridad. Si ambos están impedidos, bloquear y escalar según procedimiento pendiente; no trasladar facultades al Administrador.
+5. Bloquear afectados por conflicto pendiente/inhibición. Evaluar reportante, parentesco y demás intereses con validación humana complementaria. Sin estudiantes_apoderados no se puede detectar automáticamente el parentesco registrado: conflictos_interes por sí sola no cubre esa carencia.
+6. No aprobar sin revisión obligatoria concluida o acta exigida. Participar no concede facultad de decidir. La comprobación relacional de participantes/quórum está bloqueada hasta corregir el modelo.
+7. Decisión, solicitud, versión vigente o anulación e historial se actualizan atómicamente. Conservar propuestas rechazadas/retiradas; no eliminar físicamente confirmados, decisiones, actuaciones, revisiones ni auditoría.
+8. Actuaciones se agregan; una corrección referencia la anterior y explica el motivo, sin alterar hechos. Prioridad/estado operativo cambian con permiso y auditoría. Hechos, estudiantes, reportante, clasificación y gravedad solo por rectificación. Confidencialidad `interna` o `restringida`: elevar protección es auditable; reducirla requiere aprobación independiente mediante confidencialidad_propuesta.
+9. Restringir consultas, versiones, actuaciones, historial y reportes por permiso y confidencialidad. Administrar cuentas no concede acceso al expediente. Hash seguro de contraseñas, sesiones protegidas, cookies httpOnly, transporte y respaldos protegidos se implementarán en sus fases; no los garantiza el esquema.
+10. Matrículas sin periodos superpuestos; conservar contexto histórico. Cuenta SQL sin DDL ni DELETE en tablas históricas. RESTRICT no impide por sí solo todos los borrados; los privilegios tampoco sustituyen el control de UPDATE.
 
-1. Se presenta solicitud de anulación justificada de una incidencia confirmada, en seguimiento o cerrada.
-2. Se aplican los mismos controles de independencia, conflictos y revisión cuando proceda.
-3. Al aprobar, se cambia el estado a anulada y se registra decisión e historial. Permanecen identidad, versiones, reportante, estudiantes, actuaciones y actas. La fecha y el responsable de anulación se consultan desde la decisión, sin duplicarlos en incidencias. No hay eliminación física ni restauración automática.
+Índices previstos además de PK/UQ y FK: incidencias `(estado, prioridad, registrada_en)`; involucrados `(id_estudiante, id_version)`; solicitudes_cambio `(id_incidencia, estado)`; actuaciones `(id_incidencia, registrada_en)`; historial `(id_incidencia, ocurrido_en)`; conflictos_interes `(id_incidencia, id_usuario_afectado, estado)`. Ordenar prioridad por significado explícito en la consulta, no alfabéticamente. Reutilizar índices existentes y ajustar a consultas reales.
 
-## 6. Decisiones pendientes de revisión
+## 5. Flujos
 
-1. Validar un solo rol vigente por usuario y si se necesitan excepciones individuales de permisos; si no se necesitan, eliminar usuarios_permisos antes de crear el esquema. Acordar quién autoriza asignaciones sensibles, suplencias y cambios de rol.
-2. Aprobar la matriz de acceso, especialmente confidencialidad, actuaciones, cierre/reapertura y clasificación. Precisar si otras autoridades podrán resolver peticiones y cómo escalar cuando Director y Subdirector estén impedidos.
-3. Definir qué cambios exigen revisión formal, quién la declara, composición, quórum, recusaciones, actas y firmas. Esta propuesta conserva un decisor responsable; una votación colegiada individual requeriría modelado adicional, no texto libre como sustituto.
-4. Validar tipos de incidencias, mínimos de estudiantes, participaciones, prioridades y gravedad disciplinaria. Los campos específicos por categoría se diseñarán cuando existan formularios acordados, mediante relaciones explícitas; no un almacén genérico JSON ni una tabla de atributos sin criterio.
-5. Confirmar un reportante por incidencia, tratamiento de reportes anónimos y estudiantes de otras instituciones. Actualmente se exige una persona reportante identificable internamente; no fabricar personas para representar anonimato.
-6. Acordar documentos admitidos, códigos internos y verificación de identidades extranjeras o provisionales. Validar niveles, grados, traslados y reglas para apoderados principales.
-7. Confirmar si se necesita autoguardado de borradores incompletos; la propuesta actual persiste borradores con campos obligatorios completos y no implementa descarte físico.
-8. Definir conservación, acceso y corrección de datos personales maestros; no sobrescribir identidades para hacerlas pasar por otra persona. La bitácora conserva cambios de maestros y los nombres históricos fijan quién registró/reportó. Revisar si actas requieren más identidad histórica, firmas o anexos.
-9. Acordar retención y protección de auditoría y respaldos, evidencias adjuntas y límites de texto. No se incorporan archivos, sesiones persistidas ni informes PDF al modelo de esta fase.
+**Registro:** crear borrador con registrador automático, reportante independiente y cero o varios estudiantes. Permitir correcciones antes de confirmar. La confirmación valida formulario, mínimos, referencias y permisos; congela hechos e involucrados, fija fecha de servidor y estado confirmada y registra historial en una transacción.
 
-La propuesta está lista para revisión de diseño. La implementación SQL y su validación contra MySQL 8 corresponden a una tarea posterior autorizada.
+**Seguimiento:** agregar actuaciones y observaciones; pasar a en_seguimiento/cerrada sin reescribir hechos. Reabrir exige permiso y motivo. Una anulada no admite seguimiento ordinario ni restauración automática.
+
+**Rectificación:** presentar justificación, versión base y nueva versión completa con involucrados, o cambio de confidencialidad. Evaluar conflictos y necesidad de revisión/reunión/acta. Una autoridad independiente decide con fundamento. Solo la aprobación aplica el cambio, conservando toda evidencia anterior.
+
+**Anulación:** solicitar sobre incidencia confirmada, en seguimiento o cerrada, con justificación y los mismos controles de independencia. Aprobar cambia estado a anulada, conserva el expediente y registra resolución e historial. Fecha y autoridad se consultan desde la solicitud aprobada, sin duplicarlas en incidencias.
+
+## 6. Verificación del límite de 16 y correcciones mínimas
+
+### A. Relación estudiantes–apoderados: falta una tabla
+
+Ejemplo: Ana representa a Luis y Pedro; Luis también tiene a Carlos como apoderado. Un id_estudiante en apoderados obliga a duplicar a Ana. Un id_apoderado en estudiantes excluye a Carlos. Listas de IDs o columnas apoderado_1/apoderado_2 no representan correctamente el N–M ni su vigencia.
+
+Corrección mínima propuesta: **`estudiantes_apoderados`** con `id_estudiante FK estudiantes`, `id_apoderado FK apoderados`, `vigente_desde DATE`, `vigente_hasta DATE?`, `vinculo VARCHAR(30)` y `es_principal BOOLEAN`; PK `(id_estudiante, id_apoderado, vigente_desde)`. Validar fechas y periodos de responsable principal sin solapamiento. El vínculo tiene vigencia propia; no debe depender solo de una incidencia o matrícula.
+
+### B. Participantes de revisión: falta una tabla
+
+Ejemplo: una revisión reúne a Subdirector, docente, estudiante y apoderada; la misma apoderada participa en otra revisión. El responsable único no permite representar asistencia, función o impedimentos de cada integrante. Nombres dentro del acta pierden integridad referencial, aunque sean válidos como narración documental.
+
+Corrección mínima propuesta: **`participantes_revision`** con `id` PK, `id_revision FK revisiones`, `id_usuario FK usuarios?`, `id_estudiante FK estudiantes?`, `id_apoderado FK apoderados?`, `funcion VARCHAR(40)`, `asistio BOOLEAN` e `intervencion TEXT?`. Exactamente una FK de identidad debe existir. UQ por `(id_revision, id_usuario)`, `(id_revision, id_estudiante)` y `(id_revision, id_apoderado)`. Para un apoderado con cuenta se utiliza id_usuario como identidad canónica, comprobando apoderados.id_usuario para evitar doble participación de la misma persona. Participantes externos sin identidad registrada requieren el ajuste adicional indicado abajo.
+
+Las dos adiciones dan **18 tablas recomendadas, pendientes de aprobación**. No se sobrecarga involucrados con asistentes o vínculos familiares: mezclar estudiantes de una versión, participantes de una revisión y apoderados en una sola tabla produciría significados distintos y restricciones más complejas. Mantener exactamente 16 exige reducir requisitos o rediseñar responsabilidades; no se oculta esa elección.
+
+### Otros límites condicionados al alcance
+
+| Caso | Capacidad actual y riesgo | Corrección mínima si se necesita |
+| --- | --- | --- |
+| Aulas | Año/nivel/grado/sección quedan en matriculas; no hay FK a un aula existente. «A» y «AA» podrían representar un error o dos grupos diferentes. | Si se administran aulas, cupos o tutores, añadir `aulas` y referenciarla desde matriculas: serían 19 con las dos correcciones anteriores. Si solo es contexto histórico, aprobar explícitamente dominios y limitación. |
+| Identidad transversal | Usuario/apoderado se enlazan, pero no existe unicidad documental entre todas las tablas. Dos cuentas de la misma autoridad podrían eludir una comparación de IDs. | Verificación de una cuenta por persona para el alcance limitado. Si se exige integridad común, personal sin cuenta o participantes externos reutilizables, añadir `personas` y trasladar identidades/FK a ella, sin cuentas ficticias; reevaluar total junto con aulas. |
+| Reportantes externos | Una instantánea por versión, sin continuidad relacional entre expedientes. | Identidad común si se requiere esa continuidad. Anonimato o varios reportantes necesitan diseño explícito. |
+| Bienes/derivaciones múltiples | Los campos describen un hecho, no objetos/destinatarios individualizados. Dos equipos con custodios distintos no se modelan mediante un importe total. | Añadir relación de detalle y catálogo de destino cuando el formulario lo requiera. No usar descripcion_dano ni actuaciones.detalle como listas sustitutivas. |
+| Decisión colegiada y firmas | Hay un decisor responsable; el acta no permite votos ni firmas verificables por integrante. | Modelar voto por participante/revisión si se exige; firmas múltiples requieren relación propia. No declarar esa capacidad cubierta por texto. |
+
+### Resultado de la comprobación
+
+| Regla | Evaluación del objetivo de 16 |
+| --- | --- |
+| Seis roles y Administrador sin facultades sobre incidencias | Representable; requiere matriz y restricciones de servidor. |
+| Registrador automático y reportante independiente | Representable con FK alternativas y un reportante; pendientes identidad transversal y personal sin cuenta. |
+| Borrador editable, hechos versionados y cero o varios estudiantes | Representable; involucrados se conserva por versión. |
+| Rectificación/anulación justificadas e independientes | Representable con decisión integrada, sujeto a identidad verificada y transacciones. |
+| Reuniones y actas cuando correspondan | Documento y revisión representables; participantes/asistencia/quórum no están completos. |
+| Conflictos e inhibición | Declaración y bloqueo representables; falta relación familiar para comprobar conflictos de apoderados. |
+| Identificación extranjera sin DNI | Representable con documento alternativo o código interno sin DNI ficticio. |
+| Seis categorías con campos pertinentes | Base escalar propuesta; obligatorios y relaciones de detalle pendientes de validar. |
+| Relaciones escolares y de revisión completas | No: faltan dos N–M y aulas depende del alcance aceptado. |
+
+## 7. Decisiones pendientes y estado
+
+1. Revisar la ampliación mínima a 18 tablas para conservar apoderados N–M y participantes. El modelo de 16 **no se da por aprobado** mientras falten esas relaciones del alcance original.
+2. Decidir si aulas es catálogo administrado y si se necesita identidad común; 18 no es garantía de cubrir ampliaciones todavía indefinidas.
+3. Validar permisos, autorización de cambios de cuenta/rol, confidencialidad y escalamiento cuando Director y Subdirector estén impedidos.
+4. Acordar cuándo exigir revisión/reunión/acta, composición, quórum, votos, firmas y subsanaciones documentales.
+5. Confirmar campos obligatorios por categoría, tipos, mínimos, gravedad disciplinaria, participación principal y tratamiento de reportantes anónimos/múltiples.
+6. Definir autoguardado incompleto, retención de borradores, datos personales, auditoría y respaldos; sin eliminación física de confirmados.
+
+Se revisaron documentalmente cardinalidades, identidad, versiones y escenarios de aprobación. **No se ejecutó SQL ni se creó ninguna tabla.** Resolver las decisiones anteriores antes de generar el esquema.
