@@ -4,7 +4,7 @@ Fase 2.2 · 30 de octubre de 2026 · **Pendiente de aprobación institucional**.
 
 Institución: I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
 
-Complementa [DISENO.md](DISENO.md), sin modificarlo ni declarar aprobado el modelo. Se mantienen las 19 tablas; se proponen ajustes puntuales de columnas. No se implementan SQL, JavaScript ni autoguardado.
+Complementa [DISENO.md](DISENO.md), armonizado como propuesta en fase 2.3, sin declarar aprobado el modelo. Se mantienen las 19 tablas; se proponen ajustes puntuales de columnas. No se implementan SQL, JavaScript ni autoguardado.
 
 ## 1. Matriz de permisos
 
@@ -92,13 +92,13 @@ El backend valida cada campo según el tipo y rechaza campos de otras categoría
 | Identidad, externos, extranjeros, apoderados y contexto escolar | personas, estudiantes, estudiantes_apoderados, aulas y matriculas cubren relaciones e identificación alternativa; no duplicar personas ni convertir reportantes en cuentas. |
 | Seis formularios, cero o varios estudiantes y versiones | tipos_incidencia, incidencias, versiones_incidencia e involucrados ya contienen los campos propuestos. Las etiquetas visibles no cambian códigos; ajustar obligatoriedad condicional en backend, manteniendo NULL para campos de otras categorías. |
 | Seguimiento, cierre y corrección de actuaciones | actuaciones e historial cubren conclusión, cambios operativos y correcciones enlazadas. No requiere columna extra para cada estado ni tabla de cierre. |
-| Rectificación, anulación y autoría de su evaluación | solicitudes_cambio cubre propuesta y decisión. **Proponer `id_evaluador FK usuarios NULL` y `evaluada_en DATETIME(6) NULL`**, completos juntos al evaluar; independiente del solicitante. Conserva quién fijó requiere_revision/fundamento_revision, sin confundirlo con la decisión final. Reevaluaciones se auditan. |
-| Reunión requerida frente a reunión celebrada | revisiones contiene hubo_reunion/reunion_en, pero no la exigencia previa. **Proponer `requiere_reunion BOOLEAN`**, distinto de hubo_reunion; fundamento en motivo. Si se exige, impedir concluir sin reunión. Acta requerida y emitida ya están representadas. |
+| Rectificación, anulación y autoría de su evaluación | solicitudes_cambio cubre propuesta y decisión. **Ajuste propuesto consolidado en DISENO.md: `id_evaluador FK usuarios NULL` y `evaluada_en DATETIME(6) NULL`**, completos juntos al evaluar; independiente del solicitante. Conserva quién fijó requiere_revision/fundamento_revision, sin confundirlo con la decisión final. Reevaluaciones se auditan. |
+| Reunión requerida frente a reunión celebrada | La propuesta anterior contenía hubo_reunion/reunion_en, sin la exigencia previa. **Ajuste propuesto consolidado en DISENO.md: `requiere_reunion BOOLEAN`**, distinto de hubo_reunion; fundamento en motivo. Si se exige, impedir concluir sin reunión. Acta requerida y emitida ya están representadas. |
 | Participantes, actas, conflictos y doble impedimento | revisiones, participantes_revision, conflictos_interes e historial cubren reunión y bloqueo. No falta relación para estos casos; criterios institucionales no los resuelve una tabla nueva. |
 | Auditoría y PDF | historial registra consultas sensibles, cambios y exportaciones; PDF se genera a partir de datos autorizados, sin tabla de reportes. No se desarrolla todavía. |
 | Autorizaciones administrativas | Actores/destinos y eventos de autorización/ejecución caben en historial para el alcance de evidencia. Si se exige un flujo informático de solicitudes administrativas con estados y aprobación vinculante, **no está modelado**: debe diseñarse explícitamente, sin reutilizar solicitudes de expedientes ni esconder instrucciones en texto. No se añade automáticamente. |
 
-**Resultado:** las reglas propuestas son compatibles con las 19 tablas y tres columnas adicionales, sujetas a revisión. Las nuevas columnas solo se proponen aquí; DISENO.md no se altera en esta tarea. Mantener FK compuestas de versión/solicitud/revisión y validación de matrícula; no se requiere cambiar esas relaciones. Antes del SQL, incorporar los ajustes que se aprueben y revalidar los dominios y nulabilidad.
+**Resultado:** las reglas propuestas son compatibles con las 19 tablas y tres columnas adicionales, sujetas a revisión. En fase 2.3 se incorporan también a DISENO.md como propuesta, no como aprobación. Evaluador, fecha, requiere_revision y fundamento_revision son NULL hasta evaluar y se completan juntos; sin evaluación no se resuelve. Mantener FK compuestas de versión/solicitud/revisión y validación de matrícula; no se requiere cambiar esas relaciones. Antes del SQL, incorporar los ajustes que se aprueben y revalidar los dominios y nulabilidad.
 
 No se detecta otra necesidad estructural para este alcance. Acceso individual por expediente, votaciones/firmas, varios reportantes, inventario o un flujo administrativo automatizado sí ampliarían el alcance y no están resueltos con texto libre. Confirmar que no se necesitan antes de aprobar el esquema. No se promete ausencia de cambios ante nuevos requisitos.
 
@@ -109,3 +109,36 @@ No se detecta otra necesidad estructural para este alcance. Acceso individual po
 3. Aprobar formularios, tipos/mínimos, campos obligatorios y protección mínima para Salud y Protección estudiantil. Acordar identificación provisional y alertas sin estudiantes identificados.
 4. Aprobar las tres columnas propuestas y el procedimiento de autorización de cuentas/permisos; aclarar si se requiere un flujo administrativo automatizado adicional.
 5. Confirmar límites de alcance, conservación de datos, auditoría y respaldos. Estas reglas y el modelo siguen siendo propuestas; la revisión documental no sustituye aprobación humana ni pruebas de MySQL.
+
+## 6. Validación para aprobación — fase 2.3, 31 de octubre de 2026
+
+«Definido» identifica requisitos del proyecto, no aprobación de los procedimientos propuestos.
+
+| Punto | Requisito definido y cobertura | Decisión institucional pendiente |
+| --- | --- | --- |
+| 1. Seis roles | roles/usuarios/permisos/roles_permisos y límites no delegables de AD y D/SD. | Aprobar cada concesión de la matriz; definir gestión de catálogos escolares y tipos antes de habilitarla. |
+| 2. Registrador/reportante | Autoría automática en incidencias; reportante independiente en personas/versiones con nombre y condición históricos. | Identificación provisional y datos mínimos. |
+| 3. Edición previa | Borrador editable y confirmación explícita; sin autoguardado. | Si se ofrecerá guardado manual; no es necesario para corregir en pantalla. |
+| 4. Hechos protegidos | versiones/involucrados congelados; actuaciones no sobrescriben hechos. | Conservación y corrección de maestros sin reinterpretar identidad, aula o tipo históricos. |
+| 5. Rectificación/anulación | solicitudes conserva base, propuesta y decisión; historial y versiones anteriores; sin eliminación física. | Motivos y criterios de revisión. |
+| 6. Independencia | D/SD diferente del solicitante por persona/cuenta al evaluar y decidir; evaluador puede decidir. | Aprobar procedimiento, sin autoaprobación tras cambio de rol. |
+| 7. Reuniones/actas | revisiones distingue exigencia/celebración; participantes relacionales y acta congelada cuando corresponda. | Criterios, composición, quórum y subsanación; no exigir reunión a todos los casos. |
+| 8. Conflictos | conflictos_interes/historial bloquean gestión, evaluación, revisión y decisión; no descartar conflicto propio. | Criterios y escalamiento si ambas autoridades están impedidas; mientras tanto bloquear decisión. |
+| 9. Formularios | Seis categorías en tipos/versiones, campos escalares y mínimos por tipo; campos ajenos NULL. | Aprobar campos, vocabularios y mínimos; no son formularios implementados. |
+| 10. Estudiantes/apoderados | personas/estudiantes/estudiantes_apoderados/aulas/matriculas: vínculos múltiples y vigencias, identidad alternativa y matrícula histórica. | Conciliación, identificación provisional y apoderado principal. |
+| 11. Confidencialidad | Nivel por expediente y filtros sobre contenido derivado, historial y PDF; participar no concede lectura. | Restringidos, mínimos por categoría, recepción sensible sin acceso posterior, conservación y respaldos. |
+| 12. Consistencia | 19 tablas con responsabilidades y relaciones necesarias; FK compuestas y transacciones propuestas. | Aprobar consolidación; restricciones e índices aún no probados en MySQL. |
+
+### Problemas encontrados
+
+- Tres columnas figuraban solo en las reglas: se consolidan en DISENO.md como propuesta, conservando 19 tablas.
+- requiere_revision/fundamento_revision eran obligatorios desde crear la solicitud, aunque evalúa después una autoridad independiente. Se proponen NULL junto con evaluador/fecha hasta evaluar; NULL nunca equivale a exención.
+- El bloqueo por conflicto tenía distinto alcance entre documentos: se armoniza para gestión, evaluación, revisión y decisión.
+- La matriz no detalla quién gestiona personas, apoderados, aulas, matrículas y tipos: acordarlo antes de implementar esas acciones, sin inferir acceso de AD a expedientes.
+- No se detecta necesidad de otras tablas para el alcance conocido. Las ampliaciones de DISENO.md sección 10 siguen fuera de alcance; un flujo administrativo automatizado requeriría diseño explícito si se solicita.
+
+### Recomendación
+
+Presentar las 19 tablas consolidadas para aprobación junto con la sección 5 y las decisiones de esta matriz. No declarar definitivo el modelo ni generar SQL hasta registrar respuestas institucionales, ajustes aceptados y exclusiones de alcance. Si se exigen nuevas relaciones, revisarlas sin forzar el número de tablas.
+
+Revisión exclusivamente conceptual de columnas, nulabilidad, relaciones y flujos. Sin pruebas MySQL ni seguridad implementada. Sin cambios del servidor, interfaz, dependencias o logo; no se repite npm test por esta revisión documental.
