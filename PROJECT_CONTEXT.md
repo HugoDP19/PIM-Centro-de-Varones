@@ -56,12 +56,12 @@ Fase 1 completada con estas verificaciones:
 
 - `database/DISENO.md`: propuesta consolidada de 19 tablas, con identidad común, aulas, apoderados múltiples, participantes, versiones, solicitudes y auditoría. Revisión conceptual de 15 casos: 14 recorridos operativos y el bloqueo cuando ambas autoridades están impedidas.
 - `database/REGLAS_FUNCIONALES.md`: matriz de permisos de seis roles, edición por niveles, seis formularios, confidencialidad y aprobación independiente. No se ha aprobado el modelo ni generado esquema SQL, migraciones o datos demo.
-- Se proponen tres columnas adicionales, todavía no incorporadas a DISENO.md: `solicitudes_cambio.id_evaluador`, `solicitudes_cambio.evaluada_en` y `revisiones.requiere_reunion`. No requieren nuevas tablas.
+- Se proponen tres columnas adicionales, consolidadas en DISENO.md durante la fase 2.3: `solicitudes_cambio.id_evaluador`, `solicitudes_cambio.evaluada_en` y `revisiones.requiere_reunion`. No requieren nuevas tablas.
 - Commits conservados: `ab0d754` (diseño inicial), `44a56de` (simplificación), `b9d0e51` (revisión integral) y `cf51f7e` (reglas funcionales). La propuesta vigente sustituye las alternativas anteriores sin reescribir su historial.
 
 ## Decisiones antes de generar el esquema
 
-1. Aprobar las 19 tablas y los tres ajustes de columnas; contrastar ambos documentos antes de elaborar SQL.
+1. Aprobar las 19 tablas y los tres ajustes de columnas; ambos documentos contrastados en fase 2.3; registrar aprobación antes de elaborar SQL.
 2. Aprobar permisos, alcance de Docente/Auxiliar y Coordinador, acceso restringido, exportación PDF y recepción de reportes sensibles sin acceso posterior del registrador.
 3. Definir revisión documental frente a reunión/acta, composición, quórum, cierre/reapertura y escalamiento si Director y Subdirector están impedidos. Hasta entonces, la decisión queda bloqueada; no se delega al Administrador.
 4. Validar formularios, mínimos por tipo, identidad provisional, campos obligatorios y conservación de datos sensibles.
@@ -76,3 +76,13 @@ Fase 1 completada con estas verificaciones:
 - El PR de cierre se titula `docs(database): definir modelo y reglas funcionales`. La publicación e integración se verifican contra GitHub y las referencias remotas al terminar; esta actualización se prepara antes del merge.
 - En otra computadora: clonar el repositorio, cambiar a `develop`, ejecutar `npm ci` y `npm test`. Consultar README.md, AGENTS.md y ambos documentos de database/ antes de continuar. Crear una nueva rama `feature/` para la siguiente tarea autorizada.
 - Configurar `.env` localmente a partir de `.env.example`; nunca copiar credenciales al repositorio. No comenzar SQL ni migraciones hasta aprobar las decisiones pendientes.
+
+## Avance de fase 2.3 — 31 de octubre de 2026
+
+- Revisión documental terminada; aprobación institucional pendiente. Se leyeron AGENTS.md, este contexto, README.md y los dos documentos de database/.
+- Inicio limpio en develop; HEAD y origin/develop coincidían en f8b3ce2, confirmado con git ls-remote. PR #1 integrado según el contexto recibido; rama de trabajo feature/validacion-modelo creada desde ese commit. Sin push ni PR en esta sesión.
+- REGLAS_FUNCIONALES.md sección 6 contiene contraste de los 12 puntos, requisitos definidos, problemas y decisiones pendientes. Las 19 tablas se conservan; no se detecta necesidad de relaciones adicionales para el alcance conocido.
+- DISENO.md consolida como propuesta id_evaluador, evaluada_en y requiere_reunion. Evaluador/fecha/requiere_revision/fundamento_revision quedan NULL hasta evaluación independiente y se completan juntos; no se resuelve sin evaluar. Se armoniza bloqueo por conflicto para gestión, evaluación, revisión y decisión.
+- Pendiente adicional explícito: acordar permisos para gestionar personas, apoderados, aulas, matrículas y tipos. No inferir acceso del Administrador a expedientes.
+- Siguiente paso: obtener y registrar decisiones institucionales sobre matriz, revisión/reunión/acta, conflictos y doble impedimento, formularios/mínimos, identidad, confidencialidad, conservación y ajustes del modelo. Presentar la propuesta consolidada; no generar SQL hasta aprobarla.
+- Sin cambios de servidor, interfaz, dependencias, logo ni secretos. Validación conceptual y revisión de diff; npm test no se repite por cambios solo documentales. MySQL real, restricciones SQL y seguridad implementada siguen sin verificarse.
