@@ -2,6 +2,8 @@
 
 Fase 2.1 · 30 de octubre de 2026 · **Propuesta para revisión humana; no aprobada**.
 
+Aclaraciones de fase 2.4 (31 de octubre de 2026): se conservan las 19 tablas y las columnas propuestas; las reglas consolidadas y las decisiones institucionales están en REGLAS_FUNCIONALES.md. No se amplía automáticamente el modelo.
+
 Institución: I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
 
 ## 1. Resultado y alcance
@@ -68,6 +70,8 @@ Aulas evita repetir y contradecir año/nivel/grado/sección en cada matrícula. 
 El registrador se toma de la sesión; nombre, rol e instante son fijados por el servidor. El reportante se selecciona separadamente y puede coincidir o no con él. `condicion_reportante`: personal, estudiante, apoderado o externo, indicando cómo reportó en ese momento. Validar contra personas/estudiantes/estudiantes_apoderados según proceda; conservar la condición aunque después cambie. Un reportante externo usa la misma FK personas y puede reaparecer sin duplicar identidad.
 
 La incidencia tiene cero, uno o varios estudiantes; verificar al confirmar el mínimo del tipo, que puede ser cero. No hay mínimo global de dos. `involucrados` pertenece a la versión para conservar el conjunto anterior tras una rectificación. Se propone una participación principal por estudiante: afectado, testigo o involucrado; no presume culpabilidad. La matrícula es opcional si se desconoce el contexto, pero debe pertenecer al mismo estudiante y al periodo del hecho cuando la fecha sea conocida.
+
+**Límite de participantes del hecho:** involucrados solo admite estudiantes; personas no establece por sí sola relación de un adulto testigo con una versión. Si una madre reporta y dos trabajadores son testigos sin participar en revisión, esas dos relaciones no caben correctamente; no usar participantes_revision ni listas en texto para sustituirlas. Si se confirma ese requisito, evaluar generalizar involucrados a personas, con matrícula exclusiva para estudiantes y validación del mínimo estudiantil, conservando el vínculo por versión. Es una alternativa mínima sin tabla adicional, **no incorporada a las columnas ni claves propuestas**; requiere aprobación y revisión de referencias/historia antes de aplicarse.
 
 Estados de incidencia: borrador, confirmada, en_seguimiento, cerrada, anulada. Prioridades: baja, normal, alta, urgente. Gravedad disciplinaria: NULL si no aplica; por_evaluar, leve, grave o muy_grave como vocabulario propuesto. Urgencia de atención no implica gravedad disciplinaria. Tipos de actuación: actuacion, observacion. Son dominios cerrados, sujetos a validación institucional donde se indica.
 
@@ -190,6 +194,8 @@ Bloquear la fila de incidencia al confirmar/presentar/resolver. Solo una solicit
 La revisión formal se exige solo según criterios institucionales. Cuando corresponda, registrar personas, función, asistencia y acta; validar composición/quórum acordados antes de concluir. Antes de aprobar, comprobar que la revisión obligatoria esté concluida, que corresponda a la solicitud y que exista acta si era exigida. Una conclusión formal no sustituye la decisión independiente. Si Director y Subdirector están impedidos, la solicitud permanece pendiente y bloqueada por sus conflictos; registrar el bloqueo en historial. **No inventar un sustituto, otorgar facultad al Administrador ni aprobar automáticamente**: el colegio debe autorizar el procedimiento de escalamiento.
 
 **R7. Confidencialidad y auditoría.** Niveles propuestos: interna, restringida. La matriz de permisos por rol distingue lectura/acción y acceso restringido, con denegación por defecto; pertenecer a la institución no concede acceso. Aplicar filtros en servidor a expediente, versiones, actuaciones, revisiones, historial, búsquedas y reportes. Elevar protección es una acción protectora auditada; bajarla exige solicitud independiente y validación de que la propuesta sigue siendo aplicable. Las lecturas de datos sensibles y exportaciones se auditan sin copiar todo el contenido. Alcance exacto por rol pendiente de aprobación.
+
+La confidencialidad de incidencias cubre el expediente entero, incluidas personas enlazadas en ese contexto: permite proteger testigos restringiendo todo el caso, sin columnas adicionales. No permite dar acceso al caso y ocultar solo un testigo a ese lector. La propuesta de fase 2.4 restringe Salud, Protección estudiantil y cualquier categoría con testigos confidenciales, presunta violencia o vulneración de derechos. Antes de bajar protección, comprobar todo el contenido histórico conservado; no basta retirar datos de la versión vigente. Si se requiere acceso parcial o relaciones de testigos adultos, resolver esos límites con la institución antes de aprobar el modelo.
 
 Historial append-only en la misma transacción que la operación; sin actualizaciones ni borrados desde la aplicación. La cuenta SQL de ejecución no tendrá DDL ni DELETE sobre tablas históricas; restringir UPDATE del historial. RESTRICT por sí solo no impide borrar todas las filas ni protege el contenido de una versión: controles de servidor y privilegios son complementarios. Hash seguro de contraseñas, sesiones protegidas/cookies httpOnly, transporte y respaldos protegidos se implementarán después. No afirmar que ya existen ni que el esquema garantiza por sí solo confidencialidad.
 

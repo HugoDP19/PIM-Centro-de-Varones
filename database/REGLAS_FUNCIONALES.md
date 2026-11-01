@@ -1,10 +1,16 @@
 # SICE-Local: reglas funcionales propuestas
 
-Fase 2.2 · 30 de octubre de 2026 · **Pendiente de aprobación institucional**.
+Fase 2.4 · 31 de octubre de 2026 · **Reglas consolidadas para aprobación institucional; no implementadas**.
 
 Institución: I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
 
-Complementa [DISENO.md](DISENO.md), armonizado como propuesta en fase 2.3, sin declarar aprobado el modelo. Se mantienen las 19 tablas; se proponen ajustes puntuales de columnas. No se implementan SQL, JavaScript ni autoguardado.
+Complementa [DISENO.md](DISENO.md), sin declarar aprobado el modelo. Se mantienen las 19 tablas propuestas y los ajustes de fase 2.3. No se implementan SQL, JavaScript ni autoguardado.
+
+## Estado de las reglas
+
+- **Acordado para el proyecto:** seis roles; AD solo administra cuentas y permisos autorizados, sin acceso al contenido de incidencias; autoría automática y reportante independiente; corrección antes de confirmar; hechos confirmados protegidos; seguimiento por adición; solicitud justificada, decisión independiente, sin autoaprobación ni eliminación física; protección de información sensible desde el backend.
+- **Propuesta recomendada:** alcances I/P/R de la matriz, criterios de revisión, mínimos de confidencialidad, campos O/C/opcionales y condiciones de cierre/reapertura descritos abajo. Su consolidación no los convierte en procedimientos del colegio.
+- **Validación del Director o Subdirector:** decisiones de la sección 5. La autoridad que valide un procedimiento no queda habilitada para resolver un caso en el que tenga conflicto. No se inicia el esquema definitivo hasta registrar las decisiones aceptadas y sus límites.
 
 ## 1. Matriz de permisos
 
@@ -23,6 +29,7 @@ Propuesta inicial, no autorización vigente. D: Director; SD: Subdirector; CT: C
 | Cambiar prioridad o elevar confidencialidad | R | R | I | P | P | — |
 | Cerrar o reabrir caso con motivo | R | R | I | — | — | — |
 | Solicitar rectificación o anulación | R | R | I | P | P | — |
+| Evaluar exigencia de revisión formal | R | R | — | — | — | — |
 | Revisar solicitud y emitir conclusión, sin decidir | R | R | I | — | — | — |
 | Aprobar o rechazar solicitud | R | R | — | — | — | — |
 | Anular lógicamente como efecto de aprobación | R | R | — | — | — | — |
@@ -38,6 +45,8 @@ Salud y Protección estudiantil se clasifican como restringidas por defecto; cua
 
 **Administración:** AD no consulta ni modifica expedientes, no genera sus PDF y no puede concederse permisos de incidencias ni cambiar su propio rol. D/SD autorizan cambios de cuentas y permisos; AD los ejecuta dentro de límites no delegables. No pueden autorizar cambios sensibles sobre su propia cuenta. La autorización y ejecución se auditan con sus actores y destinos; deben corresponder al mismo cambio concreto. El historial es evidencia, no un mecanismo para ejecutar instrucciones. El procedimiento de autorización institucional debe acordarse antes de habilitar cambios sensibles; no se supone ya implementado un flujo de aprobación de cuentas.
 
+Administrar cuentas permite únicamente consultar la identidad del personal necesaria para identificar la cuenta y ejecutar el cambio autorizado; no habilita búsquedas de estudiantes, apoderados, reportantes ni lectura del historial de expedientes. La gestión de catálogos escolares y tipos sigue sin asignación aprobada; no se incluye implícitamente en administración de usuarios. Los reportes, listados y PDF respetan el mismo alcance de lectura, con permiso de exportación separado.
+
 ## 2. Tres niveles de modificación
 
 | Nivel | Regla funcional | Evidencia conservada |
@@ -47,6 +56,8 @@ Salud y Protección estudiantil se clasifican como restringidas por defecto; cua
 | Rectificación/anulación | Solicitud justificada con versión base; autoridad independiente aprueba o rechaza. Cambiar hechos incluye descripción, tipo, reportante, estudiantes, fecha o gravedad. | Propuesta y versión anterior, resolución, revisiones y actas cuando correspondan; anulación solo lógica. |
 
 Cerrar exige una actuación de conclusión, motivo y ausencia de solicitudes pendientes; no equivale a anular. Reabrir exige motivo y permiso; no restaura una incidencia anulada. Las actuaciones pendientes se revisan antes del cierre, sin crear un sistema adicional de tareas.
+
+Después de confirmar, incluso una errata en los hechos pasa por solicitud; su menor impacto puede simplificar la revisión, nunca permitir edición directa. Una modificación crítica es una rectificación o anulación sometida a controles adicionales, no un tercer tipo de solicitud ni una tabla nueva. Los criterios del punto 3 son recomendaciones sujetas a validación; mientras no se acuerden, no se presume exención de revisión o acta.
 
 ### Solicitud y resolución
 
@@ -58,6 +69,33 @@ Cerrar exige una actuación de conclusión, motivo y ausencia de solicitudes pen
 6. Bloquear la incidencia y revalidar versión base, permisos, revisión y conflictos en la transacción. Solo una solicitud pendiente por caso. Una propuesta obsoleta requiere reevaluación. Aplicar resolución, versión vigente/estado e historial atómicamente; conservar incluso propuestas rechazadas o retiradas.
 
 Una autoridad con conflicto no gestiona, revisa ni decide el caso; puede declarar su inhibición y aportar información como parte por el canal institucional, sin ejercer autoridad. No puede descartar su propio conflicto. Si el Director solicita, resuelve el Subdirector solo si está habilitado y es independiente, y viceversa. **Si ambos están impedidos, se bloquea la decisión, la solicitud queda pendiente y se registra el motivo; el escalamiento institucional sigue por definir.** AD no actúa como sustituto.
+
+### Evidencia de cada etapa
+
+| Etapa | Actor, instante, motivo y resultado conservados |
+| --- | --- |
+| Solicitud | solicitudes_cambio: id_solicitante/id_rol_solicitante, creada_en, justificacion, tipo, estado y versión base/propuesta. |
+| Evaluación independiente | id_evaluador, evaluada_en, fundamento_revision y requiere_revision; los cuatro NULL hasta evaluar, luego completos juntos. Historial conserva actor/rol, cambios y reevaluaciones. |
+| Revisión formal | revisiones: id_responsable, abierta_en/cerrada_en, motivo, conclusion y estado; participantes_revision identifica personas y funciones. Reunión/acta solo según exigencias aprobadas. Historial identifica quién abre, concluye y emite el acta. |
+| Resolución | id_decisor/id_rol_decisor, decidida_en, fundamento_decision y estado aprobada/rechazada; efecto sobre versión o anulación e historial en una transacción. |
+
+Revisor responsable, evaluador y decisor deben ser independientes del solicitante y sin impedimento; no se exige que sean tres personas diferentes. Conservar rol ejercido mediante historial donde no haya columna histórica específica. Las fechas de registro, evaluación y decisión las fija el servidor; la fecha declarada de una actuación no reemplaza su fecha de registro.
+
+### Confidencialidad por contenido
+
+Propuesta de clasificación mínima, a validar por D/SD. La categoría orienta, pero nunca rebaja la protección necesaria por el contenido:
+
+| Caso | Nivel recomendado y alcance |
+| --- | --- |
+| Salud y Protección estudiantil | Restringida desde captura, incluidas versiones y seguimiento. |
+| Testigo confidencial, presunta violencia o vulneración de derechos, en cualquier categoría | Restringir todo el expediente; no basta ocultar el nombre en una pantalla o PDF. No se presume responsabilidad por esta clasificación. |
+| Convivencia, Disciplina, Seguridad o Bienes sin contenido sensible | Interna según matriz, nunca lectura general para todo el personal. Elevar a restringida si aparecen datos sensibles. |
+
+El modelo aplica confidencialidad al expediente completo. Un estudiante testigo se relaciona en involucrados con participacion=testigo y su identidad queda bajo esa protección. No se promete anonimato frente a las autoridades autorizadas ni acceso parcial por campo. Los datos de personas enlazadas tampoco pueden obtenerse por rutas de catálogo para eludir la restricción del expediente.
+
+El backend deberá comprobar sesión, acción, alcance, estado y conflictos en cada lectura o escritura; filtrar también consultas por ID, búsquedas, contadores, historial y exportaciones. Validar la sensibilidad al confirmar, agregar actuaciones y resolver solicitudes; si el nuevo contenido exige mayor protección, elevarla en la misma transacción antes de exponerlo. La recepción de un reporte sensible por un registrador sin acceso posterior sigue pendiente de aprobación como procedimiento; no concede lectura por haberlo creado.
+
+Bajar confidencialidad exige solicitud y decisión independiente y debe considerar **todas las versiones, actuaciones y actas conservadas**, no solo la versión vigente. Si el historial contiene un testigo confidencial o información sensible, no bajar el nivel del expediente completo. Ejemplo: quitar un nombre de la versión nueva no autoriza exponer la versión anterior. No registrar datos sensibles innecesarios en títulos, mensajes de error o constancias. Estos son requisitos para implementar después; todavía no hay controles de autorización desarrollados.
 
 ## 3. Formularios dinámicos
 
@@ -84,6 +122,8 @@ Etiquetas de interfaz más descriptivas **no crean categorías adicionales**. Se
 
 El backend valida cada campo según el tipo y rechaza campos de otras categorías; no basta ocultarlos en pantalla. Los mínimos por tipo se configuran antes de usarlo; no se cambian para reinterpretar casos históricos. En datos desconocidos no se exige texto ficticio: si un tipo no permite confirmar sin identidad de estudiante, se debe acordar un tipo de alerta general, no fabricar una persona.
 
+En los campos generales, son obligatorios al confirmar tipo, título, descripción, prioridad, confidencialidad y reportante con condición e identidad histórica; autoría y fechas automáticas también son obligatorias. Ocurrencia y lugar pueden quedar NULL si se desconocen. Estudiante y participación son obligatorios en cada fila de involucrados, pero el conjunto puede estar vacío si el tipo lo admite; matrícula es condicional cuando se conoce. Documento, teléfono y correo no se vuelven obligatorios por registrar un hecho. No asumir respuestas booleanas ni inventar síntomas o riesgos: si los mínimos del formulario no describen un caso real, validar el tipo/formulario con la institución antes de usarlo.
+
 ## 4. Contraste con las 19 tablas
 
 | Regla | Cobertura y ajuste propuesto |
@@ -100,7 +140,9 @@ El backend valida cada campo según el tipo y rechaza campos de otras categoría
 
 **Resultado:** las reglas propuestas son compatibles con las 19 tablas y tres columnas adicionales, sujetas a revisión. En fase 2.3 se incorporan también a DISENO.md como propuesta, no como aprobación. Evaluador, fecha, requiere_revision y fundamento_revision son NULL hasta evaluar y se completan juntos; sin evaluación no se resuelve. Mantener FK compuestas de versión/solicitud/revisión y validación de matrícula; no se requiere cambiar esas relaciones. Antes del SQL, incorporar los ajustes que se aprueben y revalidar los dominios y nulabilidad.
 
-No se detecta otra necesidad estructural para este alcance. Acceso individual por expediente, votaciones/firmas, varios reportantes, inventario o un flujo administrativo automatizado sí ampliarían el alcance y no están resueltos con texto libre. Confirmar que no se necesitan antes de aprobar el esquema. No se promete ausencia de cambios ante nuevos requisitos.
+Las 19 tablas cubren estas reglas con protección del expediente completo y participantes estudiantiles en los hechos. Acceso individual por expediente, votaciones/firmas, varios reportantes, inventario o un flujo administrativo automatizado ampliarían el alcance. No se promete ausencia de cambios ante nuevos requisitos.
+
+**Límite concreto a validar:** una madre reporta y dos trabajadores adultos son testigos confidenciales del mismo hecho, sin asistir a revisión. personas puede identificarlos, pero versiones solo relaciona un reportante e involucrados solo estudiantes. participantes_revision no debe usarse para fingir asistencia ni descripcion para esconder una lista de identidades. La protección del expediente sí cabe en el nivel restringido; la relación de esos testigos adultos con el hecho no está cubierta. Si se exige, la corrección mínima a evaluar es generalizar involucrados a personas con matrícula solo para estudiantes, manteniendo 19 tablas y revisando claves, validaciones e historia. **No se aplica ese cambio:** confirmar primero si la institución necesita esa relación. Si exige ocultar un testigo a un lector que sí ve el resto del caso, también se debe revisar el acceso parcial; el nivel por expediente no lo resuelve.
 
 ## 5. Decisiones pendientes
 
@@ -109,8 +151,11 @@ No se detecta otra necesidad estructural para este alcance. Acceso individual po
 3. Aprobar formularios, tipos/mínimos, campos obligatorios y protección mínima para Salud y Protección estudiantil. Acordar identificación provisional y alertas sin estudiantes identificados.
 4. Aprobar las tres columnas propuestas y el procedimiento de autorización de cuentas/permisos; aclarar si se requiere un flujo administrativo automatizado adicional.
 5. Confirmar límites de alcance, conservación de datos, auditoría y respaldos. Estas reglas y el modelo siguen siendo propuestas; la revisión documental no sustituye aprobación humana ni pruebas de MySQL.
+6. Validar protección de testigos y presunta violencia en cualquier categoría, protección del historial al reducir confidencialidad y si se necesitan testigos adultos relacionados o acceso parcial. Resolver el caso límite de la sección 4 antes de declarar cobertura completa. Acordar además permisos de gestión de catálogos escolares y tipos; AD solo administra cuentas/permisos.
 
 ## 6. Validación para aprobación — fase 2.3, 31 de octubre de 2026
+
+Balance histórico de fase 2.3. La fase 2.4 precisa confidencialidad y añade el caso límite de testigos adultos en la sección 4; no interpretar el balance anterior como cobertura de esa ampliación.
 
 «Definido» identifica requisitos del proyecto, no aprobación de los procedimientos propuestos.
 
@@ -137,7 +182,7 @@ No se detecta otra necesidad estructural para este alcance. Acceso individual po
 - La matriz no detalla quién gestiona personas, apoderados, aulas, matrículas y tipos: acordarlo antes de implementar esas acciones, sin inferir acceso de AD a expedientes.
 - No se detecta necesidad de otras tablas para el alcance conocido. Las ampliaciones de DISENO.md sección 10 siguen fuera de alcance; un flujo administrativo automatizado requeriría diseño explícito si se solicita.
 
-### Recomendación
+### Recomendación de fase 2.3
 
 Presentar las 19 tablas consolidadas para aprobación junto con la sección 5 y las decisiones de esta matriz. No declarar definitivo el modelo ni generar SQL hasta registrar respuestas institucionales, ajustes aceptados y exclusiones de alcance. Si se exigen nuevas relaciones, revisarlas sin forzar el número de tablas.
 
