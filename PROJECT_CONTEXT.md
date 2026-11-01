@@ -1,5 +1,13 @@
 # Contexto de SICE-Local
 
+## Inicio de fase 2.6 — 1 de noviembre de 2026
+
+- Revisados AGENTS.md, este contexto, DISENO.md, REGLAS_FUNCIONALES.md y schema.sql. Rama comprobada: `feature/validacion-modelo`; árbol limpio al iniciar. El usuario autoriza validar exclusivamente en `sice_pruebas`, sin aprobar procedimientos institucionales ni ampliar funcionalidades.
+- `.env` local preparado desde la configuración de ejemplo con DB_HOST=127.0.0.1, DB_PORT=3306, DB_USER=root y DB_NAME=sice_pruebas. DB_PASSWORD está pendiente de configuración local por el usuario; no enviarla al chat. `.env` está ignorado por Git y no está versionado.
+- Sin conexión ni consultas MySQL en esta sesión: no se ha comprobado existencia/contenido de `sice_pruebas`, creado tablas ni ejecutado pruebas de integridad. MySQL 8.0.46 disponible según el usuario; versión y conexión aún no verificadas desde este proyecto. schema.sql permanece sin correcciones, al no existir errores demostrados en el motor.
+- Dependencias ausentes al inicio. `npm.cmd ci --no-audit --no-fund` no terminó y se interrumpió; `npm.cmd test` falló por Express no instalado (ERR_MODULE_NOT_FOUND). No hay cambios de servidor, interfaz o dependencias declaradas.
+- Fase 2.6 pendiente: tras configurar DB_PASSWORD, completar instalación de dependencias, conectar, inspeccionar exclusivamente la base autorizada sin sobrescribir datos, ejecutar el esquema donde sea seguro y comprobar PK/FK/índices/CHECK e integridad con transacciones revertidas. Sin push ni Pull Request.
+
 ## Institución y alcance
 
 I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; el personal y los reportantes pueden ser hombres o mujeres. Utilizar el escudo oficial de image/.
