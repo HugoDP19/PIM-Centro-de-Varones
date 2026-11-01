@@ -4,7 +4,7 @@
 
 I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; el personal y los reportantes pueden ser hombres o mujeres. Utilizar el escudo oficial de image/.
 
-Repositorio exclusivo: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Fase 1 implementada; fases 2.1 y 2.2 documentadas como propuestas pendientes de aprobación. Los siguientes requisitos son futuros, no funcionalidades implementadas.
+Repositorio exclusivo: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Fase 1 implementada; diseño y reglas consolidados hasta fase 2.4 como propuestas pendientes de aprobación. Los siguientes requisitos son futuros, no funcionalidades implementadas.
 
 ## Requisitos funcionales pendientes
 
@@ -86,3 +86,12 @@ Fase 1 completada con estas verificaciones:
 - Pendiente adicional explícito: acordar permisos para gestionar personas, apoderados, aulas, matrículas y tipos. No inferir acceso del Administrador a expedientes.
 - Siguiente paso: obtener y registrar decisiones institucionales sobre matriz, revisión/reunión/acta, conflictos y doble impedimento, formularios/mínimos, identidad, confidencialidad, conservación y ajustes del modelo. Presentar la propuesta consolidada; no generar SQL hasta aprobarla.
 - Sin cambios de servidor, interfaz, dependencias, logo ni secretos. Validación conceptual y revisión de diff; npm test no se repite por cambios solo documentales. MySQL real, restricciones SQL y seguridad implementada siguen sin verificarse.
+
+## Avance de fase 2.4 — 31 de octubre de 2026
+
+- Cierre documental en feature/validacion-modelo, iniciado con árbol limpio. Base local de fase 2.3: 917b387 (modelo/reglas) y 347ba9f (contexto). Sin push ni PR.
+- REGLAS_FUNCIONALES.md distingue requisitos acordados, recomendaciones y validaciones D/SD. Conserva matriz de seis roles y formularios O/C/opcionales; explicita evaluación independiente, evidencia de solicitud/revisión/resolución, límites administrativos y cambios críticos sin nuevo tipo de solicitud.
+- Confidencialidad propuesta: expediente completo restringido para Salud, Protección estudiantil, testigos confidenciales y presunta violencia/vulneración en cualquier categoría. Incluye historial y personas enlazadas; bajar protección exige revisar también versiones anteriores. Controles backend documentados, todavía no implementados.
+- Se mantienen 19 tablas, sin cambios de columnas o claves en esta fase. DISENO.md aclara el límite de involucrados: solo estudiantes. Caso pendiente: madre reportante y dos trabajadores testigos sin asistir a revisión; no existe relación de esos testigos adultos con el hecho. Si se requiere, evaluar generalizar involucrados a personas con matrícula solo estudiantil, sin ejecutar el ajuste automáticamente. Acceso parcial dentro de un expediente tampoco está cubierto por su nivel único.
+- Siguiente paso: registrar validación institucional de matriz, formularios/mínimos, revisión/reunión/acta, conflictos y escalamiento, confidencialidad/conservación, permisos de catálogos y alcance de testigos adultos/acceso parcial. Si ambas autoridades están impedidas, bloquear aprobación; no inventar sustitución. No comenzar SQL ni otra fase hasta resolver las decisiones y autorizar su implementación.
+- Verificación de esta fase: contraste documental de reglas, columnas y relaciones; git diff --check sin errores. No se ejecuta npm test porque solo cambia documentación. Sin SQL, migraciones, JavaScript, interfaces, dependencias o cambios del logo; MySQL real y seguridad siguen sin probarse.
