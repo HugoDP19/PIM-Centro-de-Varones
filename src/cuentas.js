@@ -72,8 +72,7 @@ export function rutasCuentas(pool) {
   });
   router.post('/autorizaciones/:id/ejecutar', autorizar('cuentas.administrar'), async (req, res) => {
     if (Object.keys(req.body || {}).some((c) => c !== 'contrasena')) rechazar(400, 'La ejecución no admite cambiar los datos autorizados.');
-    if (req.body?.contrasena !== undefined && (typeof req.body.contrasena !== 'string' || req.body.contrasena.length < 15 || Buffer.byteLength(req.body.contrasena) > 256)) rechazar(400, 'La nueva contraseña debe tener al menos 15 caracteres y como máximo 256 bytes.');
-    const hash = req.body?.contrasena ? await crearHash(req.body.contrasena) : null;
+    const hash = req.body?.contrasena !== undefined ? await crearHash(req.body.contrasena) : null;
     await transaccion(pool, async (db) => {
       const datos = await consultas.autorizacion(db, validarIdentificador(req.params.id));
       if (!datos || datos.ejecutada_en || datos.vence_en.getTime() <= Date.now()) rechazar(409, 'La autorización no está pendiente o ha vencido.');
@@ -82,7 +81,7 @@ export function rutasCuentas(pool) {
       if (!autor?.activo || !autor.persona_activa || !tienePermiso(await cargarPermisos(db, autor), 'cuentas.autorizar')) rechazar(403, 'La autoridad que autorizó ya no está habilitada.');
       await validarObjetivo(db, autor, datos);
       await validarObjetivo(db, req.usuario, datos);
-      if (['crear_cuenta', 'restablecer_clave'].includes(datos.tipo) !== Boolean(hash)) rechazar(400, 'La creación o restablecimiento requiere una contraseña nueva de al menos 15 caracteres.');
+      if (['crear_cuenta', 'restablecer_clave'].includes(datos.tipo) !== Boolean(hash)) rechazar(400, 'Solo la creación o restablecimiento requiere una contraseña nueva válida.');
       let objetivo = datos.id_usuario_objetivo;
       if (datos.tipo === 'crear_cuenta') objetivo = await insertar(db, 'usuarios', { id_persona: datos.id_persona, id_rol: datos.id_rol_objetivo,
         nombre_usuario: datos.nombre_usuario, activo: datos.activo, contrasena_hash: hash, creado_en: new Date() });

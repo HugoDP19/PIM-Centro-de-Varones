@@ -1,10 +1,9 @@
 import 'dotenv/config';
-import { randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 import { createDatabasePool } from '../src/database.js';
-import { crearHash, limitesPermisos } from '../src/seguridad.js';
+import { crearHash, generarContrasena, limitesPermisos } from '../src/seguridad.js';
 import { insertar, auditar } from '../src/consultas-incidencias.js';
 import { casos } from './casos-escolares.js';
 
@@ -29,7 +28,7 @@ async function clavesEscolares() {
   try { datos = dotenv.parse(await readFile(ruta)); }
   catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    datos = Object.fromEntries(personalEscolar.map(([rol]) => [`${rol.toUpperCase()}_PASSWORD`, randomBytes(24).toString('base64url')]));
+    datos = Object.fromEntries(personalEscolar.map(([rol]) => [`${rol.toUpperCase()}_PASSWORD`, generarContrasena()]));
     await writeFile(ruta, '# Solo desarrollo. Datos personales sintéticos; no compartir ni versionar.\n' + Object.entries(datos).map(([k, v]) => `${k}=${v}`).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
   }
   for (const [rol] of personalEscolar) if (!datos[`${rol.toUpperCase()}_PASSWORD`]) throw new Error('Falta una contraseña local en .env.escolar.local.');

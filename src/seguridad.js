@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, randomInt, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const derivar = promisify(scrypt);
@@ -10,9 +10,24 @@ export function resumir(valor) {
   return createHash('sha256').update(valor).digest('hex');
 }
 
+export function contrasenaValida(contrasena) {
+  return typeof contrasena === 'string' && contrasena.length >= 8 && contrasena.length <= 12
+    && /[A-Z]/.test(contrasena) && /[a-z]/.test(contrasena) && /[0-9]/.test(contrasena)
+    && /[^A-Za-z0-9\s]/.test(contrasena);
+}
+
+export function generarContrasena() {
+  const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*?';
+  let contrasena;
+  do {
+    contrasena = Array.from({ length: 12 }, () => caracteres[randomInt(caracteres.length)]).join('');
+  } while (!contrasenaValida(contrasena));
+  return contrasena;
+}
+
 export async function crearHash(contrasena) {
-  if (typeof contrasena !== 'string' || contrasena.length < 15 || Buffer.byteLength(contrasena) > 256) {
-    throw new Error('La contraseña debe tener al menos 15 caracteres y como máximo 256 bytes.');
+  if (!contrasenaValida(contrasena)) {
+    rechazar(400, 'La contraseña debe tener entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo.');
   }
   const sal = randomBytes(16).toString('hex');
   const clave = await derivar(contrasena, sal, 64, parametros);

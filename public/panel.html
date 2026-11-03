@@ -65,7 +65,7 @@
         <div class="col-12"><button class="btn btn-primary">Registrar autorización</button></div>
       </div></form>
       <h3 class="h5 mt-4">Autorizaciones registradas</h3><div id="authorization-list"></div>
-      <form id="execution-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Ejecutar autorización seleccionada</h3><p id="execution-summary"></p><div id="execution-password-group"><label for="new-password" class="form-label">Nueva contraseña</label><input id="new-password" class="form-control" type="password" autocomplete="new-password" minlength="15" maxlength="256"><p class="form-text">Se almacena con hash. Comunícala al titular por un canal seguro.</p></div><button class="btn btn-primary mt-3">Ejecutar el cambio autorizado</button></form>
+      <form id="execution-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Ejecutar autorización seleccionada</h3><p id="execution-summary"></p><div id="execution-password-group"><label for="new-password" class="form-label">Nueva contraseña</label><input id="new-password" class="form-control" type="password" autocomplete="new-password" minlength="8" maxlength="12" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,12}" aria-describedby="password-rules"><p id="password-rules" class="form-text">Entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo. Se almacena con hash.</p></div><button class="btn btn-primary mt-3">Ejecutar el cambio autorizado</button></form>
     </section>
   </main>
   <footer class="site-footer px-4 py-3"><span>Centro de Varones · San Vicente de Cañete</span><span>Uso institucional autorizado</span></footer>

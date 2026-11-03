@@ -14,6 +14,7 @@ import { personalEscolar, cargarColeccion } from '../database/cargar-escolar.js'
 import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-incidencias.js';
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
+import { generarContrasena } from '../src/seguridad.js';
 
 async function leerEstadoOrigen(conexion) {
   const [tablas] = await conexion.query('SHOW TABLES');
@@ -316,13 +317,16 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     } finally { await db.rollback(); db.release(); }
   });
   await t.test('cuentas: autorización independiente, ejecución única, hash y límites del Administrador', async () => {
-    const clavesPrueba = { CUENTA_PASSWORD: randomBytes(24).toString('base64url') };
+    const clavesPrueba = { CUENTA_PASSWORD: generarContrasena() };
     const catalogo = await datos('cuentas/catalogos', 'director');
     const [[preexistente]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'lnavarro'");
     if (!preexistente) {
       const persona = catalogo.personas.find((p) => p.nombre === 'Luis Fernando Navarro Espinoza');
       const autorizacion = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'crear_cuenta', id_persona: persona.id, id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'lnavarro', activo: true, motivo: 'Habilitar el acceso del personal docente autorizado.' }, 201);
       assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'docente', 'POST', {})).status, 403);
+      for (const contrasena of ['Ab1!xyz', 'Abc1!xyz7890A', 'abcdef1!', 'ABCDEF1!', 'Abcdef!?', 'Abcdef12']) {
+        assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena })).status, 400);
+      }
       await datos(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD });
       assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD })).status, 409);
     }
