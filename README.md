@@ -22,7 +22,7 @@ El 2 de noviembre de 2026 se migraron a `SICE` los **24 expedientes escolares se
 
 ## Cuentas de la colección escolar
 
-Las contraseñas aleatorias de acceso se consultan localmente en `.env.escolar.local`, ignorado por Git, como `<ROL>_PASSWORD`. No compartir ni versionar ese archivo.
+Las contraseñas de acceso se consultan localmente en `.env.escolar.local`, ignorado por Git, como `<ROL>_PASSWORD`. No compartir ni versionar ese archivo. Para crear o restablecer una clave se exigen entre **8 y 12 caracteres**, con al menos una mayúscula, una minúscula, un número y un signo; el backend valida la regla y conserva el hash scrypt con sal individual. La carga nueva genera claves aleatorias que cumplen estas condiciones.
 
 La configuración se limita a `.env` (servidor/MySQL) y `.env.escolar.local` (credenciales escolares y claves anteriores conservadas). Este último también conserva `CUENTA_PASSWORD` para la cuenta adicional `rvega`, y las claves históricas con prefijos `DEMO_` y `PRUEBAS_`; no se usan para sembrar cuentas nuevas. No se regeneraron contraseñas durante la limpieza.
 
@@ -34,6 +34,9 @@ La configuración se limita a `.env` (servidor/MySQL) y `.env.escolar.local` (cr
 | `lramos` | Docente |
 | `ctorres` | Auxiliar |
 | `vgutierrez` | Administrador |
+| `rvega` | Docente (cuenta adicional de esta instalación) |
+
+Para ingresar, abrir http://127.0.0.1:3000 y escribir el usuario de la tabla y su clave local. Para cambiar de cuenta, cerrar la sesión actual. El 3 de noviembre de 2026 se restablecieron las siete claves locales por solicitud expresa del usuario; el valor se conserva únicamente en la configuración privada. Este mantenimiento no cambia roles ni permisos ni el flujo de autorización de cuentas de la aplicación.
 
 El Director o Subdirector autoriza un cambio concreto de cuenta o permiso. Un Administrador independiente lo ejecuta sin poder cambiar los datos autorizados. Se admite crear una cuenta para personal existente, actualizar rol/usuario/estado, restablecer contraseña y asignar/retirar permisos compatibles con el rol. No hay cambios sensibles sobre la propia cuenta ni autoasignación por rol; se revalidan autoridad, vigencia y estado del objetivo. La autorización vence en 24 horas, admite una sola ejecución y ambas etapas se auditan. Las contraseñas se proporcionan solo al crear/restablecer, se guardan con hash y nunca forman parte de la autorización ni del historial.
 

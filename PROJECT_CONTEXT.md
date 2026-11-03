@@ -1,5 +1,13 @@
 # Contexto de SICE-Local
 
+## Contraseñas y acceso local — 3 de noviembre de 2026
+
+- El usuario solicita la misma clave para las siete cuentas de SICE y cambia expresamente la política anterior: máximo 12 caracteres, mayúscula, minúscula, número y signo. Se establece un mínimo de ocho, comunicado antes de aplicar el cambio. La validación común se aplica al crear/restablecer claves; el login conserva compatibilidad con hashes existentes.
+- Regla central en seguridad.js; formulario con límites/patrón equivalentes y mensaje comprensible. Generación aleatoria de claves de instalación/pruebas adaptada a las nuevas condiciones. Sin contraseñas reales en código, pruebas o commits; se conserva scrypt y sal independiente.
+- Mantenimiento local solicitado, separado de las pruebas: restablecidas transaccionalmente las siete cuentas ya existentes (rsalazar, mhuaman, jparedes, lramos, ctorres, vgutierrez y rvega), verificados siete hashes distintos y revocadas sus sesiones previas. Actualizados los siete valores vigentes de `.env.escolar.local`; credenciales SQL e históricas de otras bases conservadas. No se alteran roles/permisos ni se inventan actores para la auditoría del flujo institucional.
+- Las otras 20 tablas comparadas antes/después del restablecimiento permanecen idénticas, incluidos los 24 expedientes, sus relaciones e historial. Las pruebas posteriores solo escriben en la copia temporal autorizada y comprueban que las 22 tablas de SICE no cambian durante su ejecución.
+- `npm.cmd test`: **6 aprobadas**, incluidos límites y composición. Suite MySQL con Chrome: **16 aprobadas**, incluyendo rechazo por API de claves cortas/largas o sin alguno de los cuatro tipos, creación/restablecimiento válidos, sesiones, permisos y privacidad. Sin capturas ni PDF permanentes. README actualizado con las siete cuentas y acceso local; sin push ni Pull Request.
+
 ## Verificación del aislamiento de pruebas — 2 de noviembre de 2026
 
 - Inicio limpio en `feature/incidencias-informes`, HEAD `aadfdd1`. El usuario ratifica autorización exclusiva para crear/eliminar la copia temporal propia, previa comprobación de nombre e identidad; prohíbe modificar SICE, sice_desarrollo o bases existentes durante las pruebas.
