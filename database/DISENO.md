@@ -8,7 +8,7 @@ Se conservan las 19 tablas escolares y se generaliza `involucrados.id_estudiante
 
 La fase de autenticación agregó sesiones e intentos_acceso. El flujo ahora autorizado de gestión concreta requiere autorizaciones_cuentas, que vincula objetivo, datos del cambio, autoridad, vigencia y ejecución única por otro actor; no guarda contraseñas ni usa historial como motor de instrucciones. Hay 22 tablas totales, con 19 del modelo escolar y tres técnicas de soporte. No se incorporan otras funcionalidades ni tablas por anticipación.
 
-El balance conceptual original se conserva a continuación como historial. El estado implementado y sus límites están en PROJECT_CONTEXT.md y DEMOSTRACION.md.
+El balance conceptual original se conserva a continuación como historial. El estado implementado y sus límites están en [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md) y [README.md](../README.md).
 
 Fase 2.1 · 30 de octubre de 2026 · **Propuesta para revisión humana; no aprobada**.
 
