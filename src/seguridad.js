@@ -26,15 +26,26 @@ export async function verificarHash(contrasena, guardado) {
   return timingSafeEqual(clave, Buffer.from(partes[5], 'hex')) && valido;
 }
 
-// Lista cerrada de permisos que esta fase puede reconocer. No habilita módulos futuros.
-const limites = {
+// Límites no delegables; la concesión SQL sigue siendo necesaria.
+const operativos = roles.filter((rol) => rol !== 'administrador');
+export const limitesPermisos = {
   'sesion.consultar': roles,
+  'cuentas.consultar': ['director', 'subdirector', 'administrador'],
   'cuentas.administrar': ['administrador'],
-  'cuentas.autorizar': ['director', 'subdirector']
+  'cuentas.autorizar': ['director', 'subdirector'],
+  'incidencias.registrar': operativos,
+  'incidencias.consultar': operativos,
+  'incidencias.seguimiento': operativos,
+  'incidencias.exportar': operativos,
+  'incidencias.restringidas': ['director', 'subdirector']
 };
 
 export function tienePermiso(usuario, permiso) {
-  return Boolean(limites[permiso]?.includes(usuario.rol) && usuario.permisos.includes(permiso));
+  return Boolean(limitesPermisos[permiso]?.includes(usuario.rol) && usuario.permisos.includes(permiso));
+}
+
+export function rechazar(status, mensaje) {
+  throw Object.assign(new Error(mensaje), { status, publicMessage: mensaje });
 }
 
 export function permisosEfectivos(usuario) {

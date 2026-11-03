@@ -2,6 +2,17 @@ import 'dotenv/config';
 import mysql from 'mysql2/promise';
 import { pathToFileURL } from 'node:url';
 
+export async function transaccion(pool, operacion) {
+  const db = await pool.getConnection();
+  try {
+    await db.beginTransaction();
+    const resultado = await operacion(db);
+    await db.commit();
+    return resultado;
+  } catch (error) { await db.rollback(); throw error; }
+  finally { db.release(); }
+}
+
 export function createDatabasePool(env = process.env) {
   const required = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
   const missing = required.filter((key) => !env[key]?.trim());

@@ -22,7 +22,9 @@ test('los seis roles respetan límites aunque reciban permisos incompatibles', (
     assert.equal(tienePermiso(usuario, 'sesion.consultar'), true);
     assert.equal(tienePermiso(usuario, 'cuentas.administrar'), rol === 'administrador');
     assert.equal(tienePermiso(usuario, 'cuentas.autorizar'), ['director', 'subdirector'].includes(rol));
-    assert.ok(permisosEfectivos(usuario).every((permiso) => !permiso.startsWith('incidencias.')));
+    assert.equal(tienePermiso(usuario, 'incidencias.consultar'), rol !== 'administrador');
+    assert.ok(!permisosEfectivos(usuario).includes('incidencias.modificar'));
+    assert.ok(!permisosEfectivos(usuario).includes('incidencias.eliminar'));
     assert.equal(tienePermiso({ rol, permisos: [] }, 'sesion.consultar'), false);
   }
   assert.equal(tienePermiso({ rol: 'desconocido', permisos: ['sesion.consultar'] }, 'sesion.consultar'), false);

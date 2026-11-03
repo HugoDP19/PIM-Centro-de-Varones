@@ -1,7 +1,7 @@
 import { resumir } from './seguridad.js';
 
 const seleccionUsuario = `
-  SELECT u.id, u.id_rol, u.nombre_usuario, u.contrasena_hash,
+  SELECT u.id, u.id_persona, u.id_rol, u.nombre_usuario, u.contrasena_hash,
          u.activo, p.activo AS persona_activa, p.es_personal,
          CONCAT(p.nombres, ' ', p.apellidos) AS nombre, r.codigo AS rol
   FROM usuarios u JOIN personas p ON p.id = u.id_persona

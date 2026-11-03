@@ -7,6 +7,17 @@ export function opcionesCookie(produccion) {
   return { httpOnly: true, secure: produccion, sameSite: 'strict', path: '/' };
 }
 
+export function protegerSolicitudes({ origin, produccion = false }) {
+  return (req, res, next) => {
+    if (produccion && !req.secure) return res.status(403).json({ error: 'Se requiere una conexión HTTPS.' });
+    if (!['GET', 'HEAD'].includes(req.method)) {
+      if (req.get('origin') !== origin || req.get('x-sice-request') !== '1') return res.status(403).json({ error: 'Origen de la solicitud no autorizado.' });
+      if (!req.is('application/json')) return res.status(415).json({ error: 'Envía la solicitud en formato JSON.' });
+    }
+    next();
+  };
+}
+
 function leerToken(req, nombre) {
   const valores = (req.headers.cookie || '').split(';').map((s) => s.trim()).filter((s) => s.startsWith(`${nombre}=`));
   if (valores.length !== 1) return null;
@@ -48,16 +59,9 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
 
   router.use((req, res, next) => {
     if (!pool) return res.status(503).json({ error: 'El servicio de acceso no está disponible.' });
-    if (produccion && !req.secure) return res.status(403).json({ error: 'Se requiere una conexión HTTPS.' });
-    if (!['GET', 'HEAD'].includes(req.method)) {
-      // Origin exacto + cabecera no simple; no se habilita CORS. Incluye login y logout.
-      if (req.get('origin') !== origin || req.get('x-sice-request') !== '1') {
-        return res.status(403).json({ error: 'Origen de la solicitud no autorizado.' });
-      }
-      if (!req.is('application/json')) return res.status(415).json({ error: 'Envía la solicitud en formato JSON.' });
-    }
     next();
   });
+  router.use(protegerSolicitudes({ origin, produccion }));
 
   router.post('/login', async (req, res) => {
     const { usuario, contrasena } = req.body || {};
@@ -95,7 +99,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
   });
 
   router.get('/sesion', exigirSesion, autorizar('sesion.consultar'), (req, res) => {
-    res.json({ usuario: usuarioPublico(req.usuario) });
+    res.json({ usuario: usuarioPublico(req.usuario), entorno: produccion ? 'produccion' : 'desarrollo' });
   });
 
   router.post('/logout', exigirSesion, async (req, res) => {
