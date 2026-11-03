@@ -13,9 +13,7 @@
     "test": "node --test test/server.test.js test/seguridad.test.js",
     "db:check": "node src/database.js",
     "db:prepare": "node database/preparar.js",
-    "db:demo": "node database/cargar-escolar.js",
     "test:mysql": "node --test test/desarrollo.integration.js",
-    "db:update": "node database/actualizar-desarrollo.js",
     "db:escolar": "node database/cargar-escolar.js"
   },
   "dependencies": {

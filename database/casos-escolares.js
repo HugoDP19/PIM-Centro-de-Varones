@@ -1,5 +1,5 @@
 // Relatos completamente sintéticos. Horas persistidas en UTC (Lima = UTC-5).
-// El escenario 19 se documenta en DEMOSTRACION.md: el modelo no admite testigos adultos.
+// Incluye testigos adultos; los identificadores se asignan al cargar la colección.
 export const casos = [
   {
     numero: 1, categoria: 'convivencia', tipo: 'Agresión física observada en recreo',
@@ -147,6 +147,15 @@ export const casos = [
     actuacion: 'El auxiliar coordinó el retiro de las cajas y verificó el paso libre antes del ingreso. Se informó a Dirección para mantener despejadas las rutas de circulación.'
   },
   {
+    numero: 19, categoria: 'seguridad', tipo: 'Reporte con testigo adulto protegido',
+    titulo: 'Observación reservada en el acceso al colegio', fecha: '2026-10-28 17:10:00', lugar: 'Acceso de secundaria',
+    registrador: 'subdirector', reportante: 'docente', alumnos: [[8, 'afectado']], testigo_externo: true,
+    prioridad: 'alta', estado: 'en_seguimiento', restringida: true,
+    descripcion: 'La docente comunicó que un estudiante solicitó apoyo al advertir una discusión cerca del acceso al colegio. Un trabajador externo que se encontraba en el lugar aportó información sobre el momento en que se produjo el intercambio y solicitó que su identidad se tratara de manera reservada. La autoridad recogió el reporte sin atribuir responsabilidad antes de contrastar los relatos. La persona adulta queda relacionada como testigo y no se le asigna una matrícula estudiantil.',
+    campos: { riesgo_identificado: 'Discusión próxima al acceso; secuencia pendiente de contraste.', riesgo_persistente: 0 },
+    actuacion: 'Se acompañó al estudiante y se coordinó una evaluación reservada del reporte. Se protegió el expediente completo y se dejó pendiente la verificación por la autoridad habilitada.'
+  },
+  {
     numero: 20, categoria: 'seguridad', tipo: 'Corrección documental de ubicación',
     titulo: 'Rectificación aprobada de una ubicación registrada', fecha: '2026-10-28 15:00:00', lugar: 'Pasillo de primaria',
     alumnos: [], prioridad: 'normal', estado: 'cerrada', especial: 'aprobada',
@@ -167,7 +176,7 @@ export const casos = [
     titulo: 'Registro duplicado del cable expuesto', fecha: '2026-10-19 12:35:00', lugar: 'Aula de 2.º de secundaria A',
     registrador: 'auxiliar', reportante: 'docente', alumnos: [], prioridad: 'urgente', estado: 'anulada', especial: 'duplicado',
     descripcion: 'El auxiliar recibió nuevamente la comunicación sobre el cable expuesto antes de advertir que el mismo hallazgo ya figuraba registrado. La fecha, el aula y la descripción del riesgo coincidían con el expediente original. Se solicitó la anulación lógica por duplicación y una autoridad independiente comprobó la coincidencia. Este registro conserva su contenido y referencia al expediente que continúa el seguimiento; no se fusiona ni elimina información.',
-    campos: { riesgo_identificado: 'Cable expuesto; mismo hallazgo del escenario DEMO-11.', riesgo_persistente: 1 },
+    campos: { riesgo_identificado: 'Cable expuesto; mismo hallazgo del expediente original de la instalación eléctrica.', riesgo_persistente: 1 },
     actuacion: 'Se dejó constancia de que las medidas y la verificación técnica continúan en el expediente original. La solicitud de anulación por duplicado quedó aprobada y este expediente se conserva con estado anulada.'
   },
   {

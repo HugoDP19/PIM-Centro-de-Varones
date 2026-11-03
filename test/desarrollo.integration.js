@@ -1,26 +1,98 @@
 import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import dotenv from 'dotenv';
+import mysql from 'mysql2/promise';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createDatabasePool } from '../src/database.js';
 import { createApp } from '../src/app.js';
 import { verificarEsquema, leerSentencias } from '../database/preparar.js';
-import { cargarEscolar, personalEscolar } from '../database/cargar-escolar.js';
+import { personalEscolar, cargarColeccion } from '../database/cargar-escolar.js';
 import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-incidencias.js';
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
 
+async function crearCopiaTemporal(claves) {
+  const nombre = `sice_test_${randomBytes(8).toString('hex')}`;
+  const opciones = { host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 3306),
+    user: process.env.DB_USER, password: process.env.DB_PASSWORD, dateStrings: true,
+    supportBigNumbers: true, bigNumberStrings: true };
+  const origen = await mysql.createConnection({ ...opciones, database: process.env.DB_NAME });
+  const copia = await mysql.createConnection(opciones);
+  let creada = false;
+
+  async function eliminarCopia() {
+    // Solo se borra el nombre aleatorio creado por esta ejecución, nunca una base configurada.
+    if (creada && /^sice_test_[a-f0-9]{16}$/.test(nombre)) await copia.query(`DROP DATABASE \`${nombre}\``);
+    await copia.end();
+  }
+
+  try {
+    await origen.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+    await copia.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+    creada = true;
+    await copia.changeUser({ database: nombre });
+    const orden = [];
+    for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql']) {
+      for (const sentencia of await leerSentencias(archivo)) {
+        await copia.query(sentencia);
+        const tabla = sentencia.match(/^CREATE TABLE (\w+)/)?.[1];
+        if (tabla) orden.push(tabla);
+      }
+    }
+    // La instalación y la carga se comprueban sobre tablas vacías y se revierten.
+    await copia.beginTransaction();
+    assert.deepEqual(await cargarColeccion(copia, claves), { cargadas: 24, existentes: 0 });
+    assert.deepEqual(await cargarColeccion(copia, claves), { cargadas: 0, existentes: 24 });
+    await copia.rollback();
+    const originales = {};
+    await copia.beginTransaction();
+    for (const tabla of orden) {
+      // Sesiones y límites pertenecen a la instancia activa, no a los expedientes.
+      if (['sesiones', 'intentos_acceso'].includes(tabla)) continue;
+      const [filas] = await origen.query(`SELECT * FROM \`${tabla}\``);
+      originales[tabla] = filas;
+      for (const fila of filas) {
+        let datos = fila;
+        if (tabla === 'incidencias') datos = { ...fila, estado: 'borrador', confirmada_en: null, id_version_vigente: null };
+        if (tabla === 'solicitudes_cambio') datos = { ...fila, estado: 'pendiente', id_revision_resolutiva: null,
+          id_decisor: null, id_rol_decisor: null, fundamento_decision: null, decidida_en: null };
+        const columnas = Object.keys(datos);
+        await copia.execute(`INSERT INTO \`${tabla}\` (${columnas.map(c => `\`${c}\``).join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`, Object.values(datos));
+      }
+    }
+    // Se cierran los ciclos conservando FK y CHECK activos durante toda la copia.
+    for (const tabla of ['incidencias', 'solicitudes_cambio']) {
+      for (const fila of originales[tabla]) {
+        const columnas = Object.keys(fila).filter(c => c !== 'id');
+        await copia.execute(`UPDATE \`${tabla}\` SET ${columnas.map(c => `\`${c}\` = ?`).join(', ')} WHERE id = ?`, [...columnas.map(c => fila[c]), fila.id]);
+      }
+    }
+    await copia.commit();
+    await origen.rollback();
+    return { nombre, eliminar: eliminarCopia };
+  } catch (error) {
+    await copia.rollback();
+    await eliminarCopia();
+    throw error;
+  } finally { await origen.end(); }
+}
+
 test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento y PDF', { timeout: 120000 }, async (t) => {
-  assert.equal(process.env.DB_NAME, 'sice_desarrollo');
+  assert.equal(process.env.DB_NAME, 'SICE');
   assert.equal(process.env.NODE_ENV, 'development');
-  await cargarEscolar();
   const claves = dotenv.parse(await readFile(new URL('../.env.escolar.local', import.meta.url)));
-  const pool = createDatabasePool();
-  t.after(() => pool.end());
+  const copia = await crearCopiaTemporal(claves);
+  let server, pool;
+  t.after(async () => {
+    if (server) await new Promise(resolve => server.close(resolve));
+    if (pool) await pool.end();
+    await copia.eliminar();
+  });
+  pool = createDatabasePool({ ...process.env, DB_NAME: copia.nombre });
   const [filas] = await pool.execute(`SELECT u.*, p.nombres, p.apellidos, r.codigo AS rol FROM usuarios u
     JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol WHERE p.codigo_interno LIKE 'PER-2026-00%'`);
   const usuarios = Object.fromEntries(filas.map((u) => [u.rol, u]));
@@ -28,10 +100,9 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   const ids = Object.fromEntries(escenarios.map((e) => [e.numero, e.id]));
   const [personas] = await pool.execute("SELECT p.id, p.codigo_interno, m.id AS matricula FROM personas p LEFT JOIN matriculas m ON m.id_estudiante = p.id WHERE p.codigo_interno LIKE 'EST-2026-%'");
   const alumnos = Object.fromEntries(personas.map((p) => [Number(p.codigo_interno.slice(-3)), p]));
-  const origin = 'http://127.0.0.1:3000';
-  const server = createApp({ pool, origin }).listen(0, '127.0.0.1');
+  let origin = 'http://127.0.0.1:3000';
+  server = createApp({ pool, origin }).listen(0, '127.0.0.1');
   await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
   const peticion = (ruta, rol, method = 'GET', body, headers = {}) => fetch(`${base}/api/${ruta}`, {
     method, headers: { ...(cookies[rol] ? { Cookie: cookies[rol] } : {}), ...(method !== 'GET' ? { 'Content-Type': 'application/json', Origin: origin, 'X-SICE-Request': '1' } : {}), ...headers },
@@ -87,7 +158,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   });
   await t.test('colección de 24 expedientes, adulto sin matrícula y carga repetible', async () => {
     assert.equal(escenarios.length, 24);
-    assert.deepEqual(await cargarEscolar(), { cargadas: 0, existentes: 24 });
+    assert.equal(new Set(escenarios.map(escenario => escenario.numero)).size, 24);
     const registro = await datos(`incidencias/${ids[19]}`, 'subdirector');
     assert.ok(registro.involucrados.some((p) => !p.es_estudiante && p.id_matricula === null));
     assert.ok(!/fictici|demo-|demostración|caso ficticio|estudiante \d/i.test(JSON.stringify([registro.version, registro.involucrados, registro.actuaciones])));
@@ -206,20 +277,17 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     } finally { await db.rollback(); db.release(); }
   });
   await t.test('cuentas: autorización independiente, ejecución única, hash y límites del Administrador', async () => {
-    const rutaClaves = new URL('../.env.integral.local', import.meta.url);
-    let clavesPrueba;
-    try { clavesPrueba = dotenv.parse(await readFile(rutaClaves)); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; clavesPrueba = { CUENTA_PASSWORD: randomBytes(24).toString('base64url') }; await writeFile(rutaClaves, `CUENTA_PASSWORD=${clavesPrueba.CUENTA_PASSWORD}\n`, { flag: 'wx', mode: 0o600 }); }
+    const clavesPrueba = { CUENTA_PASSWORD: randomBytes(24).toString('base64url') };
     const catalogo = await datos('cuentas/catalogos', 'director');
-    const [[preexistente]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'rvega'");
+    const [[preexistente]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'lnavarro'");
     if (!preexistente) {
-      const persona = catalogo.personas.find((p) => p.nombre === 'Rosa Milagros Vega Carrillo');
-      const autorizacion = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'crear_cuenta', id_persona: persona.id, id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'rvega', activo: true, motivo: 'Habilitar el acceso del personal docente autorizado.' }, 201);
+      const persona = catalogo.personas.find((p) => p.nombre === 'Luis Fernando Navarro Espinoza');
+      const autorizacion = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'crear_cuenta', id_persona: persona.id, id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'lnavarro', activo: true, motivo: 'Habilitar el acceso del personal docente autorizado.' }, 201);
       assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'docente', 'POST', {})).status, 403);
       await datos(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD });
       assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD })).status, 409);
     }
-    const [[creada]] = await pool.execute("SELECT contrasena_hash FROM usuarios WHERE nombre_usuario = 'rvega'");
+    const [[creada]] = await pool.execute("SELECT contrasena_hash FROM usuarios WHERE nombre_usuario = 'lnavarro'");
     assert.ok(creada.contrasena_hash.startsWith('scrypt$')); assert.ok(creada.contrasena_hash !== clavesPrueba.CUENTA_PASSWORD);
     assert.equal((await peticion('cuentas/autorizaciones', 'director', 'POST', { tipo: 'restablecer_clave', id_usuario_objetivo: usuarios.director.id, motivo: 'Cambio sobre la propia cuenta.' })).status, 403);
     assert.equal((await peticion('cuentas/autorizaciones', 'administrador', 'POST', { tipo: 'restablecer_clave', id_usuario_objetivo: usuarios.director.id, motivo: 'Sin autorización independiente.' })).status, 403);
@@ -234,24 +302,22 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       await datos(`cuentas/autorizaciones/${devolver.id}/ejecutar`, 'administrador', 'POST', {});
     }
     assert.equal((await peticion('incidencias', 'docente')).status, 200);
-    const [[objetivo]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'rvega'");
+    const [[objetivo]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'lnavarro'");
     const autorizacionClave = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'restablecer_clave', id_usuario_objetivo: objetivo.id, motivo: 'Restablecimiento autorizado por la autoridad independiente.' }, 201);
     await datos(`cuentas/autorizaciones/${autorizacionClave.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD });
-    const acceso = await peticion('auth/login', null, 'POST', { usuario: 'rvega', contrasena: clavesPrueba.CUENTA_PASSWORD }); assert.equal(acceso.status, 200);
+    const acceso = await peticion('auth/login', null, 'POST', { usuario: 'lnavarro', contrasena: clavesPrueba.CUENTA_PASSWORD }); assert.equal(acceso.status, 200);
     const cookieObjetivo = acceso.headers.get('set-cookie').split(';')[0];
     for (const activo of [false, true]) {
       const autorizacion = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'actualizar_cuenta', id_usuario_objetivo: objetivo.id,
-        id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'rvega', activo, motivo: activo ? 'Reactivar la cuenta tras la comprobación de seguridad.' : 'Suspender el acceso mediante un cambio concreto autorizado.' }, 201);
+        id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'lnavarro', activo, motivo: activo ? 'Reactivar la cuenta tras la comprobación de seguridad.' : 'Suspender el acceso mediante un cambio concreto autorizado.' }, 201);
       await datos(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', {});
       assert.equal((await fetch(`${base}/api/auth/sesion`, { headers: { Cookie: cookieObjetivo } })).status, 401);
     }
   });
   await t.test('PDF A4, siete secciones, registrador histórico y firma/sello sin cortes', async () => {
-    await mkdir(new URL('../.local/verificacion/', import.meta.url), { recursive: true });
     const response = await peticion(`incidencias/${ids[18]}/pdf`, 'subdirector'); assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /application\/pdf/);
     const buffer = Buffer.from(await response.arrayBuffer());
-    await writeFile(new URL('../.local/verificacion/informe-institucional.pdf', import.meta.url), buffer);
     const pdf = await getDocument({ data: new Uint8Array(buffer), useSystemFonts: true }).promise;
     const textos = [], paginasFirma = [], paginasSello = [];
     for (let n = 1; n <= pdf.numPages; n++) {
@@ -274,7 +340,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     const largo = await detalleIncidencia(pool, incidencia);
     largo.version.descripcion = Array.from({ length: 90 }, () => largo.version.descripcion).join('\n');
     largo.actuaciones.push({ tipo: 'observacion', detalle: largo.version.descripcion, realizada_en: new Date(), autor: largo.incidencia.nombre_registrador, cargo_autor: largo.incidencia.cargo_registrador });
-    const extendido = await generarInforme(largo); await writeFile(new URL('../.local/verificacion/informe-extenso.pdf', import.meta.url), extendido);
+    const extendido = await generarInforme(largo);
     const pdfLargo = await getDocument({ data: new Uint8Array(extendido), useSystemFonts: true }).promise; assert.ok(pdfLargo.numPages > 5);
     const ultimo = (await (await pdfLargo.getPage(pdfLargo.numPages)).getTextContent()).items.map((i) => i.str).join(' ');
     assert.ok(ultimo.includes('Firma del registrador') && ultimo.includes('Sello del Director'));
@@ -296,4 +362,15 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       for (const ruta of ['incidencias', 'cuentas/catalogos']) assert.equal((await fetch(`http://127.0.0.1:${servidor.address().port}/api/${ruta}`, { headers: { Cookie: cookie, 'X-Forwarded-Proto': 'https' } })).status, 503);
     } finally { await new Promise((resolve) => servidor.close(resolve)); }
   });
+  if (process.env.TEST_BROWSER === '1') {
+    await t.test('interfaz de escritorio y adaptación básica, sin guardar archivos', async () => {
+      await new Promise(resolve => server.close(resolve));
+      const direccion = new URL(base);
+      origin = direccion.origin;
+      server = createApp({ pool, origin }).listen(Number(direccion.port), '127.0.0.1');
+      await once(server, 'listening');
+      const { verificarInterfaz } = await import('./interfaz-browser.js');
+      await verificarInterfaz(base, claves);
+    });
+  }
 });

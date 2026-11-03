@@ -68,8 +68,8 @@ export async function verificarEsquema(conexion) {
 }
 
 export async function prepararBase(nombre) {
-  if (process.env.NODE_ENV === 'production' || !['sice_desarrollo', 'sice_pruebas'].includes(nombre)) {
-    throw new Error('La preparación solo permite sice_desarrollo o sice_pruebas fuera de producción.');
+  if (process.env.NODE_ENV === 'production' || nombre.toUpperCase() !== 'SICE') {
+    throw new Error('La preparación solo permite SICE fuera de producción.');
   }
   for (const clave of ['DB_USER', 'DB_PASSWORD']) {
     if (!process.env[clave]?.trim()) throw new Error(`Falta ${clave} en .env.`);
@@ -98,7 +98,7 @@ export async function prepararBase(nombre) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { console.log(JSON.stringify(await prepararBase(process.argv[2] || 'sice_desarrollo'))); }
+  try { console.log(JSON.stringify(await prepararBase(process.argv[2] || 'SICE'))); }
   catch (error) {
     console.error(error.code ? `Preparación detenida (${error.code}); no se borraron datos.` : error.message);
     process.exitCode = 1;
