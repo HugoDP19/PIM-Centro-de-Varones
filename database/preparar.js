@@ -6,7 +6,12 @@ import assert from 'node:assert/strict';
 
 export async function leerSentencias(archivo) {
   const sql = await readFile(new URL(archivo, import.meta.url), 'utf8');
-  return sql.replace(/--[^\n]*/g, '').split(';').map((s) => s.trim()).filter(Boolean);
+  const sentencias = sql.replace(/--[^\n]*/g, '').split(';').map((s) => s.trim()).filter(Boolean);
+  if (['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql'].includes(archivo)
+      && sentencias.some((s) => !/^(CREATE TABLE|ALTER TABLE)\s/i.test(s))) {
+    throw new Error('DDL inesperado: no se permiten cambios de base, borrados ni instrucciones ajenas al esquema.');
+  }
+  return sentencias;
 }
 
 export async function verificarEsquema(conexion) {
@@ -79,7 +84,7 @@ export async function prepararBase(nombre) {
     if (nueva) await conexion.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     await conexion.changeUser({ database: nombre });
     if (nueva) {
-      for (const archivo of ['schema.sql', 'autenticacion.sql']) {
+      for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql']) {
         for (const sentencia of await leerSentencias(archivo)) await conexion.query(sentencia);
       }
     }
@@ -87,7 +92,8 @@ export async function prepararBase(nombre) {
     const resultado = await verificarEsquema(conexion);
     await conexion.execute('SELECT token_hash FROM sesiones LIMIT 0');
     await conexion.execute('SELECT clave FROM intentos_acceso LIMIT 0');
-    return { base: nombre, nueva, version, ...resultado, tablasTecnicas: 2 };
+    await conexion.execute('SELECT id FROM autorizaciones_cuentas LIMIT 0');
+    return { base: nombre, nueva, version, ...resultado, tablasTecnicas: 3 };
   } finally { await conexion.end(); }
 }
 

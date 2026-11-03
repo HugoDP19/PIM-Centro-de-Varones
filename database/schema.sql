@@ -11,10 +11,8 @@
 -- Referencia técnica CHECK: https://dev.mysql.com/doc/refman/8.0/en/create-table-check-constraints.html
 -- Referencia FK: https://dev.mysql.com/doc/refman/8.0/en/create-table-foreign-keys.html
 --
--- LÍMITE PENDIENTE: involucrados solo relaciona estudiantes. No representa
--- varios testigos adultos/externos del hecho. No simularlos como estudiantes,
--- asistentes de revisión ni listas en texto. Resolver alcance con la institución
--- antes de usar esos casos; no se generaliza la relación automáticamente.
+-- Alcance autorizado en desarrollo: involucrados relaciona personas, incluidos
+-- testigos adultos. La matrícula sigue siendo exclusiva de estudiantes.
 -- Confidencialidad por expediente completo, sin acceso parcial por testigo.
 --
 -- OBLIGACIONES POSTERIORES DEL BACKEND Y DE LOS PRIVILEGIOS SQL:
@@ -265,14 +263,14 @@ CREATE TABLE versiones_incidencia (
 
 CREATE TABLE involucrados (
     id_version BIGINT UNSIGNED NOT NULL,
-    id_estudiante BIGINT UNSIGNED NOT NULL,
+    id_persona BIGINT UNSIGNED NOT NULL,
     id_matricula BIGINT UNSIGNED NULL,
     participacion VARCHAR(30) NOT NULL,
-    PRIMARY KEY (id_version, id_estudiante),
-    KEY ix_involucrados_estudiante_version (id_estudiante, id_version),
+    PRIMARY KEY (id_version, id_persona),
+    KEY ix_involucrados_persona_version (id_persona, id_version),
     CONSTRAINT fk_involucrados_version FOREIGN KEY (id_version) REFERENCES versiones_incidencia (id),
-    CONSTRAINT fk_involucrados_estudiante FOREIGN KEY (id_estudiante) REFERENCES estudiantes (id_persona),
-    CONSTRAINT fk_involucrados_matricula FOREIGN KEY (id_estudiante, id_matricula)
+    CONSTRAINT fk_involucrados_persona FOREIGN KEY (id_persona) REFERENCES personas (id),
+    CONSTRAINT fk_involucrados_persona_matricula FOREIGN KEY (id_persona, id_matricula)
         REFERENCES matriculas (id_estudiante, id),
     CONSTRAINT ck_involucrados_participacion CHECK (participacion IN ('afectado', 'testigo', 'involucrado'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
