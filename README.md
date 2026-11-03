@@ -2,45 +2,64 @@
 
 Sistema de registro y seguimiento de incidencias escolares de la I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
 
-Estado: conexión real a MySQL 8, autenticación y demostración local preparadas. La interfaz permite iniciar sesión, consultar la sesión y cerrarla. Los módulos de expedientes y administración de cuentas siguen pendientes; sus rutas no están habilitadas.
+Disponible en desarrollo: autenticación, cuentas y permisos con autorización independiente, registro de seis categorías, borradores, confirmación, consulta, seguimiento, historial e informes PDF institucionales. La matriz y los formularios fueron autorizados para desarrollo; los módulos de gestión permanecen bloqueados en producción hasta su validación institucional.
 
-## Instalación local
+## Preparación local
 
-Requiere Node.js 24 o superior y MySQL 8.0.16 o superior. Validado con MySQL 8.0.46.
+Requiere Node.js 24 o superior y MySQL 8. Validado con MySQL 8.0.46 en `127.0.0.1:3306`.
 
 1. Ejecutar `npm ci`.
-2. Crear `.env` desde `.env.example` y completar la contraseña local, sin compartirla ni versionarla. Para esta demostración: `NODE_ENV=development`, `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_NAME=sice_desarrollo` y un usuario SQL autorizado para preparar esa base.
-3. Ejecutar `npm run db:prepare`. Crea la base solo si no existe; si existe, verifica sin reejecutar el esquema. No borra datos ni repara automáticamente un esquema parcial.
-4. Ejecutar `npm run db:demo` para cargar los ejemplos sintéticos y las seis cuentas de desarrollo. Consultar las contraseñas solo en `.env.demo.local`, excluido de Git; nunca se imprimen.
-5. Ejecutar `npm start` y abrir http://127.0.0.1:3000. Para desarrollo con reinicio automático: `npm run dev`.
+2. Configurar `.env` desde `.env.example`: `NODE_ENV=development`, `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_NAME=sice_desarrollo` y las credenciales SQL locales. No compartirlas ni versionarlas.
+3. Base nueva: `npm run db:prepare`. Base de la fase anterior: `npm run db:update` y después `npm run db:prepare`. La actualización conserva filas y solo modifica el esquema necesario de `sice_desarrollo`; no actualiza otras bases.
+4. Ejecutar `npm run db:escolar` (también disponible como `npm run db:demo`). Carga 24 expedientes escolares y seis cuentas con nombres sintéticos naturales. Repetir la carga no crea duplicados ni restablece contraseñas.
+5. Ejecutar `npm start`, abrir http://127.0.0.1:3000 e ingresar. El botón «Abrir panel institucional» lleva a `/panel.html`. Para desarrollo con reinicio: `npm run dev`.
 
-En PowerShell con scripts deshabilitados, usar `npm.cmd`. No es necesario cambiar la política de ejecución. `APP_ORIGIN` debe coincidir exactamente con el origen abierto en el navegador, incluido el puerto; para la configuración predeterminada, usar `127.0.0.1`.
+En PowerShell con scripts deshabilitados, usar `npm.cmd`. `APP_ORIGIN` debe coincidir exactamente con el origen del navegador, incluido el puerto. El servidor verifica conexión y columnas necesarias antes de escuchar; si falta configuración o esquema, termina con un mensaje comprensible. `db:prepare` solo ejecuta DDL en bases nuevas; sobre una base existente verifica, sin borrar ni reparar a ciegas. El lector de DDL rechaza instrucciones `USE`, `CREATE DATABASE` o sentencias ajenas a CREATE/ALTER TABLE.
 
-El servidor comprueba MySQL y las tablas técnicas antes de escuchar. Si falta configuración, conexión o esquema, termina con un mensaje comprensible. `/api/health` indica disponibilidad HTTP; no sustituye `npm run db:check` ni verifica periódicamente MySQL.
+La base actual tiene **22 tablas**: las 19 del modelo escolar, dos técnicas de autenticación y una de autorizaciones concretas de cuentas. `involucrados` relaciona personas; los adultos no reciben matrículas ficticias. Se mantienen 187 columnas, 64 FK y 41 CHECK en las 19 tablas del esquema escolar.
 
-## Autenticación
+## Cuentas de la colección escolar
 
-| Ruta | Comportamiento |
+Las contraseñas aleatorias están exclusivamente en `.env.escolar.local`, ignorado por Git, como `<ROL>_PASSWORD`. Abrir ese archivo localmente; ninguna herramienta imprime los valores.
+
+| Usuario | Rol |
 | --- | --- |
-| `POST /api/auth/login` | Recibe `usuario` y `contrasena`; valida la cuenta, crea una sesión nueva y rota la cookie anterior. |
-| `GET /api/auth/sesion` | Devuelve identidad, rol y permisos efectivos; 401 sin sesión o si está vencida. |
-| `POST /api/auth/logout` | Revoca la sesión en MySQL, registra el cierre y elimina la cookie. |
+| `rsalazar` | Director |
+| `mhuaman` | Subdirector |
+| `jparedes` | Coordinador de Tutoría |
+| `lramos` | Docente |
+| `ctorres` | Auxiliar |
+| `vgutierrez` | Administrador |
 
-Las peticiones POST requieren JSON, `Origin` igual a `APP_ORIGIN` y `X-SICE-Request: 1`; la interfaz los envía. No se habilita CORS. Sesiones aleatorias de 256 bits, con solo SHA-256 del token en MySQL, duración absoluta de 8 horas e inactividad máxima de 30 minutos. Cookies `HttpOnly`, `SameSite=Strict` y `Secure` en producción. No se guardan credenciales ni tokens en localStorage.
+El Director o Subdirector autoriza un cambio concreto de cuenta o permiso. Un Administrador independiente lo ejecuta sin poder cambiar los datos autorizados. Se admite crear una cuenta para personal existente, actualizar rol/usuario/estado, restablecer contraseña y asignar/retirar permisos compatibles con el rol. No hay cambios sensibles sobre la propia cuenta ni autoasignación por rol; se revalidan autoridad, vigencia y estado del objetivo. La autorización vence en 24 horas, admite una sola ejecución y ambas etapas se auditan. Las contraseñas se proporcionan solo al crear/restablecer, se guardan con hash y nunca forman parte de la autorización ni del historial.
 
-Contraseñas con scrypt (`N=131072`, `r=8`, `p=1`) y sal aleatoria individual. Mensaje genérico para usuario inexistente o contraseña incorrecta. Límites persistidos: 10 intentos por cuenta y 100 por IP en 15 minutos. Un acceso correcto reinicia el contador de la cuenta. Se auditan accesos correctos, rechazos de cuentas conocidas y cierres, sin contraseñas ni tokens en el historial.
+## Incidencias e informes
 
-Cada consulta de sesión revalida cuenta, persona, hash de contraseña, rol y permisos en MySQL. La revocación de permisos produce 403 sin reiniciar el servidor. La lista de permisos efectivos es cerrada: `sesion.consultar` para los seis roles, `cuentas.administrar` exclusivamente para Administrador y `cuentas.autorizar` para Director/Subdirector, siempre que exista la concesión en la base. Estos últimos identifican límites técnicos y no habilitan todavía operaciones de administración.
+La matriz aplicada en desarrollo exige permiso específico por acción: D/SD pueden consultar internos y restringidos; Coordinador, internos; Docente/Auxiliar, internos registrados por ellos; Administrador, ningún expediente. Conflictos pendientes o inhibiciones bloquean al afectado. Los filtros se aplican también a búsquedas, detalle, versiones, seguimiento, historial y PDF. Los catálogos ofrecen identificación mínima y excluyen identidades de casos reservados a accesos sin permiso; no habilitan administrar personas ni catálogos escolares.
 
-Los permisos configurables nunca habilitan expedientes al Administrador. En esta fase, `/api/incidencias` devuelve 401 sin autenticación y 403 para cualquier usuario autenticado. La prueba de protección no sustituye las futuras reglas de lectura por expediente ni los flujos de modificación.
+El registrador, su nombre histórico, rol y fechas de registro se obtienen de la sesión/servidor. El reportante se selecciona separadamente. Se guarda un borrador explícito, se revisa y se confirma. Al confirmar se validan los campos por categoría y el mínimo estudiantil configurado en el tipo; una incidencia admite cero, uno o varios estudiantes y también testigos adultos. Los hechos confirmados no se editan ni se eliminan físicamente. El seguimiento se agrega como actuación u observación; una corrección referencia la actuación anterior y conserva ambas.
 
-Producción exige `APP_ORIGIN=https://...`; configurar `TRUST_PROXY_LOCAL=1` solo detrás de un proxy HTTPS local de confianza. El proyecto no instala certificados, proxy ni usuarios SQL de producción. La cuenta local usada para preparar el esquema no representa una configuración de privilegios mínimos para despliegue.
+Salud y Protección estudiantil se restringen automáticamente. En las demás categorías el registrador debe declarar la sensibilidad del contenido; no hay un clasificador automático de narrativas. Testigos confidenciales, presunta violencia u otra información sensible exigen marcar la reserva. Añadir seguimiento sensible eleva la protección en la misma transacción; quien pierda acceso recibe solo constancia. Esta interfaz no reduce confidencialidad.
 
-Criterios técnicos: [hash de contraseñas de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) y [gestión de sesiones de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+El PDF requiere permiso de consulta y exportación y un expediente confirmado dentro del ámbito del usuario. Usa PDFKit, A4, blanco/guinda, logo original, siete secciones, código, emisión en hora de Lima y numeración de páginas. Firma y cargo corresponden a la identidad histórica del registrador, aunque descargue otro usuario. Solo se reservan espacios para firma y sello físicos; no se insertan firmas ni sellos falsos.
 
-## Demostración y pruebas
+Los escenarios cargados de rectificación, rechazo, anulación, reunión/acta e inhibición son datos para revisión. Presentar y resolver nuevas solicitudes, cerrar/reabrir casos y administrar catálogos siguen pendientes de los criterios institucionales correspondientes. No se simulan esos flujos.
 
-Ver [database/DEMOSTRACION.md](database/DEMOSTRACION.md) para las cuentas, los 23 expedientes cargados, los escenarios preparados y sus límites. [database/consultar-demo.sql](database/consultar-demo.sql) permite revisarlos en Workbench. El escenario del testigo adulto queda documentado hasta resolver el límite del modelo.
+## Seguridad y API
+
+Sesiones revocables en MySQL: tokens aleatorios de 256 bits guardados como SHA-256, expiración de 8 horas e inactividad de 30 minutos; rotación al ingresar. Hash de contraseñas scrypt con sal individual (`N=131072`, `r=8`, `p=1`). Cookies `HttpOnly`, `SameSite=Strict` y `Secure`/prefijo `__Host-` en producción. Se revalidan cuenta/persona, contraseña, rol y permisos en cada solicitud. Límites de intentos persistidos: 10 por cuenta y 100 por IP en 15 minutos. Se auditan accesos/cierres sin secretos.
+
+| Ruta | Uso |
+| --- | --- |
+| `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/sesion` | Autenticación y sesión |
+| `GET /api/incidencias`, `GET /api/incidencias/catalogos`, `GET /api/incidencias/:id` | Listado paginado, catálogos mínimos y detalle autorizado |
+| `POST /api/incidencias`, `PUT /api/incidencias/:id/borrador`, `POST /api/incidencias/:id/confirmar` | Registro y confirmación |
+| `POST /api/incidencias/:id/actuaciones`, `GET /api/incidencias/:id/pdf` | Seguimiento e informe |
+| `GET /api/cuentas/catalogos`, `GET /api/cuentas/autorizaciones`, `POST /api/cuentas/autorizaciones`, `POST /api/cuentas/autorizaciones/:id/ejecutar` | Gestión independiente de cuentas |
+
+Las escrituras requieren JSON, `Origin` igual a `APP_ORIGIN` y `X-SICE-Request: 1`, enviados por la interfaz. Sin CORS ni tokens en localStorage. No se exponen errores SQL al cliente. Producción requiere HTTPS; `TRUST_PROXY_LOCAL=1` solo detrás de un proxy HTTPS local de confianza. Faltan certificados/proxy y una cuenta SQL de privilegios mínimos para despliegue. `/api/health` indica disponibilidad HTTP; `npm run db:check` comprueba MySQL.
+
+## Pruebas y datos
 
 ```text
 npm test
@@ -48,19 +67,14 @@ npm run db:check
 npm run test:mysql
 ```
 
-`npm test` ejecuta pruebas HTTP y de seguridad sin simular MySQL. `test:mysql` requiere la conexión real: crea/verifica exclusivamente `sice_pruebas`, prepara datos sintéticos si está vacía y conserva sus credenciales en `.env.pruebas.local`. No limpia expedientes; las comprobaciones de integridad se revierten y las pruebas de acceso dejan eventos de auditoría reales. No ejecutar contra producción.
+`test:mysql` utiliza exclusivamente `sice_desarrollo` y sus identidades sintéticas; conserva los expedientes de verificación y revierte los rechazos de integridad. No modifica `sice_pruebas` ni otras bases. El archivo `.env.integral.local` conserva únicamente una contraseña aleatoria de la cuenta creada durante la verificación. Las pruebas de acceso y gestión dejan auditoría real; repetirlas no limpia historial ni expedientes.
 
-Con `npm start` activo, `node test/interfaz-browser.js` verifica Chrome a 320, 768 y 1280 px y el flujo de login/recarga/logout. Usa Chrome instalado; `CHROME_PATH` permite indicar su ruta. Guarda capturas en `.local/verificacion/` y no imprime las contraseñas demo. La prueba requiere los datos de desarrollo locales.
+Con el servidor activo, `node test/interfaz-browser.js` comprueba Chrome a 320/768/1280 px y los flujos de acceso, registro, seguimiento y autorización/ejecución de cuentas. `TEST_BASE_URL` permite indicar otro origen local y `CHROME_PATH`, la ruta del navegador. Capturas y PDF de revisión se guardan únicamente en `.local/verificacion/`. PDF.js es una dependencia de desarrollo para inspeccionar páginas y contenido; PDFKit es la dependencia del servidor.
+
+Resultados y colección: [database/DEMOSTRACION.md](database/DEMOSTRACION.md). Los 23 prototipos anteriores permanecen en SQL y fuera del panel escolar; los nuevos expedientes tienen contenido administrativo natural y un aviso de entorno separado. Ningún dato corresponde a personas reales del colegio.
 
 ## Organización
 
-- `public/`: login y panel de sesión, Bootstrap 5 y JavaScript vanilla.
-- `image/`: logo original conservado; se sirve como `/image/images.jpg`.
-- `src/database.js`: pool mysql2/promise y comprobación de conexión.
-- `src/seguridad.js`: hash y límites de permisos; `consultas-auth.js`: SQL parametrizado; `autenticacion.js`: sesión y rutas de acceso.
-- `src/app.js` y `server.js`: aplicación HTTP, recursos y arranque comprobado.
-- `database/schema.sql`: las 19 tablas escolares sin cambios. `autenticacion.sql`: dos tablas técnicas necesarias, sesiones e intentos de acceso.
-- `database/preparar.js`, `cargar-demo.js` y `casos-demo.js`: preparación segura y carga transaccional reproducible.
-- `test/`: pruebas básicas, integración MySQL y verificación de navegador.
+`public/` contiene interfaz y JavaScript vanilla; `src/`, servidor, reglas, rutas y consultas SQL separadas; `database/`, esquema, actualización y carga; `test/`, pruebas. Se conservan `image/` y el logo original. Sin ORM, React, Angular, TypeScript ni Docker.
 
-Sin ORM, frameworks de interfaz ni nuevas dependencias de autenticación. Bootstrap se sirve desde el paquete local. El diseño y las reglas institucionales pendientes se conservan en `database/DISENO.md`, `database/REGLAS_FUNCIONALES.md` y `PROJECT_CONTEXT.md`.
+Referencias técnicas: [PDFKit](https://pdfkit.org/docs/getting_started.html), [contraseñas de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) y [sesiones de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html). Las decisiones institucionales pendientes se mantienen en `PROJECT_CONTEXT.md` y los documentos de diseño/reglas de `database/`.

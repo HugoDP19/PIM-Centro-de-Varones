@@ -1,5 +1,15 @@
 # SICE-Local: revisión integral del modelo relacional
 
+## Implementación autorizada en desarrollo — 2 de noviembre de 2026
+
+El usuario confirma el requisito de testigos adultos/externos y autoriza la matriz de acceso propuesta, los campos O/C de formularios y el flujo independiente de cuentas **solo para desarrollo**. No constituye aprobación institucional ni habilitación de producción; los módulos de gestión se bloquean en ese entorno.
+
+Se conservan las 19 tablas escolares y se generaliza `involucrados.id_estudiante` a `id_persona`, con FK a personas. PK `(id_version, id_persona)`; FK compuesta `(id_persona, id_matricula)` a matriculas `(id_estudiante, id)`: solo un estudiante puede tener matrícula y esta debe pertenecerle. El mínimo del tipo cuenta únicamente personas con perfil estudiantil. La actualización atómica conservó las 28 relaciones anteriores. Esta decisión sustituye el límite estudiantil y la alternativa pendiente de testigos adultos de las secciones históricas siguientes. La confidencialidad sigue cubriendo el expediente completo, sin acceso parcial por testigo.
+
+La fase de autenticación agregó sesiones e intentos_acceso. El flujo ahora autorizado de gestión concreta requiere autorizaciones_cuentas, que vincula objetivo, datos del cambio, autoridad, vigencia y ejecución única por otro actor; no guarda contraseñas ni usa historial como motor de instrucciones. Hay 22 tablas totales, con 19 del modelo escolar y tres técnicas de soporte. No se incorporan otras funcionalidades ni tablas por anticipación.
+
+El balance conceptual original se conserva a continuación como historial. El estado implementado y sus límites están en PROJECT_CONTEXT.md y DEMOSTRACION.md.
+
 Fase 2.1 · 30 de octubre de 2026 · **Propuesta para revisión humana; no aprobada**.
 
 Aclaraciones de fase 2.4 (31 de octubre de 2026): se conservan las 19 tablas y las columnas propuestas; las reglas consolidadas y las decisiones institucionales están en REGLAS_FUNCIONALES.md. No se amplía automáticamente el modelo.

@@ -1,69 +1,75 @@
-# Demostración local
+﻿# Colección escolar y verificación
 
-Datos completamente sintéticos para revisión técnica. No describen estudiantes, trabajadores ni hechos reales del colegio. Las identidades usan códigos `DEMO-`; documentos, teléfonos y correos quedan NULL. No se obtienen datos de internet.
+Todos los nombres y datos son sintéticos; no corresponden a personas ni expedientes reales del colegio. La identificación del entorno aparece fuera del contenido administrativo de los informes y del panel. No se obtuvieron datos personales de internet, no se asignaron documentos reales y no se inventaron diagnósticos.
 
-## Preparación y acceso
-
-Con `.env` configurado para `NODE_ENV=development`, `DB_HOST=127.0.0.1` y `DB_NAME=sice_desarrollo`:
+## Carga reproducible
 
 ```text
 npm run db:prepare
-npm run db:demo
+npm run db:escolar
 npm start
 ```
 
-`db:prepare` crea exclusivamente una base nueva autorizada (`sice_desarrollo`, o `sice_pruebas` al pasar ese argumento). Si existe, solo verifica su estructura: no reejecuta DDL, borra ni repara automáticamente tablas. Conserva las 19 tablas escolares y agrega dos tablas técnicas de autenticación, `sesiones` e `intentos_acceso`.
+Si la base viene de la fase anterior, ejecutar primero `npm run db:update`. Este comando modifica exclusivamente `sice_desarrollo`, conserva las relaciones anteriores y no elimina filas. `db:prepare` verifica una base existente; nunca reejecuta el esquema sobre sus datos. `db:escolar` y su alias `db:demo` requieren desarrollo local, usan transacción/bloqueo y no generan duplicados ni restablecen claves al repetirse.
 
-`db:demo` exige desarrollo local, adquiere un bloqueo MySQL y carga una base vacía mediante una transacción. Si encuentra los 23 casos y las seis cuentas demo, no cambia filas. Si encuentra datos distintos o una carga incompleta, se detiene. No ejecuta cargas en el arranque del servidor ni en producción.
+Las cuentas actuales y sus roles se enumeran en README.md; contraseñas aleatorias solo en `.env.escolar.local`, excluido de Git. El cargador crea personal, estudiantes varones, apoderadas con vínculos, matrículas en cuatro aulas de primaria/secundaria y un testigo externo. Dos identidades adicionales de personal permiten comprobar creación de cuentas sin inventar una persona desde la administración.
 
-Las seis cuentas son `demo.director`, `demo.subdirector`, `demo.coordinador_tutoria`, `demo.docente`, `demo.auxiliar` y `demo.administrador`. Sus contraseñas aleatorias se guardan exclusivamente en `.env.demo.local`, excluido de Git, bajo `DEMO_<ROL>_PASSWORD`. Abrir ese archivo localmente para ingresar; la herramienta no imprime los valores. En MySQL solo se conserva el hash scrypt con sal individual. La carga repetida no restablece contraseñas.
+## Los 24 expedientes de la colección
 
-El navegador permite comprobar login, sesión y logout. Para revisar los casos en Workbench, ejecutar `consultar-demo.sql`: son consultas locales de lectura, no una API disponible a los usuarios del sistema. Los módulos de expedientes y de administración de cuentas aún no están habilitados.
+La numeración siguiente identifica escenarios de la carga, no la PK del expediente. En la interfaz el código se deriva de esa PK: `INC-000024`, por ejemplo. Los códigos pueden variar entre instalaciones. Los tipos y fechas se obtienen de MySQL; las matrículas aportan nivel, grado y sección.
 
-## Casos cargados
+| Escenario | Contenido |
+| --- | --- |
+| 1 | Discusión con agresión durante recreo, dos involucrados y un testigo estudiantil |
+| 2 | Expresiones ofensivas reiteradas y acompañamiento de Tutoría |
+| 3 | Posible acoso reportado por apoderada, pendiente de contraste |
+| 4 | Presentación personal con justificación familiar por evaluar |
+| 5 | Tardanzas, entrevista y seguimiento posterior |
+| 6 | Salida del aula y explicación del estudiante |
+| 7 | Desmayo en formación, atención inmediata y comunicación familiar |
+| 8 | Malestar durante clase y seguimiento al día siguiente |
+| 9 | Angustia emocional con datos mínimos y reserva |
+| 10 | Caída durante educación física, sin gravedad disciplinaria |
+| 11 | Cable expuesto sin estudiantes afectados |
+| 12 | Piso mojado, señalización y medida preventiva |
+| 13 | Mochila extraviada y recuperada, sin atribuir sustracción |
+| 14 | Ventana dañada accidentalmente y circunstancias por contrastar |
+| 15 | Objeto no localizado, sin señalar responsables |
+| 16 | Posible maltrato y derivación protectora, sin relato explícito |
+| 17 | Posible desprotección pendiente de evaluación |
+| 18 | Auxiliar registrador y docente reportante diferentes |
+| 19 | Testigo adulto externo relacionado con la versión, sin matrícula y con expediente reservado |
+| 20 | Rectificación documental aprobada por autoridad independiente; versión original conservada |
+| 21 | Rectificación rechazada; propuesta conservada sin sustituir la versión vigente |
+| 22 | Anulación lógica por duplicación del escenario 11, sin borrar datos |
+| 23 | Revisión concluida con reunión, cuatro participantes y acta; solicitud pendiente |
+| 24 | Director inhibido por conflicto; solicitud pendiente y sin sustitución por Administrador |
 
-Cada marcador `DEMO-XX` aparece en el título. El código visible de expediente se deriva de su PK como `INC-000001`; no se cambió el modelo para añadir un código redundante. Fechas SQL en UTC y consultas de revisión en America/Lima (UTC-5). El nivel/grado/sección se obtiene de la matrícula de cada involucrado; los riesgos sin estudiantes indican su ubicación sin inventar una matrícula.
+Las comunicaciones a la familia se incluyen donde corresponden; en Protección estudiantil permanecen sujetas a evaluación de seguridad. Accidentes y Salud no reciben gravedad disciplinaria. Las descripciones distinguen observaciones y relatos, sin atribuir culpabilidad no verificada.
 
-| Escenario | Contenido preparado | Estado |
-| --- | --- | --- |
-| 01 | Agresión durante recreo; dos involucrados y un testigo estudiantil | En seguimiento, restringido |
-| 02 | Insultos reiterados y acompañamiento de Tutoría | En seguimiento, restringido |
-| 03 | Posible acoso comunicado por apoderada, pendiente de contraste | Confirmada, restringido |
-| 04 | Prendas escolares y justificación familiar por evaluar | En seguimiento |
-| 05 | Tardanzas, entrevista y seguimiento posterior | Cerrada |
-| 06 | Salida del aula, observación y explicación del estudiante | Confirmada |
-| 07 | Desmayo, atención inmediata y comunicación familiar | En seguimiento, restringido |
-| 08 | Malestar durante clases y seguimiento al día siguiente | Cerrada, restringido |
-| 09 | Angustia emocional con información mínima | En seguimiento, restringido |
-| 10 | Caída en educación física, sin gravedad disciplinaria | En seguimiento |
-| 11 | Cable expuesto sin estudiantes afectados | En seguimiento |
-| 12 | Piso mojado, señalización y secado | Cerrada |
-| 13 | Mochila extraviada y recuperada, sin acusaciones | Cerrada |
-| 14 | Ventana dañada accidentalmente; circunstancias por contrastar | En seguimiento |
-| 15 | Presunta sustracción sin señalar responsables | Confirmada, restringido |
-| 16 | Posible maltrato y derivación protectora, sin relato explícito | En seguimiento, restringido |
-| 17 | Posible desprotección pendiente de evaluación | Confirmada, restringido |
-| 18 | Auxiliar registrador y docente reportante distintos | Cerrada |
-| 20 | Rectificación aprobada por Subdirector; versión original conservada | Cerrada, dos versiones |
-| 21 | Rectificación rechazada; propuesta conservada sin volverla vigente | En seguimiento, dos versiones |
-| 22 | Anulación lógica por duplicado del escenario 11 | Anulada, sin eliminación |
-| 23 | Revisión concluida con reunión, cuatro participantes y acta | En seguimiento; solicitud pendiente |
-| 24 | Director inhibido; solicitud pendiente sin suplencia del Administrador | En seguimiento, restringido |
+Los escenarios 20–24 son datos preparados para revisión, no resultados producidos por nuevos módulos de solicitudes o aprobación. El escenario 25 se cubre con pruebas de acceso/modificación no autorizados, sin adulterar un hecho histórico para representarlo.
 
-Resultado en `sice_desarrollo`: **23 incidencias, 27 versiones, 39 actuaciones, 5 solicitudes, 1 revisión con 4 participantes y 1 conflicto de interés**. Se incluyen 6 roles/cuentas, 8 estudiantes, 4 apoderadas, 4 aulas y 8 matrículas. Estados: 4 confirmadas, 12 en seguimiento, 6 cerradas y 1 anulada. Las comunicaciones familiares se documentan donde corresponden; en Protección estudiantil quedan sujetas a evaluación de seguridad.
+## Estado comprobado al cierre
 
-Las resoluciones, reuniones e inhibición son datos preparados por el cargador, no resultados producidos por módulos de negocio. Sus procedimientos y criterios institucionales no se aprueban mediante esta carga. No hay rutas para solicitar, evaluar, aprobar, anular, editar hechos o generar reportes.
+En `sice_desarrollo`: **58 incidencias**: 24 de la colección escolar, 23 prototipos anteriores conservados y 11 registros adicionales de verificación por API/navegador. La colección contiene 28 versiones y los estados actuales son 3 confirmadas, 14 en seguimiento, 6 cerradas y 1 anulada. El seguimiento de uno de sus casos avanzó durante la prueba real; el cargador no restablece ese estado ni su historial.
 
-## Escenarios 19 y 25
+Los prototipos anteriores y sus identidades se conservan en SQL; no se presentan en el panel escolar ni en sus catálogos. Las consultas de `consultar-demo.sql` muestran los expedientes de la presentación actual. Su uso en Workbench es una revisión local autorizada y no habilita acceso desde la aplicación a un rol sin permiso.
 
-**19 — Testigo adulto protegido: documentado, no cargado.** Escenario pendiente: una apoderada reporta un hecho y un trabajador adulto lo presencia, sin participar en una revisión. Debe poder relacionarse al testigo con la versión y protegerse su identidad mediante el expediente restringido. `involucrados` solo admite estudiantes; no se crea un estudiante ficticio, una asistencia falsa ni una lista de identidades en texto. Requiere acordar la generalización de esa relación y, si se solicita acceso parcial, revisar también la confidencialidad. No se modifica esa decisión pendiente.
+## Verificación efectuada
 
-**25 — Intento de modificación no autorizado: prueba automatizada, sin nueva incidencia.** `npm run test:mysql` intenta GET/PATCH/PUT/DELETE de un expediente restringido con cada uno de los seis roles, recibe 403 y comprueba que versión e historial del caso no cambien. Sin sesión recibe 401. Actualmente se deniega el módulo completo: esto acredita el bloqueo de la fase, no una política futura de edición/lectura granular ni inmutabilidad frente a acceso SQL administrativo.
+- MySQL 8.0.46 real, 19 tablas escolares, 187 columnas, 64 FK y 41 CHECK, más tres tablas técnicas: 22 tablas totales. Migración de involucrados con 28 relaciones anteriores conservadas. No se modificó `sice_pruebas` ni ninguna otra base en esta etapa.
+- `npm test`: 5 pruebas aprobadas. `npm run test:mysql`: 15 pruebas aprobadas, con las seis categorías, mínimo estudiantil, borrador, confirmación concurrente, roles/ámbitos, reserva, testigo adulto, seguimiento, auditoría, cuentas independientes y PDF. Los rechazos FK/CHECK se revierten; la suite conserva sus registros sintéticos y auditoría.
+- Login inválido/rotación/logout comprobados. SQL parametrizado; autoría impuesta por sesión; campos de otra categoría rechazados; fechas, importes y matrículas validados. Hechos confirmados no editables y eliminación física no expuesta.
+- Creación/restablecimiento/cambio de estado de cuenta probados, con hash, revocación de sesiones, autorización de un solo uso y rechazo de cambios propios/permisos incompatibles. Revocar/restaurar un permiso se ejecuta por el flujo autorizado, no mediante una persistencia simulada.
+- PDF A4 real: siete secciones, logo, código/emisión/páginas, nombre y cargo históricos del registrador aunque descargue otro usuario. PDF.js comprueba contenido y posiciones de firma/sello. Informe representativo de 2 páginas y comprobación extensa de 18 páginas, con texto junto a las firmas; sin firmas ni sellos falsos.
+- Chrome a 320/768/1280 px: login, panel de cuentas, listado, formularios y detalle sin desbordamiento; registro/confirmación/seguimiento y autorización por Director/ejecución por Administrador comprobados desde la interfaz. En móviles el listado se presenta como tarjetas.
 
-## Verificación y límites
+Capturas y PDF locales: `.local/verificacion/`, ignorado por Git. Las contraseñas de comprobación de la cuenta adicional se guardan únicamente en `.env.integral.local`. La suite anterior que preparaba `sice_pruebas` fue sustituida por una que utiliza solo `sice_desarrollo`, conforme al alcance actual.
 
-- La suite MySQL usa exclusivamente `sice_pruebas`, conserva una copia sintética reproducible y credenciales locales separadas en `.env.pruebas.local`. No usa almacenamiento simulado. Rechazos de integridad dentro de transacciones revertidas; las pruebas HTTP generan sesiones y eventos de acceso reales. Nunca borra expedientes para limpiar pruebas.
-- Se comprueban los metadatos de las 19 tablas, las 64 FK y sus índices, y los 41 CHECK activos; 41 entradas inválidas son rechazadas por CHECK, además de referencias incompatibles y duplicados. Un dato puede infringir varios CHECK: no se presupone su orden de evaluación.
-- Autenticación probada: seis roles, credenciales válidas/incorrectas, cookies, persistencia de sesión, rotación, expiración, inactividad, revocación, cambios de cuenta y permisos, CSRF, límites de intentos y arranque sin conexión configurada.
-- Chrome: 320/768/1280 px sin desbordamiento, logo cargado y flujo de acceso completo. Capturas locales en `.local/verificacion/`, excluidas de Git.
-- Pendientes: gestión real de cuentas con autorización institucional, lectura de expedientes según matriz aprobada, formularios, seguimiento, flujos de solicitudes/revisión/conflictos y reportes. Tampoco se han configurado una cuenta SQL de privilegios mínimos ni transporte HTTPS real: `Secure` y rechazo de HTTP se prueban con la configuración del proxy local.
+## Límites vigentes
+
+La matriz, formularios O/C y flujo de cuentas están autorizados para desarrollo. En producción la gestión devuelve 503 hasta la validación institucional. No están implementados los flujos para nuevas rectificaciones/anulaciones, criterios de revisión/reunión/acta, cierre/reapertura, doble impedimento, administración de catálogos ni acceso parcial a una identidad dentro de un caso.
+
+El usuario declara la sensibilidad del contenido; el sistema impone los mínimos de Salud/Protección y eleva protección cuando se declara información sensible. No se promete clasificación automática de una narrativa. La aplicación no ofrece reducción de confidencialidad.
+
+La cuenta SQL local sigue siendo una configuración de desarrollo: faltan privilegios mínimos y transporte HTTPS real de producción. No se declara inmutabilidad frente a acceso SQL administrativo, ni implantados procedimientos institucionales pendientes.

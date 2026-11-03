@@ -1,5 +1,17 @@
 # SICE-Local: reglas funcionales propuestas
 
+## Aplicación autorizada para desarrollo — 2 de noviembre de 2026
+
+El usuario autoriza aplicar en desarrollo: matriz D/SD internos/restringidos, CT internos, DO/AU internos propios y AD sin expedientes; permiso específico por acción; bloqueo por conflicto; reserva de Salud/Protección y contenido sensible. Autoriza también los campos O/C del formulario y el mínimo estudiantil por tipo, con respuestas booleanas explícitas, sin diagnósticos ni gravedad disciplinaria en otras categorías. Estas respuestas no aprueban los procedimientos institucionales de producción.
+
+Gestión de cuentas autorizada en desarrollo: D/SD autoriza un cambio concreto y AD independiente lo ejecuta, sin modificar la autorización, actuar sobre la propia cuenta ni autoasignarse permisos. Se revalidan facultades, objetivo, vencimiento de 24 horas y ejecución única; ambas etapas se auditan. Los límites por rol prevalecen sobre cualquier concesión configurable.
+
+Implementados registro, edición de borrador propio, confirmación, consulta dentro del ámbito, actuaciones/observaciones por adición, historial y PDF con permiso separado. El seguimiento sensible eleva la protección atómicamente; el usuario sin acceso posterior recibe constancia. El clasificador de sensibilidad es una declaración explícita del registrador, además de los mínimos de categoría; no se presenta como detección automática del contenido narrativo.
+
+Se confirma el alcance de testigos adultos mediante personas, con matrícula solo estudiantil y reserva del expediente completo. No se habilita acceso parcial. Presentación/resolución de nuevas rectificaciones/anulaciones, criterios de revisión/reunión/acta, cierre/reapertura, escalamiento por doble impedimento, conservación y gestión de catálogos continúan pendientes. Los escenarios ya cargados no prueban ni autorizan esos flujos. En producción las rutas de gestión devuelven 503 hasta validar institucionalmente su habilitación.
+
+Las secciones siguientes conservan la propuesta institucional y sus pendientes originales; esta nota precisa únicamente lo autorizado para el entorno de desarrollo.
+
 Fase 2.4 · 31 de octubre de 2026 · **Reglas consolidadas para aprobación institucional; no implementadas**.
 
 Institución: I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
