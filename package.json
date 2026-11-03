@@ -12,7 +12,9 @@
     "dev": "node --watch src/server.js",
     "test": "node --test test/server.test.js test/seguridad.test.js",
     "db:check": "node src/database.js",
-    "db:prepare": "node database/preparar.js"
+    "db:prepare": "node database/preparar.js",
+    "db:demo": "node database/cargar-demo.js",
+    "test:mysql": "node --test test/mysql.integration.js"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
