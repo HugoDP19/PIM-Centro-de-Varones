@@ -1,5 +1,13 @@
 # Contexto de SICE-Local
 
+## Comprobación previa a autenticación — 2 de noviembre de 2026
+
+- Nueva autorización: validar primero el esquema en MySQL y después implementar conexión al arranque, autenticación, sesiones y login, sin otros módulos. La validación MySQL sigue pendiente; no se declara iniciada ni terminada la implementación de autenticación.
+- Inicio limpio en `feature/validacion-modelo`, HEAD `0c81f64`. Tras `git fetch origin`, `develop` y `origin/develop` coinciden en `f8b3ce2`: aún no incluyen `6814a9e` (schema.sql) ni los otros seis commits locales posteriores. Se conservan todos; no se integra un esquema sin validar ni se crea todavía `feature/autenticacion`.
+- TCP a `127.0.0.1:3306` responde. DB_PASSWORD continúa vacía en `.env`; `npm.cmd run db:check` falla explícitamente por esa variable. No se ha autenticado una conexión, consultado la versión ni inspeccionado tablas o modificado bases. Configurar la contraseña solo en el archivo local para continuar.
+- `npm.cmd ci --no-audit --no-fund` completado: 78 paquetes instalados. `npm.cmd test`: 2 pruebas aprobadas (HTTP/recursos y validación de configuración); no son pruebas de autenticación ni de integridad MySQL. `.env` ignorado y sin versionar; sin cambios de dependencias declaradas.
+- Siguiente paso: con la credencial local, validar en `sice_pruebas` preservando cualquier contenido existente; después integrar localmente los cambios necesarios de base de datos y crear `feature/autenticacion` desde `develop` actualizado. Continúan pendientes login, sesiones, hash, permisos y su interfaz/pruebas. Sin push ni Pull Request.
+
 ## Inicio de fase 2.6 — 1 de noviembre de 2026
 
 - Revisados AGENTS.md, este contexto, DISENO.md, REGLAS_FUNCIONALES.md y schema.sql. Rama comprobada: `feature/validacion-modelo`; árbol limpio al iniciar. El usuario autoriza validar exclusivamente en `sice_pruebas`, sin aprobar procedimientos institucionales ni ampliar funcionalidades.

@@ -4,6 +4,8 @@ Sistema de registro y seguimiento de incidencias escolares de la I.E.P. N.° 208
 
 Fase 1: servidor básico, portada institucional y configuración MySQL. No incluye login ni gestión de incidencias.
 
+Comprobación del 2 de noviembre de 2026: dependencias instaladas y 2 pruebas existentes aprobadas. El puerto local 3306 responde, pero la conexión autenticada y la validación de `database/schema.sql` siguen pendientes porque falta configurar `DB_PASSWORD` en `.env`. Completarla únicamente en el archivo local, sin compartirla ni versionarla. No se han verificado ni creado tablas desde el proyecto. La autenticación solicitada se implementará después de validar el esquema e integrar los cambios necesarios en `develop`; todavía no está disponible.
+
 ## Tecnologías
 
 HTML5, CSS3, Bootstrap 5 y JavaScript vanilla; Node.js 24 o superior, Express, MySQL 8, mysql2 y dotenv. PDFKit se incorporará al desarrollar reportes; no se instala todavía. Se usa el ejecutor de pruebas nativo de Node.js, sin dependencias de desarrollo.
