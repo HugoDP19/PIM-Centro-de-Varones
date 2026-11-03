@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { autorizar } from './autenticacion.js';
-import { identificador, texto } from './incidencias.js';
-import { crearHash, resumir, rechazar, limitesPermisos, tienePermiso } from './seguridad.js';
+import { crearHash, resumir, rechazar, limitesPermisos, tienePermiso, validarIdentificador, validarTexto } from './seguridad.js';
 import { cargarPermisos } from './consultas-auth.js';
 import { transaccion } from './database.js';
 import { insertar, auditar } from './consultas-incidencias.js';
@@ -45,20 +44,20 @@ export function rutasCuentas(pool) {
     const cuerpo = req.body || {};
     const permitidos = ['tipo', 'id_usuario_objetivo', 'id_persona', 'id_rol_objetivo', 'id_permiso', 'nombre_usuario', 'activo', 'motivo'];
     if (Object.keys(cuerpo).some((c) => !permitidos.includes(c)) || !tipos.includes(cuerpo.tipo)) rechazar(400, 'Solicitud de autorización no válida.');
-    const datos = { tipo: cuerpo.tipo, motivo: texto(cuerpo.motivo, 'motivo', 500),
+    const datos = { tipo: cuerpo.tipo, motivo: validarTexto(cuerpo.motivo, 'motivo', 500),
       id_autorizante: req.usuario.id, id_rol_autorizante: req.usuario.id_rol, autorizada_en: new Date(),
       vence_en: new Date(Date.now() + 24 * 60 * 60 * 1000) };
     if (['crear_cuenta', 'actualizar_cuenta'].includes(cuerpo.tipo)) {
-      datos.id_rol_objetivo = identificador(cuerpo.id_rol_objetivo);
+      datos.id_rol_objetivo = validarIdentificador(cuerpo.id_rol_objetivo);
       if (typeof cuerpo.activo !== 'boolean' || !/^[a-zA-Z0-9._-]{3,60}$/.test(cuerpo.nombre_usuario || '')) rechazar(400, 'Revisa el nombre de usuario y el estado de la cuenta.');
       datos.nombre_usuario = cuerpo.nombre_usuario;
       datos.activo = Number(cuerpo.activo);
     }
-    if (cuerpo.tipo === 'crear_cuenta') datos.id_persona = identificador(cuerpo.id_persona);
-    else if (['actualizar_cuenta', 'restablecer_clave'].includes(cuerpo.tipo)) datos.id_usuario_objetivo = identificador(cuerpo.id_usuario_objetivo);
+    if (cuerpo.tipo === 'crear_cuenta') datos.id_persona = validarIdentificador(cuerpo.id_persona);
+    else if (['actualizar_cuenta', 'restablecer_clave'].includes(cuerpo.tipo)) datos.id_usuario_objetivo = validarIdentificador(cuerpo.id_usuario_objetivo);
     else {
-      datos.id_rol_objetivo = identificador(cuerpo.id_rol_objetivo);
-      datos.id_permiso = identificador(cuerpo.id_permiso);
+      datos.id_rol_objetivo = validarIdentificador(cuerpo.id_rol_objetivo);
+      datos.id_permiso = validarIdentificador(cuerpo.id_permiso);
     }
     const id = await transaccion(pool, async (db) => {
       datos.huella_objetivo = await validarObjetivo(db, req.usuario, datos);
@@ -76,7 +75,7 @@ export function rutasCuentas(pool) {
     if (req.body?.contrasena !== undefined && (typeof req.body.contrasena !== 'string' || req.body.contrasena.length < 15 || Buffer.byteLength(req.body.contrasena) > 256)) rechazar(400, 'La nueva contraseña debe tener al menos 15 caracteres y como máximo 256 bytes.');
     const hash = req.body?.contrasena ? await crearHash(req.body.contrasena) : null;
     await transaccion(pool, async (db) => {
-      const datos = await consultas.autorizacion(db, identificador(req.params.id));
+      const datos = await consultas.autorizacion(db, validarIdentificador(req.params.id));
       if (!datos || datos.ejecutada_en || datos.vence_en.getTime() <= Date.now()) rechazar(409, 'La autorización no está pendiente o ha vencido.');
       if (String(datos.id_autorizante) === String(req.usuario.id)) rechazar(403, 'La autorización exige ejecución independiente.');
       const autor = await consultas.cuenta(db, datos.id_autorizante, true);

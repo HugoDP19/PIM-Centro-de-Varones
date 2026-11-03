@@ -141,60 +141,113 @@ function contenidoFormulario() {
 
 function bloque(titulo, contenedor) { const section = elemento('section', undefined, 'record-block'); section.append(elemento('h3', titulo)); contenedor.append(section); return section; }
 function metadatos(destino, pares) { const dl = elemento('dl', undefined, 'record-meta'); for (const [titulo, valor] of pares) { const div = elemento('div'); div.append(elemento('dt', titulo), elemento('dd', valor || 'No precisado')); dl.append(div); } destino.append(dl); }
-async function abrir(id) {
-  detalleActual = await json(`incidencias/${id}`); mostrar('detail-view');
-  const { incidencia: i, version: v, involucrados, actuaciones, historial, versiones, solicitudes, responsables } = detalleActual;
-  const destino = $('detail-content'); destino.replaceChildren();
-  destino.append(elemento('p', `${codigo(i.id)} · ${estado(i.estado)} · ${i.confidencialidad}`, 'eyebrow'), elemento('h2', v.titulo, 'h3'));
+function mostrarEncabezado(datos, destino) {
+  const { incidencia, version } = datos;
+  destino.append(elemento('p', `${codigo(incidencia.id)} · ${estado(incidencia.estado)} · ${incidencia.confidencialidad}`, 'eyebrow'), elemento('h2', version.titulo, 'h3'));
   const botones = elemento('div', undefined, 'd-flex flex-wrap gap-2 my-3');
   botones.append(accion('Volver', listar));
-  if (i.estado === 'borrador' && String(i.id_registrador) === String(usuario.id)) {
-    botones.append(accion('Editar borrador', () => formulario(detalleActual)));
+  if (incidencia.estado === 'borrador' && String(incidencia.id_registrador) === String(usuario.id)) {
+    botones.append(accion('Editar borrador', () => formulario(datos)));
     botones.append(accion('Confirmar incidencia', async () => {
-      const respuesta = await json(`incidencias/${i.id}/confirmar`, 'POST', {});
-      if (respuesta.acceso) await abrir(i.id); else { await listar(); aviso(`${codigo(i.id)} recibido y confirmado. Tu rol no tiene acceso posterior al contenido restringido.`); }
+      const respuesta = await json(`incidencias/${incidencia.id}/confirmar`, 'POST', {});
+      if (respuesta.acceso) await abrir(incidencia.id); else { await listar(); aviso(`${codigo(incidencia.id)} recibido y confirmado. Tu rol no tiene acceso posterior al contenido restringido.`); }
     }, 'btn btn-primary'));
   } else if (puede('incidencias.exportar')) botones.append(accion('Descargar PDF', async () => {
-    const blob = await (await api(`incidencias/${i.id}/pdf`)).blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${codigo(i.id)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const blob = await (await api(`incidencias/${incidencia.id}/pdf`)).blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${codigo(incidencia.id)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, 'btn btn-primary'));
   destino.append(botones);
-  metadatos(destino, [['Categoría', categorias[v.categoria]], ['Tipo', v.tipo], ['Fecha del hecho', fecha(v.ocurrida_en)], ['Lugar', v.lugar], ['Prioridad', i.prioridad], ['Registrador', `${i.nombre_registrador} · ${i.cargo_registrador}`], ['Reportante', `${v.nombre_reportante} · ${v.condicion_reportante}`], ['Registro', fecha(i.registrada_en)]]);
+  metadatos(destino, [['Categoría', categorias[version.categoria]], ['Tipo', version.tipo], ['Fecha del hecho', fecha(version.ocurrida_en)], ['Lugar', version.lugar], ['Prioridad', incidencia.prioridad], ['Registrador', `${incidencia.nombre_registrador} · ${incidencia.cargo_registrador}`], ['Reportante', `${version.nombre_reportante} · ${version.condicion_reportante}`], ['Registro', fecha(incidencia.registrada_en)]]);
+}
+
+function mostrarHechos(datos, destino) {
+  const { version, involucrados } = datos;
   const personas = bloque('Personas involucradas', destino);
-  for (const p of involucrados) personas.append(elemento('p', `${p.nombre} · ${p.participacion}${p.nivel ? ` · ${p.nivel} · ${p.grado}.º ${p.seccion}` : ' · Sin matrícula relacionada'}`));
+  for (const persona of involucrados) personas.append(elemento('p', `${persona.nombre} · ${persona.participacion}${persona.nivel ? ` · ${persona.nivel} · ${persona.grado}.º ${persona.seccion}` : ' · Sin matrícula relacionada'}`));
   if (!involucrados.length) personas.append(elemento('p', 'Sin personas involucradas identificadas.'));
-  bloque('Descripción de los hechos', destino).append(elemento('p', v.descripcion, 'record-text'));
+  bloque('Descripción de los hechos', destino).append(elemento('p', version.descripcion, 'record-text'));
   const especificos = bloque('Datos de la categoría', destino);
-  for (const [campo, etiqueta, tipo] of campos[v.categoria]) if (v[campo] !== null) especificos.append(elemento('p', `${etiqueta}: ${tipo === 'booleano' ? (v[campo] ? 'Sí' : 'No') : v[campo]}`));
+  for (const [campo, etiqueta, tipo] of campos[version.categoria]) if (version[campo] !== null) especificos.append(elemento('p', `${etiqueta}: ${tipo === 'booleano' ? (version[campo] ? 'Sí' : 'No') : version[campo]}`));
+}
+
+function mostrarSeguimiento(datos, destino) {
+  const { incidencia, actuaciones, responsables } = datos;
   const seguimiento = bloque('Actuaciones y seguimiento', destino);
-  actuaciones.forEach((a) => { const entry = elemento('article', undefined, 'history-entry'); entry.append(elemento('strong', `${estado(a.tipo)} · ${fecha(a.realizada_en)}`), elemento('p', a.detalle, 'record-text'), elemento('small', `${a.autor} · ${a.cargo_autor} · Responsable: ${a.responsable || 'No asignado'}${a.id_actuacion_corregida ? ' · Corrige una actuación anterior' : ''}`, 'text-secondary')); seguimiento.append(entry); });
-  if (puede('incidencias.seguimiento') && ['confirmada', 'en_seguimiento'].includes(i.estado)) {
+  actuaciones.forEach((actuacion) => { const entry = elemento('article', undefined, 'history-entry'); entry.append(elemento('strong', `${estado(actuacion.tipo)} · ${fecha(actuacion.realizada_en)}`), elemento('p', actuacion.detalle, 'record-text'), elemento('small', `${actuacion.autor} · ${actuacion.cargo_autor} · Responsable: ${actuacion.responsable || 'No asignado'}${actuacion.id_actuacion_corregida ? ' · Corrige una actuación anterior' : ''}`, 'text-secondary')); seguimiento.append(entry); });
+  if (puede('incidencias.seguimiento') && ['confirmada', 'en_seguimiento'].includes(incidencia.estado)) {
     const form = elemento('form', undefined, 'row g-3 mt-2');
-    form.innerHTML = '<h4 class="h6">Agregar seguimiento</h4><div class="col-md-4"><label class="form-label">Tipo<select name="tipo" class="form-select"><option value="actuacion">Actuación</option><option value="observacion">Observación</option></select></label></div><div class="col-md-4"><label class="form-label">Responsable<select name="responsable" class="form-select" required></select></label></div><div class="col-md-4"><label class="form-label">Plazo, si corresponde<input name="plazo" class="form-control" type="date"></label></div><div class="col-12"><label class="form-label d-block">Detalle<textarea name="detalle" class="form-control" required maxlength="10000" rows="3"></textarea></label></div><div class="col-12"><label class="form-label">Corrección de una actuación, si corresponde<select name="correccion" class="form-select"></select></label></div><div class="col-12"><button class="btn btn-primary">Agregar actuación</button></div>';
+    form.innerHTML = `
+      <h4 class="h6">Agregar seguimiento</h4><div class="col-md-4"><label class="form-label">Tipo<select name="tipo" class="form-select"><option value="actuacion">Actuación</option><option value="observacion">Observación</option></select></label></div>
+      <div class="col-md-4"><label class="form-label">Responsable<select name="responsable" class="form-select" required></select></label></div>
+      <div class="col-md-4"><label class="form-label">Plazo, si corresponde<input name="plazo" class="form-control" type="date"></label></div>
+      <div class="col-12"><label class="form-label d-block">Detalle<textarea name="detalle" class="form-control" required maxlength="10000" rows="3"></textarea></label></div>
+      <div class="col-12"><label class="form-label">Corrección de una actuación, si corresponde<select name="correccion" class="form-select"></select></label></div>
+      <div class="col-12"><button class="btn btn-primary">Agregar actuación</button></div>
+      `;
     opciones(form.elements.responsable, responsables, (r) => r.id, (r) => r.nombre, usuario.id);
     const grupoReserva = elemento('div', undefined, 'col-12');
     const etiquetaReserva = elemento('label', '¿El seguimiento contiene información sensible?', 'form-label d-block');
     const reserva = elemento('select', undefined, 'form-select'); reserva.name = 'contenido_sensible'; reserva.required = true;
-    opciones(reserva, ['true', 'false'], (v) => v, (v) => v === 'true' ? 'Sí, proteger el expediente completo' : 'No');
+    opciones(reserva, ['true', 'false'], (version) => version, (version) => version === 'true' ? 'Sí, proteger el expediente completo' : 'No');
     reserva.addEventListener('change', () => opciones(form.elements.responsable, reserva.value === 'true' ? responsables.filter((r) => ['director', 'subdirector'].includes(r.rol)) : responsables, (r) => r.id, (r) => r.nombre));
     etiquetaReserva.append(reserva); grupoReserva.append(etiquetaReserva); form.insertBefore(grupoReserva, form.lastElementChild);
-    opciones(form.elements.correccion, actuaciones, (a) => a.id, (a) => `${fecha(a.registrada_en)} · ${a.detalle.slice(0, 80)}`);
+    opciones(form.elements.correccion, actuaciones, (actuacion) => actuacion.id, (actuacion) => `${fecha(actuacion.registrada_en)} · ${actuacion.detalle.slice(0, 80)}`);
     form.addEventListener('submit', async (e) => {
       e.preventDefault(); const boton = form.querySelector('button'); boton.disabled = true;
       try {
-        const respuesta = await json(`incidencias/${i.id}/actuaciones`, 'POST', { tipo: form.elements.tipo.value,
+        const respuesta = await json(`incidencias/${incidencia.id}/actuaciones`, 'POST', { tipo: form.elements.tipo.value,
           detalle: form.elements.detalle.value, id_responsable: form.elements.responsable.value,
           fecha_limite: form.elements.plazo.value || null, id_actuacion_corregida: form.elements.correccion.value || null,
           contenido_sensible: reserva.value === 'true' });
-        if (respuesta.acceso) await abrir(i.id);
-        else { await listar(); aviso(`Actuación recibida en ${codigo(i.id)}. El expediente quedó restringido y tu rol no tiene acceso posterior.`); }
+        if (respuesta.acceso) await abrir(incidencia.id);
+        else { await listar(); aviso(`Actuación recibida en ${codigo(incidencia.id)}. El expediente quedó restringido y tu rol no tiene acceso posterior.`); }
       } catch (error) { aviso(error.message, true); boton.disabled = false; }
     });
     seguimiento.append(form);
   }
-  if (solicitudes.length) { const section = bloque('Solicitudes conservadas', destino); solicitudes.forEach((s) => { section.append(elemento('p', `${estado(s.tipo)} · ${estado(s.estado)} · ${s.justificacion}`), elemento('p', s.fundamento_decision || 'Decisión pendiente.')); }); section.append(elemento('small', 'Los flujos para presentar y resolver nuevas solicitudes requieren los criterios institucionales pendientes.', 'text-secondary')); }
-  if (versiones.length > 1) { const section = bloque('Versiones conservadas', destino); versiones.forEach((v) => { const details = elemento('details'); details.append(elemento('summary', `Versión ${v.numero_version} · ${v.estado_version}`), elemento('p', v.descripcion, 'record-text')); section.append(details); }); }
-  const auditoria = bloque('Historial del expediente', destino);
-  historial.forEach((h) => { const item = elemento('p', `${fecha(h.ocurrido_en)} · ${h.actor} · ${estado(h.accion.replace(/^demo_/, ''))}`, 'small history-entry'); if (h.campo && h.campo !== 'escenario') item.append(elemento('span', ` · ${h.campo}: ${h.valor_anterior ?? 'sin valor'} → ${h.valor_nuevo ?? 'sin valor'}`)); auditoria.append(item); });
+}
+
+function mostrarDocumentos(datos, destino) {
+  if (datos.solicitudes.length) {
+    const seccion = bloque('Solicitudes conservadas', destino);
+    for (const solicitud of datos.solicitudes) {
+      seccion.append(elemento('p', `${estado(solicitud.tipo)} · ${estado(solicitud.estado)} · ${solicitud.justificacion}`));
+      seccion.append(elemento('p', solicitud.fundamento_decision || 'Decisión pendiente.'));
+    }
+    seccion.append(elemento('small', 'Los flujos para presentar y resolver nuevas solicitudes requieren los criterios institucionales pendientes.', 'text-secondary'));
+  }
+  if (datos.versiones.length > 1) {
+    const seccion = bloque('Versiones conservadas', destino);
+    for (const version of datos.versiones) {
+      const contenido = elemento('details');
+      contenido.append(elemento('summary', 'Versión ' + version.numero_version + ' → ' + version.estado_version));
+      contenido.append(elemento('p', version.descripcion, 'record-text'));
+      seccion.append(contenido);
+    }
+  }
+}
+
+function mostrarHistorial(historial, destino) {
+  const seccion = bloque('Historial del expediente', destino);
+  for (const evento of historial) {
+    const descripcion = `${fecha(evento.ocurrido_en)} · ${evento.actor} · ${estado(evento.accion.replace(/^demo_/, ''))}`;
+    const entrada = elemento('p', descripcion, 'small history-entry');
+    if (evento.campo && evento.campo !== 'escenario') {
+      entrada.append(elemento('span', ` · ${evento.campo}: ${evento.valor_anterior ?? 'sin valor'} → ${evento.valor_nuevo ?? 'sin valor'}`));
+    }
+    seccion.append(entrada);
+  }
+}
+
+async function abrir(id) {
+  detalleActual = await json('incidencias/' + id);
+  mostrar('detail-view');
+  const destino = $('detail-content');
+  destino.replaceChildren();
+  mostrarEncabezado(detalleActual, destino);
+  mostrarHechos(detalleActual, destino);
+  mostrarSeguimiento(detalleActual, destino);
+  mostrarDocumentos(detalleActual, destino);
+  mostrarHistorial(detalleActual.historial, destino);
 }
 
 function campoCuenta(nombre, etiqueta, filas, valor, mostrar) {

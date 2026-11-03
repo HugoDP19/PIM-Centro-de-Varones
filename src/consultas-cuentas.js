@@ -2,9 +2,9 @@ export async function catalogosCuentas(db) {
   const [usuarios] = await db.execute(`SELECT u.id, u.id_persona, u.id_rol, u.nombre_usuario, u.activo,
     CONCAT(p.nombres, ' ', p.apellidos) AS nombre, r.codigo AS rol FROM usuarios u
     JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol
-    WHERE p.es_personal = 1 AND p.codigo_interno NOT LIKE 'DEMO-%' ORDER BY p.apellidos`);
+    WHERE p.es_personal = 1 ORDER BY p.apellidos`);
   const [personas] = await db.execute(`SELECT p.id, CONCAT(p.nombres, ' ', p.apellidos) AS nombre FROM personas p
-    WHERE p.es_personal = 1 AND p.activo = 1 AND p.codigo_interno NOT LIKE 'DEMO-%'
+    WHERE p.es_personal = 1 AND p.activo = 1
       AND NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.id_persona = p.id) ORDER BY p.apellidos`);
   const [roles] = await db.execute('SELECT id, codigo, nombre FROM roles ORDER BY nombre');
   const [permisos] = await db.execute('SELECT id, codigo, descripcion FROM permisos ORDER BY codigo');

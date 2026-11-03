@@ -48,6 +48,22 @@ export function rechazar(status, mensaje) {
   throw Object.assign(new Error(mensaje), { status, publicMessage: mensaje });
 }
 
+// Validación común sin depender de rutas, consultas ni generación de PDF.
+export function validarIdentificador(valor) {
+  const identificador = String(valor ?? '');
+  if (!/^[1-9]\d{0,19}$/.test(identificador) || BigInt(identificador) > 18446744073709551615n) {
+    rechazar(400, 'Identificador no válido.');
+  }
+  return identificador;
+}
+
+export function validarTexto(valor, campo, maximo, obligatorio = true) {
+  if (typeof valor !== 'string' || valor.trim().length > maximo || (obligatorio && !valor.trim())) {
+    rechazar(400, `Revisa el campo ${campo}.`);
+  }
+  return valor.trim();
+}
+
 export function permisosEfectivos(usuario) {
   return usuario.permisos.filter((permiso) => tienePermiso(usuario, permiso));
 }

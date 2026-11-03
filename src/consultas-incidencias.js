@@ -1,14 +1,11 @@
 import { tienePermiso } from './seguridad.js';
 
-// Los prototipos anteriores se conservan en SQL, fuera de la presentación escolar.
-const vigente = `NOT EXISTS (SELECT 1 FROM historial h0 WHERE h0.id_incidencia = i.id AND h0.accion = 'demo_confirmada')`;
-
 export function alcance(usuario) {
   const autoridad = ['director', 'subdirector'].includes(usuario.rol);
   const internos = ['director', 'subdirector', 'coordinador_tutoria'].includes(usuario.rol);
   const reserva = autoridad && tienePermiso(usuario, 'incidencias.restringidas');
   return {
-    sql: `${vigente} AND NOT EXISTS (SELECT 1 FROM conflictos_interes c WHERE c.id_incidencia = i.id
+    sql: `NOT EXISTS (SELECT 1 FROM conflictos_interes c WHERE c.id_incidencia = i.id
       AND c.id_usuario_afectado = ? AND c.estado IN ('pendiente', 'inhibido'))
       AND ((i.estado = 'borrador' AND i.id_registrador = ?)
         OR (i.estado <> 'borrador' AND (? = 1 OR i.id_registrador = ?)
@@ -50,7 +47,7 @@ export async function catalogos(db, usuario) {
     SELECT p.id, p.nombres, p.apellidos, p.es_personal,
       EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id) AS es_estudiante,
       EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) AS es_apoderado
-    FROM personas p WHERE p.activo = 1 AND p.codigo_interno NOT LIKE 'DEMO-%'
+    FROM personas p WHERE p.activo = 1
       AND (? = 1 OR p.id = ? OR NOT EXISTS (
         SELECT 1 FROM incidencias i JOIN versiones_incidencia v ON v.id_incidencia = i.id
         LEFT JOIN involucrados inv ON inv.id_version = v.id AND inv.id_persona = p.id
@@ -93,7 +90,7 @@ export async function detalleIncidencia(db, incidencia) {
     LEFT JOIN usuarios ud ON ud.id = s.id_decisor LEFT JOIN personas pd ON pd.id = ud.id_persona WHERE s.id_incidencia = ?`, [incidencia.id]);
   const [responsables] = await db.execute(`SELECT u.id, r.codigo AS rol, CONCAT(p.nombres, ' ', p.apellidos) AS nombre
     FROM usuarios u JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol
-    WHERE u.activo = 1 AND p.activo = 1 AND p.codigo_interno NOT LIKE 'DEMO-%'
+    WHERE u.activo = 1 AND p.activo = 1
       AND (r.codigo IN ('director', 'subdirector') OR (? = 'interna' AND (r.codigo = 'coordinador_tutoria' OR u.id = ?)))
       AND EXISTS (SELECT 1 FROM roles_permisos rp JOIN permisos pe ON pe.id = rp.id_permiso
         WHERE rp.id_rol = u.id_rol AND pe.codigo = 'incidencias.seguimiento')

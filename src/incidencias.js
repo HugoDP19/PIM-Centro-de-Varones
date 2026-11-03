@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { autorizar } from './autenticacion.js';
-import { rechazar, tienePermiso } from './seguridad.js';
+import { rechazar, tienePermiso, validarIdentificador, validarTexto } from './seguridad.js';
 import { transaccion } from './database.js';
 import * as consultas from './consultas-incidencias.js';
 import { generarInforme } from './informes.js';
@@ -21,19 +21,6 @@ const obligatoriosAlConfirmar = {
   bienes: ['descripcion_dano'], proteccion_estudiantil: ['riesgo_inmediato', 'requiere_derivacion']
 };
 
-export function identificador(valor) {
-  const texto = String(valor ?? '');
-  if (!/^[1-9]\d{0,19}$/.test(texto) || BigInt(texto) > 18446744073709551615n) rechazar(400, 'Identificador no válido.');
-  return texto;
-}
-
-export function texto(valor, campo, maximo, obligatorio = true) {
-  if (typeof valor !== 'string' || valor.trim().length > maximo || (obligatorio && !valor.trim())) {
-    rechazar(400, `Revisa el campo ${campo}.`);
-  }
-  return valor.trim();
-}
-
 function fechaHecho(valor) {
   if (valor === null || valor === '' || valor === undefined) return null;
   if (typeof valor !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:\.\d{1,3})?(Z|[+-]\d\d:\d\d)$/.test(valor)
@@ -48,69 +35,90 @@ function fechaCivilValida(valor) {
   return fecha && Number.isFinite(fecha.getTime()) && fecha.toISOString().slice(0, 10) === valor;
 }
 
-export async function validarRegistro(db, usuario, cuerpo) {
-  const permitidos = ['id_tipo', 'titulo', 'descripcion', 'ocurrida_en', 'lugar', 'id_reportante', 'condicion_reportante',
-    'prioridad', 'confidencialidad', 'contenido_sensible', 'involucrados', ...camposEspecificos];
-  if (!cuerpo || Object.keys(cuerpo).some((campo) => !permitidos.includes(campo))) rechazar(400, 'La solicitud contiene campos no permitidos; la autoría se obtiene de la sesión.');
-  const tipo = await consultas.tipoIncidencia(db, identificador(cuerpo.id_tipo));
-  if (!tipo) rechazar(400, 'Selecciona un tipo de incidencia activo.');
-  const lista = await consultas.catalogos(db, usuario);
-  const permitidas = new Set(lista.personas.map((p) => String(p.id)));
-  const idReportante = identificador(cuerpo.id_reportante);
-  if (!permitidas.has(idReportante)) rechazar(403, 'No puedes seleccionar esa identidad desde este acceso.');
-  const reportante = await consultas.persona(db, idReportante);
+async function personaPermitida(conexion, identificador, personasPermitidas) {
+  const idPersona = validarIdentificador(identificador);
+  if (!personasPermitidas.has(idPersona)) rechazar(403, 'No puedes seleccionar esa identidad desde este acceso.');
+  return consultas.persona(conexion, idPersona);
+}
+
+async function validarReportante(conexion, cuerpo, personasPermitidas) {
+  const reportante = await personaPermitida(conexion, cuerpo.id_reportante, personasPermitidas);
   const condicion = cuerpo.condicion_reportante;
   if (!['personal', 'estudiante', 'apoderado', 'externo'].includes(condicion)
       || (condicion === 'personal' && !reportante.es_personal)
       || (condicion === 'estudiante' && !reportante.es_estudiante)
       || (condicion === 'apoderado' && !reportante.es_apoderado)
       || (condicion === 'externo' && (reportante.es_personal || reportante.es_estudiante || reportante.es_apoderado))) rechazar(400, 'La condición del reportante no coincide con su identidad.');
-  if (!['baja', 'normal', 'alta', 'urgente'].includes(cuerpo.prioridad)) rechazar(400, 'Selecciona una prioridad válida.');
-  if (!['interna', 'restringida'].includes(cuerpo.confidencialidad) || typeof cuerpo.contenido_sensible !== 'boolean') rechazar(400, 'Indica la confidencialidad y si existe contenido sensible.');
-  const version = { id_tipo: tipo.id, titulo: texto(cuerpo.titulo, 'título', 200), descripcion: texto(cuerpo.descripcion, 'descripción', 20000),
-    ocurrida_en: fechaHecho(cuerpo.ocurrida_en), lugar: cuerpo.lugar ? texto(cuerpo.lugar, 'lugar', 255) : null,
-    id_reportante: idReportante, condicion_reportante: condicion, nombre_reportante: `${reportante.nombres} ${reportante.apellidos}` };
+  return { id_reportante: reportante.id, condicion_reportante: condicion, nombre_reportante: `${reportante.nombres} ${reportante.apellidos}` };
+}
+
+function validarCamposCategoria(cuerpo, categoria) {
+  const valores = {};
   for (const campo of camposEspecificos) {
     const valor = cuerpo[campo];
-    if (!camposCategoria[tipo.categoria].includes(campo) && valor !== undefined && valor !== null && valor !== '') rechazar(400, 'Hay campos que no corresponden a la categoría seleccionada.');
-    if (valor === undefined || valor === null || valor === '') version[campo] = null;
+    if (!camposCategoria[categoria].includes(campo) && valor !== undefined && valor !== null && valor !== '') rechazar(400, 'Hay campos que no corresponden a la categoría seleccionada.');
+    if (valor === undefined || valor === null || valor === '') valores[campo] = null;
     else if (booleanos.includes(campo)) {
       if (typeof valor !== 'boolean') rechazar(400, `Indica sí o no en ${campo}.`);
-      version[campo] = Number(valor);
+      valores[campo] = Number(valor);
     } else if (campo === 'monto_estimado') {
       if (typeof valor !== 'number' || !Number.isFinite(valor) || valor < 0 || valor > 9999999999.99 || !/^\d+(\.\d{1,2})?$/.test(String(valor))) rechazar(400, 'El importe estimado no es válido; usa como máximo dos decimales.');
-      version[campo] = valor;
-    } else version[campo] = texto(valor, campo, ['sintomas_observados', 'riesgo_identificado', 'descripcion_dano'].includes(campo) ? 5000 : 100);
+      valores[campo] = valor;
+    } else valores[campo] = validarTexto(valor, campo, ['sintomas_observados', 'riesgo_identificado', 'descripcion_dano'].includes(campo) ? 5000 : 100);
   }
-  if (version.gravedad_disciplinaria && !['por_evaluar', 'leve', 'grave', 'muy_grave'].includes(version.gravedad_disciplinaria)) rechazar(400, 'Gravedad disciplinaria no válida.');
-  if (version.ambito_convivencia && !['presencial', 'digital', 'mixto'].includes(version.ambito_convivencia)) rechazar(400, 'Ámbito de convivencia no válido.');
-  if ((version.monto_estimado === null) !== (version.moneda === null) || (version.moneda && !/^[A-Z]{3}$/.test(version.moneda))) rechazar(400, 'El importe y su moneda deben completarse juntos.');
-  if (!Array.isArray(cuerpo.involucrados) || cuerpo.involucrados.length > 50) rechazar(400, 'Revisa las personas involucradas.');
+  if (valores.gravedad_disciplinaria && !['por_evaluar', 'leve', 'grave', 'muy_grave'].includes(valores.gravedad_disciplinaria)) rechazar(400, 'Gravedad disciplinaria no válida.');
+  if (valores.ambito_convivencia && !['presencial', 'digital', 'mixto'].includes(valores.ambito_convivencia)) rechazar(400, 'Ámbito de convivencia no válido.');
+  if ((valores.monto_estimado === null) !== (valores.moneda === null) || (valores.moneda && !/^[A-Z]{3}$/.test(valores.moneda))) rechazar(400, 'El importe y su moneda deben completarse juntos.');
+  return valores;
+}
+
+async function validarMatricula(conexion, idMatricula, persona, ocurridaEn) {
+  if (!idMatricula) return;
+  const matricula = await consultas.matricula(conexion, idMatricula);
+  if (!persona.es_estudiante || !matricula || String(matricula.id_estudiante) !== String(persona.id)) rechazar(400, 'La matrícula debe pertenecer al estudiante seleccionado.');
+  const dia = ocurridaEn?.toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+  if (dia && (dia < matricula.fecha_inicio.toISOString().slice(0, 10) || (matricula.fecha_fin && dia > matricula.fecha_fin.toISOString().slice(0, 10)))) rechazar(400, 'La matrícula no corresponde a la fecha del hecho.');
+}
+
+async function validarInvolucrados(conexion, filas, personasPermitidas, ocurridaEn) {
+  if (!Array.isArray(filas) || filas.length > 50) rechazar(400, 'Revisa las personas involucradas.');
   const involucrados = [];
-  let estudiantes = 0;
-  for (const fila of cuerpo.involucrados) {
+  for (const fila of filas) {
     if (!fila || typeof fila !== 'object' || Array.isArray(fila) || Object.keys(fila).some((campo) => !['id_persona', 'id_matricula', 'participacion'].includes(campo))) rechazar(400, 'Datos de participación no válidos.');
-    const idPersona = identificador(fila.id_persona);
-    if (!permitidas.has(idPersona)) rechazar(403, 'No puedes seleccionar esa identidad desde este acceso.');
+    const idPersona = validarIdentificador(fila.id_persona);
     if (involucrados.some((p) => p.id_persona === idPersona)) rechazar(400, 'Una persona no puede repetirse en la misma versión.');
-    const p = await consultas.persona(db, idPersona);
+    const persona = await personaPermitida(conexion, idPersona, personasPermitidas);
     if (!['afectado', 'testigo', 'involucrado'].includes(fila.participacion)) rechazar(400, 'Participación no válida.');
-    const idMatricula = fila.id_matricula ? identificador(fila.id_matricula) : null;
-    if (idMatricula) {
-      const m = await consultas.matricula(db, idMatricula);
-      if (!p.es_estudiante || !m || String(m.id_estudiante) !== idPersona) rechazar(400, 'La matrícula debe pertenecer al estudiante seleccionado.');
-      const dia = version.ocurrida_en?.toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-      if (dia && (dia < m.fecha_inicio.toISOString().slice(0, 10) || (m.fecha_fin && dia > m.fecha_fin.toISOString().slice(0, 10)))) rechazar(400, 'La matrícula no corresponde a la fecha del hecho.');
-    }
-    if (p.es_estudiante) estudiantes++;
+    const idMatricula = fila.id_matricula ? validarIdentificador(fila.id_matricula) : null;
+    await validarMatricula(conexion, idMatricula, persona, ocurridaEn);
     involucrados.push({ id_persona: idPersona, id_matricula: idMatricula, participacion: fila.participacion });
   }
-  return { version, involucrados, estudiantes, tipo, prioridad: cuerpo.prioridad,
+  return involucrados;
+}
+
+export async function validarRegistro(conexion, usuario, cuerpo) {
+  const permitidos = ['id_tipo', 'titulo', 'descripcion', 'ocurrida_en', 'lugar', 'id_reportante', 'condicion_reportante',
+    'prioridad', 'confidencialidad', 'contenido_sensible', 'involucrados', ...camposEspecificos];
+  if (!cuerpo || Object.keys(cuerpo).some(campo => !permitidos.includes(campo))) rechazar(400, 'La solicitud contiene campos no permitidos; la autoría se obtiene de la sesión.');
+  const tipo = await consultas.tipoIncidencia(conexion, validarIdentificador(cuerpo.id_tipo));
+  if (!tipo) rechazar(400, 'Selecciona un tipo de incidencia activo.');
+  const catalogo = await consultas.catalogos(conexion, usuario);
+  const personasPermitidas = new Set(catalogo.personas.map(persona => String(persona.id)));
+  const reportante = await validarReportante(conexion, cuerpo, personasPermitidas);
+  if (!['baja', 'normal', 'alta', 'urgente'].includes(cuerpo.prioridad)) rechazar(400, 'Selecciona una prioridad válida.');
+  if (!['interna', 'restringida'].includes(cuerpo.confidencialidad) || typeof cuerpo.contenido_sensible !== 'boolean') rechazar(400, 'Indica la confidencialidad y si existe contenido sensible.');
+  const version = {
+    id_tipo: tipo.id, titulo: validarTexto(cuerpo.titulo, 'título', 200), descripcion: validarTexto(cuerpo.descripcion, 'descripción', 20000),
+    ocurrida_en: fechaHecho(cuerpo.ocurrida_en), lugar: cuerpo.lugar ? validarTexto(cuerpo.lugar, 'lugar', 255) : null,
+    ...reportante, ...validarCamposCategoria(cuerpo, tipo.categoria)
+  };
+  const involucrados = await validarInvolucrados(conexion, cuerpo.involucrados, personasPermitidas, version.ocurrida_en);
+  return { version, involucrados, prioridad: cuerpo.prioridad,
     confidencialidad: cuerpo.contenido_sensible || ['salud', 'proteccion_estudiantil'].includes(tipo.categoria) ? 'restringida' : cuerpo.confidencialidad };
 }
 
 async function obtener(db, usuario, id, bloquear = false) {
-  const incidencia = await consultas.buscarIncidencia(db, usuario, identificador(id), bloquear);
+  const incidencia = await consultas.buscarIncidencia(db, usuario, validarIdentificador(id), bloquear);
   if (!incidencia) rechazar(404, 'Expediente no disponible para este acceso.');
   return incidencia;
 }
@@ -129,8 +137,8 @@ export function rutasIncidencias(pool) {
   });
   router.get('/catalogos', autorizar('incidencias.registrar'), async (req, res) => res.json(await consultas.catalogos(pool, req.usuario)));
   router.get('/', autorizar('incidencias.consultar'), async (req, res) => {
-    const buscar = req.query.buscar ? texto(req.query.buscar, 'búsqueda', 100) : '';
-    const anterior = req.query.anterior ? identificador(req.query.anterior) : undefined;
+    const buscar = req.query.buscar ? validarTexto(req.query.buscar, 'búsqueda', 100) : '';
+    const anterior = req.query.anterior ? validarIdentificador(req.query.anterior) : undefined;
     res.json({ incidencias: await consultas.listarIncidencias(pool, req.usuario, { buscar, anterior }) });
   });
   router.post('/', autorizar('incidencias.registrar'), async (req, res) => {
@@ -228,13 +236,13 @@ export function rutasIncidencias(pool) {
         await consultas.auditar(db, req.usuario, incidencia.id, 'confidencialidad_elevada', { campo: 'confidencialidad', valor_anterior: 'interna', valor_nuevo: 'restringida' });
         incidencia.confidencialidad = 'restringida';
       }
-      const responsable = cuerpo.id_responsable ? identificador(cuerpo.id_responsable) : req.usuario.id;
+      const responsable = cuerpo.id_responsable ? validarIdentificador(cuerpo.id_responsable) : req.usuario.id;
       if (!await consultas.responsableDelCaso(db, responsable, incidencia)) rechazar(400, 'El responsable debe estar habilitado para este expediente.');
-      const correccion = cuerpo.id_actuacion_corregida ? identificador(cuerpo.id_actuacion_corregida) : null;
+      const correccion = cuerpo.id_actuacion_corregida ? validarIdentificador(cuerpo.id_actuacion_corregida) : null;
       if (correccion && !await consultas.actuacionDelCaso(db, correccion, incidencia.id)) rechazar(400, 'La actuación corregida debe pertenecer al expediente.');
       if (cuerpo.fecha_limite && !fechaCivilValida(cuerpo.fecha_limite)) rechazar(400, 'Fecha límite no válida.');
       const id = await consultas.insertar(db, 'actuaciones', { id_incidencia: incidencia.id,
-        id_autor: req.usuario.id, id_rol_autor: req.usuario.id_rol, tipo: cuerpo.tipo, detalle: texto(cuerpo.detalle, 'detalle', 10000),
+        id_autor: req.usuario.id, id_rol_autor: req.usuario.id_rol, tipo: cuerpo.tipo, detalle: validarTexto(cuerpo.detalle, 'detalle', 10000),
         realizada_en: fechaHecho(cuerpo.realizada_en) || new Date(), registrada_en: new Date(), id_responsable: responsable,
         fecha_limite: cuerpo.fecha_limite || null, id_actuacion_corregida: correccion });
       await consultas.auditar(db, req.usuario, incidencia.id, 'seguimiento_agregado', { id_actuacion: id });
