@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel institucional | SICE-Local</title>
+  <link rel="stylesheet" href="/vendor/bootstrap.min.css"><link rel="stylesheet" href="/css/styles.css">
+  <script src="/js/panel.js" defer></script>
+</head>
+<body>
+  <header class="site-header px-3 px-md-4 py-3 bg-white">
+    <a class="brand" href="/panel.html">SICE<span>LOCAL</span></a>
+    <div class="d-flex align-items-center gap-3"><span id="user-label" class="small"></span><button id="logout" class="btn btn-sm btn-outline-primary">Salir</button></div>
+  </header>
+  <main class="container-fluid workspace py-4 px-3 px-md-4">
+    <div id="environment" class="environment mb-3" hidden>Entorno de desarrollo · Todos los datos personales de la colección escolar son sintéticos.</div>
+    <div class="page-heading mb-4"><div><p class="eyebrow mb-1">I.E.P. N.° 20874 Centro de Varones</p><h1 class="h2 mb-1">Gestión institucional</h1><p class="text-secondary mb-0">San Vicente de Cañete</p></div></div>
+    <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">
+      <button id="nav-list" class="btn btn-outline-primary" hidden>Incidencias</button>
+      <button id="nav-new" class="btn btn-primary" hidden>Registrar incidencia</button>
+      <button id="nav-accounts" class="btn btn-outline-primary" hidden>Cuentas y permisos</button>
+    </nav>
+    <div id="message" role="status" class="alert" hidden></div>
+    <section id="list-view" class="surface" hidden aria-labelledby="list-title">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4"><h2 id="list-title" class="h4 mb-0">Expedientes de incidencias</h2>
+        <form id="search-form" class="d-flex gap-2"><label for="search" class="visually-hidden">Buscar por título</label><input id="search" class="form-control" type="search" placeholder="Buscar por título" maxlength="100"><button class="btn btn-outline-primary">Buscar</button></form>
+      </div>
+      <p class="small text-secondary">Solo aparecen los expedientes incluidos en tu permiso y ámbito de consulta.</p>
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Código</th><th>Fecha de registro</th><th>Categoría y título</th><th>Estado</th><th>Prioridad</th><th><span class="visually-hidden">Acción</span></th></tr></thead><tbody id="incident-rows"></tbody></table></div>
+      <p id="list-empty" hidden>No hay expedientes disponibles con estos filtros.</p>
+      <div class="d-flex gap-2 mt-3"><button id="previous-page" class="btn btn-sm btn-outline-primary" hidden>Anterior</button><button id="next-page" class="btn btn-sm btn-outline-primary" hidden>Siguiente</button></div>
+    </section>
+    <section id="form-view" class="surface" hidden aria-labelledby="form-title">
+      <h2 id="form-title" class="h4">Registrar incidencia</h2>
+      <p class="text-secondary">Guarda el borrador, revisa su contenido y confirma cuando los datos sean correctos. Después de confirmar, los hechos quedan protegidos.</p>
+      <form id="incident-form">
+        <fieldset class="mb-4"><legend class="section-legend">Datos generales</legend><div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="category">Categoría</label><select id="category" class="form-select" required></select></div>
+          <div class="col-md-6"><label class="form-label" for="incident-type">Tipo de incidencia</label><select id="incident-type" class="form-select" required></select><div id="minimum" class="form-text"></div></div>
+          <div class="col-12"><label class="form-label" for="incident-title">Título</label><input id="incident-title" class="form-control" maxlength="200" required></div>
+          <div class="col-md-6"><label class="form-label" for="occurred">Fecha y hora del hecho (Lima)</label><input id="occurred" class="form-control" type="datetime-local"><div class="form-text">Puede quedar sin precisar si se desconoce.</div></div>
+          <div class="col-md-6"><label class="form-label" for="place">Lugar</label><input id="place" class="form-control" maxlength="255"></div>
+          <div class="col-12"><label class="form-label" for="description">Descripción objetiva de los hechos</label><textarea id="description" class="form-control" rows="5" maxlength="20000" required></textarea><div class="form-text">Diferencia lo observado de lo reportado. Evita diagnósticos o atribuir responsabilidad sin verificación.</div></div>
+          <div class="col-md-4"><label class="form-label" for="priority">Prioridad de atención</label><select id="priority" class="form-select"><option value="normal">Normal</option><option value="baja">Baja</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select></div>
+          <div class="col-md-4"><label class="form-label" for="confidentiality">Confidencialidad</label><select id="confidentiality" class="form-select"><option value="interna">Interna</option><option value="restringida">Restringida</option></select></div>
+          <div class="col-md-4"><label class="form-label" for="sensitive">¿Contiene información sensible?</label><select id="sensitive" class="form-select" required><option value="">Seleccionar</option><option value="true">Sí</option><option value="false">No</option></select><div class="form-text">Incluye testigos confidenciales, presunta violencia o vulneración de derechos.</div></div>
+        </div></fieldset>
+        <fieldset class="mb-4"><legend class="section-legend">Datos de la categoría</legend><div id="specific-fields" class="row g-3"></div></fieldset>
+        <fieldset class="mb-4"><legend class="section-legend">Reportante y registrador</legend><div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="reporter">Persona que reporta el hecho</label><select id="reporter" class="form-select" required></select></div>
+          <div class="col-md-6"><label class="form-label" for="reporter-condition">Condición del reportante</label><select id="reporter-condition" class="form-select" required></select></div>
+          <div class="col-12"><label class="form-label" for="registrar">Registrador (de tu sesión)</label><input id="registrar" class="form-control" readonly disabled></div>
+        </div></fieldset>
+        <fieldset class="mb-4"><legend class="section-legend">Personas involucradas</legend><p class="small text-secondary">El mínimo de estudiantes depende del tipo. Una persona adulta puede figurar como testigo sin matrícula. Las identidades reservadas no se ofrecen en catálogos de accesos sin permiso.</p><div id="involved-rows"></div><button id="add-person" class="btn btn-sm btn-outline-primary mt-2" type="button">Añadir persona</button></fieldset>
+        <div class="d-flex flex-wrap gap-2"><button id="save-draft" class="btn btn-primary" type="submit">Guardar borrador y revisar</button><button id="cancel-form" class="btn btn-outline-primary" type="button">Volver al listado</button></div>
+      </form>
+    </section>
+    <section id="detail-view" class="surface" hidden aria-labelledby="detail-title"><div id="detail-content"></div></section>
+    <section id="accounts-view" class="surface" hidden aria-labelledby="accounts-title">
+      <h2 id="accounts-title" class="h4">Cuentas y permisos autorizados</h2><p class="text-secondary">Una autoridad independiente autoriza el cambio concreto; un Administrador habilitado lo ejecuta. No se permiten cambios sobre la propia cuenta.</p>
+      <div class="table-responsive"><table class="table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr></thead><tbody id="account-rows"></tbody></table></div>
+      <form id="authorization-form" class="my-4" hidden><h3 class="h5">Autorizar un cambio</h3><div class="row g-3">
+        <div class="col-md-6"><label for="account-action" class="form-label">Acción</label><select id="account-action" class="form-select"><option value="crear_cuenta">Crear cuenta</option><option value="actualizar_cuenta">Actualizar cuenta</option><option value="restablecer_clave">Restablecer contraseña</option><option value="asignar_permiso">Asignar permiso a un rol</option><option value="retirar_permiso">Retirar permiso de un rol</option></select></div>
+        <div id="authorization-fields" class="row g-3 m-0 p-0"></div>
+        <div class="col-12"><label for="authorization-reason" class="form-label">Motivo del cambio</label><textarea id="authorization-reason" class="form-control" maxlength="500" required></textarea></div>
+        <div class="col-12"><button class="btn btn-primary">Registrar autorización</button></div>
+      </div></form>
+      <h3 class="h5 mt-4">Autorizaciones registradas</h3><div id="authorization-list"></div>
+      <form id="execution-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Ejecutar autorización seleccionada</h3><p id="execution-summary"></p><div id="execution-password-group"><label for="new-password" class="form-label">Nueva contraseña</label><input id="new-password" class="form-control" type="password" autocomplete="new-password" minlength="15" maxlength="256"><p class="form-text">Se almacena con hash. Comunícala al titular por un canal seguro.</p></div><button class="btn btn-primary mt-3">Ejecutar el cambio autorizado</button></form>
+    </section>
+  </main>
+  <footer class="site-footer px-4 py-3"><span>Centro de Varones · San Vicente de Cañete</span><span>Uso institucional autorizado</span></footer>
+</body>
+</html>

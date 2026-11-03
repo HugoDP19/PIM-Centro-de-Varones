@@ -35,6 +35,36 @@ h2 { font-size: 1.85rem; font-weight: 700; letter-spacing: -.04em; margin-bottom
 .phase-note { padding: 1rem; background: #f6f4f0; font-size: .85rem; line-height: 1.6; border-radius: .5rem; }
 .site-footer { border-top: 1px solid #dedbd5; font-size: .75rem; color: var(--muted); }
 :focus-visible { outline: 3px solid #b0812f; outline-offset: 3px; }
+.workspace { flex: 1; max-width: 1280px; }
+.workspace h1 { font-size: 1.8rem; letter-spacing: -.035em; }
+.surface { background: white; padding: 1.75rem; border: 1px solid #e3ded7; border-radius: .8rem; }
+.environment { font-size: .78rem; color: #6d572c; background: #f7efd9; border: 1px solid #e7d8b4; border-radius: .4rem; padding: .65rem .9rem; }
+.section-legend { font-size: 1.05rem; font-weight: 700; color: var(--school-red); padding-bottom: .5rem; border-bottom: 1px solid #ece5e5; }
+.form-select { min-height: 3.15rem; }
+.workspace .btn-sm { min-height: 2.5rem; }
+.involved-row { padding: .75rem; border: 1px solid #eee7e0; border-radius: .5rem; margin-bottom: .75rem; }
+.record-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; }
+.record-block { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid #ece5e5; }
+.record-block h3 { font-size: 1.08rem; color: var(--school-red); }
+.record-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+.record-meta dt { font-size: .75rem; color: var(--muted); font-weight: 500; }
+.record-meta dd { overflow-wrap: anywhere; }
+.history-entry { border-left: 2px solid #cdb8bd; padding: .3rem 0 .3rem 1rem; margin-bottom: .75rem; }
+.table { font-size: .9rem; }
+.workspace .table-responsive { max-width: 100%; overflow-x: auto; }
+.table th { color: var(--school-red); font-size: .78rem; white-space: nowrap; }
+.status-label { display: inline-block; padding: .2rem .6rem; border-radius: 2rem; font-size: .75rem; background: #f1ece8; white-space: nowrap; }
+@media (max-width: 575.98px) {
+  .surface { padding: 1rem; }
+  .site-header #user-label { font-size: .72rem; max-width: 8rem; }
+  .workspace .table, .workspace .table tbody, .workspace .table tr, .workspace .table td { display: block; width: 100%; min-width: 0; }
+  .workspace .table thead { display: none; }
+  .workspace .table tr { border: 1px solid #e3ded7; border-radius: .5rem; padding: .5rem; margin-bottom: .8rem; }
+  .workspace .table td { border: 0; padding: .3rem; overflow-wrap: anywhere; }
+  .workspace .table td[data-label]::before { content: attr(data-label); display: block; font-size: .7rem; color: var(--muted); }
+  #search-form { width: 100%; }
+  #search { min-width: 0; }
+}
 @media (max-width: 991.98px) {
   .access-layout { max-width: 600px; padding-top: 2rem; padding-bottom: 2rem; }
   .identity { padding-right: .75rem; text-align: center; }
