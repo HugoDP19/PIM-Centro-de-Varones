@@ -1,7 +1,7 @@
 -- Solo lectura. Ejecutar en Workbench con acceso local autorizado.
 USE sice_desarrollo;
 
--- 23 expedientes: código visible derivado de la PK, sin añadir una columna redundante.
+-- Colección escolar y verificaciones: los prototipos anteriores se conservan aparte.
 SELECT
     CONCAT('INC-', LPAD(i.id, 6, '0')) AS codigo_incidencia,
     v.titulo,
@@ -21,22 +21,24 @@ FROM incidencias i
 JOIN versiones_incidencia v ON v.id = i.id_version_vigente
 JOIN tipos_incidencia t ON t.id = v.id_tipo
 JOIN roles r ON r.id = i.id_rol_registrador
+WHERE NOT EXISTS (SELECT 1 FROM historial h WHERE h.id_incidencia = i.id AND h.accion = 'demo_confirmada')
 ORDER BY i.id;
 
 -- Aula histórica y participación por versión (incluye versiones anteriores).
 SELECT
     v.titulo,
     v.numero_version,
-    p.codigo_interno AS estudiante_sintetico,
+    p.codigo_interno AS persona_involucrada,
     a.nivel,
     a.grado,
     a.seccion,
     inv.participacion
 FROM involucrados inv
 JOIN versiones_incidencia v ON v.id = inv.id_version
-JOIN personas p ON p.id = inv.id_estudiante
+JOIN personas p ON p.id = inv.id_persona
 LEFT JOIN matriculas m ON m.id = inv.id_matricula
 LEFT JOIN aulas a ON a.id = m.id_aula
+WHERE NOT EXISTS (SELECT 1 FROM historial h WHERE h.id_incidencia = v.id_incidencia AND h.accion = 'demo_confirmada')
 ORDER BY v.id_incidencia, v.numero_version, p.codigo_interno;
 
 -- Seguimiento y comunicaciones; responsables reales de las cuentas sintéticas.
@@ -48,6 +50,7 @@ SELECT
     a.fecha_limite
 FROM actuaciones a
 LEFT JOIN usuarios u ON u.id = a.id_responsable
+WHERE NOT EXISTS (SELECT 1 FROM historial h WHERE h.id_incidencia = a.id_incidencia AND h.accion = 'demo_confirmada')
 ORDER BY a.id_incidencia, a.realizada_en;
 
 -- Datos de escenarios futuros: esto no ejecuta ni prueba el flujo de aprobación.
@@ -66,14 +69,17 @@ FROM solicitudes_cambio s
 JOIN usuarios solicitante ON solicitante.id = s.id_solicitante
 LEFT JOIN usuarios evaluador ON evaluador.id = s.id_evaluador
 LEFT JOIN usuarios decisor ON decisor.id = s.id_decisor
+WHERE NOT EXISTS (SELECT 1 FROM historial h WHERE h.id_incidencia = s.id_incidencia AND h.accion = 'demo_confirmada')
 ORDER BY s.id;
 
 SELECT id_incidencia, numero_version, estado_version, lugar, descripcion
 FROM versiones_incidencia
 WHERE id_incidencia IN (SELECT id_incidencia FROM solicitudes_cambio)
+  AND NOT EXISTS (SELECT 1 FROM historial h WHERE h.id_incidencia = versiones_incidencia.id_incidencia AND h.accion = 'demo_confirmada')
 ORDER BY id_incidencia, numero_version;
 
 SELECT id_incidencia, ocurrido_en, accion, campo, valor_anterior, valor_nuevo
-FROM historial
+FROM historial h1
 WHERE id_incidencia IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM historial h WHERE h.id_incidencia = h1.id_incidencia AND h.accion = 'demo_confirmada')
 ORDER BY id_incidencia, ocurrido_en, id;
