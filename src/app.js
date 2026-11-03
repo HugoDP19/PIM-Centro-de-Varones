@@ -1,6 +1,8 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
-import { configurarAutenticacion } from './autenticacion.js';
+import { configurarAutenticacion, protegerSolicitudes } from './autenticacion.js';
+import { rutasIncidencias } from './incidencias.js';
+import { rutasCuentas } from './cuentas.js';
 
 const directory = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 
@@ -15,13 +17,13 @@ export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion =
     next();
   });
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  app.use(express.json({ limit: '8kb' }));
+  app.use(express.json({ limit: '64kb' }));
   const auth = configurarAutenticacion({ pool, origin, produccion });
   app.use('/api/auth', auth.router);
-  // Ninguna operación de expedientes está habilitada en la fase de autenticación.
-  app.use('/api/incidencias', auth.exigirSesion, (_req, res) => {
-    res.status(403).json({ error: 'La gestión de expedientes no está habilitada en esta fase.' });
-  });
+  const soloDesarrollo = (_req, res, next) => produccion || process.env.NODE_ENV !== 'development'
+    ? res.status(503).json({ error: 'Este módulo requiere validación institucional antes de habilitarse en producción.' }) : next();
+  app.use('/api/incidencias', protegerSolicitudes({ origin, produccion }), auth.exigirSesion, soloDesarrollo, rutasIncidencias(pool));
+  app.use('/api/cuentas', protegerSolicitudes({ origin, produccion }), auth.exigirSesion, soloDesarrollo, rutasCuentas(pool));
 
   app.get('/api/health', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -35,9 +37,12 @@ export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion =
   app.use((_req, res) => res.status(404).json({ error: 'Recurso no encontrado.' }));
   app.use((error, _req, res, next) => {
     if (res.headersSent) return next(error);
-    const mensajes = { 400: 'La solicitud no es válida.', 404: 'Recurso no encontrado.', 413: 'La solicitud supera el tamaño permitido.' };
-    const status = mensajes[error.status] ? error.status : 500;
-    res.status(status).json({ error: mensajes[status] || 'No se pudo completar la solicitud. Inténtalo de nuevo.' });
+    const mensajes = { 400: 'La solicitud no es válida.', 401: 'Inicia sesión para continuar.', 403: 'Acceso no autorizado.',
+      404: 'Recurso no encontrado.', 405: 'Operación no disponible.', 409: 'El registro cambió; revisa su estado.', 413: 'La solicitud supera el tamaño permitido.' };
+    const status = error.code === 'ER_DUP_ENTRY' ? 409 : mensajes[error.status] ? error.status : 500;
+    const mensaje = error.code === 'ER_DUP_ENTRY' ? 'Esa identificación ya está registrada. Revisa los datos autorizados.'
+      : error.publicMessage && mensajes[status] ? error.publicMessage : mensajes[status] || 'No se pudo completar la solicitud. Inténtalo de nuevo.';
+    res.status(status).json({ error: mensaje });
   });
   return app;
 }
