@@ -1,6 +1,53 @@
-:root { color-scheme: light; }
-body { background: #f5f4f1; color: #252525; }
-.welcome { max-width: 48rem; background: #fff; border-top: 0.35rem solid #a91e23; border-radius: 0.75rem; box-shadow: 0 0.5rem 2rem #2525250d; }
-.school-logo { width: 8rem; height: auto; }
-h1 { color: #a91e23; }
-.school-name { overflow-wrap: anywhere; }
+:root { color-scheme: light; --school-red: #981c27; --ink: #26272b; --muted: #646970; }
+body { margin: 0; background: #f5f3ef; color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
+[hidden] { display: none !important; }
+.site-header, .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.site-header { border-bottom: 1px solid #dedbd5; }
+.brand { color: var(--school-red); text-decoration: none; font-size: 1.25rem; font-weight: 800; letter-spacing: .08em; }
+.brand span { color: var(--ink); margin-left: .5rem; font-size: .75rem; font-weight: 500; letter-spacing: .15em; }
+.header-note { font-size: .8rem; color: var(--muted); }
+.access-layout { flex: 1; display: flex; align-items: center; max-width: 1120px; padding-top: 3.5rem; padding-bottom: 3.5rem; }
+.identity { padding-right: 3rem; }
+.school-logo { width: 110px; height: auto; display: block; mix-blend-mode: multiply; }
+.eyebrow { color: var(--school-red); text-transform: uppercase; font-size: .72rem; font-weight: 700; letter-spacing: .12em; }
+h1 { font-size: clamp(2.3rem, 5vw, 4rem); line-height: 1.07; font-weight: 750; letter-spacing: -.045em; margin-bottom: 1.25rem; }
+.institution { max-width: 28rem; font-size: 1rem; line-height: 1.7; color: var(--muted); }
+.identity-rule { background: #bd8e37; width: 3rem; height: 3px; margin: 1.5rem 0; }
+.identity-description { font-size: 1rem; line-height: 1.7; max-width: 24rem; color: var(--muted); }
+.access-card { background: #fff; padding: 2.5rem; border: 1px solid #e7e3dc; border-radius: 1.1rem; box-shadow: 0 14px 45px #30251a08; }
+h2 { font-size: 1.85rem; font-weight: 700; letter-spacing: -.04em; margin-bottom: .75rem; }
+.form-label { font-size: .88rem; font-weight: 650; }
+.form-control { min-height: 3.15rem; border-color: #d8d7d3; border-radius: .5rem; font-size: .95rem; padding: .7rem .9rem; }
+.form-control::placeholder { color: #787b80; }
+.form-control:focus { border-color: var(--school-red); box-shadow: 0 0 0 .2rem #981c271c; }
+.password-field { position: relative; }
+.password-field input { padding-right: 5.5rem; }
+.password-toggle { position: absolute; inset: 0 .35rem 0 auto; background: none; border: 0; padding: .5rem; font-size: .8rem; font-weight: 600; color: var(--school-red); }
+.access-help { color: var(--muted); font-size: .8rem; line-height: 1.6; }
+.btn { min-height: 3.1rem; font-size: .95rem; font-weight: 600; border-radius: .5rem; }
+.btn-primary { --bs-btn-bg: var(--school-red); --bs-btn-border-color: var(--school-red); --bs-btn-hover-bg: #7b1520; --bs-btn-hover-border-color: #7b1520; --bs-btn-active-bg: #64111a; --bs-btn-active-border-color: #64111a; --bs-btn-disabled-bg: #a66b72; --bs-btn-disabled-border-color: #a66b72; }
+.btn-primary span { float: right; font-size: 1.2rem; line-height: 1; }
+.btn-outline-primary { --bs-btn-color: var(--school-red); --bs-btn-border-color: var(--school-red); --bs-btn-hover-bg: var(--school-red); --bs-btn-hover-border-color: var(--school-red); --bs-btn-active-bg: var(--school-red); }
+.privacy-note { padding-top: 1.4rem; margin-top: 1.7rem; border-top: 1px solid #eeeae4; font-size: .75rem; line-height: 1.6; color: var(--muted); }
+.session-badge { display: inline-block; background: #eaf5ef; color: #245d3c; padding: .35rem .7rem; border-radius: 2rem; font-size: .8rem; font-weight: 600; }
+.session-details dt { font-size: .75rem; color: var(--muted); margin-top: 1rem; font-weight: 500; }
+.session-details dd { margin-top: .2rem; overflow-wrap: anywhere; }
+.phase-note { padding: 1rem; background: #f6f4f0; font-size: .85rem; line-height: 1.6; border-radius: .5rem; }
+.site-footer { border-top: 1px solid #dedbd5; font-size: .75rem; color: var(--muted); }
+:focus-visible { outline: 3px solid #b0812f; outline-offset: 3px; }
+@media (max-width: 991.98px) {
+  .access-layout { max-width: 600px; padding-top: 2rem; padding-bottom: 2rem; }
+  .identity { padding-right: .75rem; text-align: center; }
+  .school-logo { width: 75px; margin-inline: auto; }
+  .institution { margin-inline: auto; font-size: .9rem; }
+  .identity-rule, .identity-description { display: none; }
+  h1 { font-size: 2.4rem; margin-bottom: .75rem; }
+}
+@media (max-width: 575.98px) {
+  .access-layout { padding-inline: .5rem; }
+  .access-card { padding: 1.5rem 1.2rem; }
+  .header-note { font-size: .7rem; }
+  .site-footer { flex-direction: column; gap: .3rem; text-align: center; }
+  h1 { font-size: 2rem; }
+  h2 { font-size: 1.6rem; }
+}

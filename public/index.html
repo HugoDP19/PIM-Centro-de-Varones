@@ -3,24 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="SICE-Local: registro y seguimiento de incidencias escolares.">
-  <title>SICE-Local | Centro de Varones</title>
+  <meta name="description" content="Acceso institucional a SICE-Local, Centro de Varones de San Vicente de Cañete.">
+  <title>Iniciar sesión | SICE-Local</title>
   <link rel="stylesheet" href="/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/css/styles.css">
   <script src="/js/main.js" defer></script>
 </head>
 <body>
-  <main class="container py-5">
-    <section class="welcome mx-auto p-4 p-md-5 text-center" aria-labelledby="title">
-      <img class="school-logo img-fluid mb-4" src="/image/images.jpg" width="455" height="540" alt="Escudo oficial del colegio N.° 20874 Centro de Varones">
-      <p class="text-uppercase fw-semibold text-secondary">Sistema de incidencias escolares</p>
-      <h1 id="title" class="display-5 fw-bold">SICE-Local</h1>
-      <p class="school-name fs-5">I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.</p>
-      <hr class="my-4">
-      <h2 class="h5">Fase 1 · Configuración inicial</h2>
-      <p class="text-secondary">Base técnica del sistema. Las funciones de registro y seguimiento se desarrollarán en las siguientes fases.</p>
-      <p id="server-status" class="small mb-0" role="status">Comprobando el servidor…</p>
-    </section>
+  <header class="site-header container-fluid px-4 px-lg-5 py-3">
+    <a class="brand" href="/" aria-label="SICE-Local, inicio">SICE<span>LOCAL</span></a>
+    <span class="header-note">Acceso institucional</span>
+  </header>
+  <main class="container access-layout">
+    <div class="row align-items-center g-4 g-lg-5 w-100 mx-0">
+      <section class="col-lg-6 identity" aria-labelledby="school-title">
+        <img class="school-logo" src="/image/images.jpg" width="455" height="540" alt="Escudo oficial del colegio N.° 20874 Centro de Varones">
+        <p class="eyebrow mt-4 mb-2">Sistema de incidencias escolares</p>
+        <h1 id="school-title">Centro de<br class="d-none d-lg-block"> Varones</h1>
+        <p class="institution">I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.</p>
+        <div class="identity-rule" aria-hidden="true"></div>
+        <p class="identity-description">Un espacio institucional para el cuidado, la convivencia y el seguimiento escolar.</p>
+      </section>
+      <section class="col-lg-6" aria-labelledby="access-title">
+        <div class="access-card">
+          <p class="eyebrow mb-2">Bienvenido a SICE-Local</p>
+          <h2 id="access-title">Iniciar sesión</h2>
+          <p id="access-description" class="text-secondary mb-4">Ingresa con tu cuenta institucional para continuar.</p>
+          <p id="session-status" class="small text-secondary" role="status">Comprobando tu sesión…</p>
+          <div id="feedback" class="alert alert-danger" role="alert" hidden></div>
+          <form id="login-form" hidden>
+            <div class="mb-4">
+              <label for="username" class="form-label">Usuario</label>
+              <input id="username" name="usuario" class="form-control" type="text" required minlength="3" maxlength="60"
+                autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Tu nombre de usuario">
+            </div>
+            <div class="mb-3">
+              <label for="password" class="form-label">Contraseña</label>
+              <div class="password-field">
+                <input id="password" name="contrasena" class="form-control" type="password" required maxlength="256"
+                  autocomplete="current-password" placeholder="Tu contraseña">
+                <button id="show-password" class="password-toggle" type="button" aria-controls="password" aria-pressed="false">Mostrar</button>
+              </div>
+            </div>
+            <p class="access-help">Si necesitas ayuda con tu cuenta, contacta al administrador autorizado.</p>
+            <button id="login-button" class="btn btn-primary w-100 mt-3" type="submit">Iniciar sesión <span aria-hidden="true">→</span></button>
+          </form>
+          <div id="session-panel" hidden>
+            <p class="session-badge">Sesión activa</p>
+            <dl class="session-details">
+              <dt>Nombre</dt><dd id="session-name"></dd>
+              <dt>Rol institucional</dt><dd id="session-role"></dd>
+              <dt>Usuario</dt><dd id="session-username"></dd>
+            </dl>
+            <p id="session-scope" class="text-secondary small"></p>
+            <p class="phase-note">El acceso está habilitado. Los módulos de gestión se incorporarán en las siguientes fases.</p>
+            <button id="logout-button" class="btn btn-outline-primary w-100" type="button">Cerrar sesión</button>
+          </div>
+          <div class="privacy-note">Acceso personal. Protege tu contraseña y cierra la sesión al terminar.</div>
+          <noscript><p class="alert alert-warning mt-3">Activa JavaScript en tu navegador para iniciar sesión.</p></noscript>
+        </div>
+      </section>
+    </div>
   </main>
+  <footer class="site-footer container-fluid px-4 px-lg-5 py-3">
+    <span>San Vicente de Cañete · Perú</span><span>SICE-Local · Uso institucional</span>
+  </footer>
 </body>
 </html>
