@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -15,6 +15,23 @@ import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-i
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
 
+async function leerEstadoOrigen(conexion) {
+  const [tablas] = await conexion.query('SHOW TABLES');
+  const estado = {};
+  for (const fila of tablas) {
+    const tabla = Object.values(fila)[0];
+    const [indices] = await conexion.query(`SHOW KEYS FROM \`${tabla}\` WHERE Key_name = 'PRIMARY'`);
+    const orden = indices.sort((a, b) => a.Seq_in_index - b.Seq_in_index).map(indice => `\`${indice.Column_name}\``).join(', ');
+    const [filas] = await conexion.query(`SELECT * FROM \`${tabla}\` ORDER BY ${orden}`);
+    const [[estructura]] = await conexion.query(`SHOW CREATE TABLE \`${tabla}\``);
+    // Solo se comparan cantidades y huellas; nunca se muestran datos ni credenciales.
+    estado[tabla] = { cantidad: filas.length,
+      huella: createHash('sha256').update(JSON.stringify([estructura, filas])).digest('hex') };
+  }
+  assert.equal(estado.incidencias?.cantidad, 24, 'SICE debe conservar los 24 expedientes escolares.');
+  return estado;
+}
+
 async function crearCopiaTemporal(claves) {
   const nombre = `sice_test_${randomBytes(8).toString('hex')}`;
   const opciones = { host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 3306),
@@ -23,15 +40,25 @@ async function crearCopiaTemporal(claves) {
   const origen = await mysql.createConnection({ ...opciones, database: process.env.DB_NAME });
   const copia = await mysql.createConnection(opciones);
   let creada = false;
+  const [[identidadInicial]] = await copia.query('SELECT CONNECTION_ID() AS conexion, @@server_uuid AS servidor');
 
   async function eliminarCopia() {
-    // Solo se borra el nombre aleatorio creado por esta ejecución, nunca una base configurada.
-    if (creada && /^sice_test_[a-f0-9]{16}$/.test(nombre)) await copia.query(`DROP DATABASE \`${nombre}\``);
-    await copia.end();
+    try {
+      if (!creada) return;
+      const [[identidad]] = await copia.query('SELECT DATABASE() AS base, CONNECTION_ID() AS conexion, @@server_uuid AS servidor');
+      // Exige creación propia, nombre exacto y la misma conexión al mismo servidor.
+      if (!/^sice_test_[a-f0-9]{16}$/.test(nombre) || identidad.base !== nombre
+          || identidad.conexion !== identidadInicial.conexion || identidad.servidor !== identidadInicial.servidor) {
+        throw new Error('No coincide la identidad de la copia temporal; no se elimina ninguna base.');
+      }
+      await copia.query(`DROP DATABASE \`${nombre}\``);
+      creada = false;
+    } finally { await copia.end(); }
   }
 
   try {
     await origen.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+    const estadoInicial = await leerEstadoOrigen(origen);
     await copia.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     creada = true;
     await copia.changeUser({ database: nombre });
@@ -73,7 +100,15 @@ async function crearCopiaTemporal(claves) {
     }
     await copia.commit();
     await origen.rollback();
-    return { nombre, eliminar: eliminarCopia };
+    async function verificarOrigen() {
+      const conexion = await mysql.createConnection({ ...opciones, database: process.env.DB_NAME });
+      try {
+        await conexion.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+        assert.deepEqual(await leerEstadoOrigen(conexion), estadoInicial, 'Las tablas, relaciones y datos de SICE deben permanecer intactos.');
+        await conexion.rollback();
+      } finally { await conexion.end(); }
+    }
+    return { nombre, eliminar: eliminarCopia, verificarOrigen };
   } catch (error) {
     await copia.rollback();
     await eliminarCopia();
@@ -88,9 +123,13 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   const copia = await crearCopiaTemporal(claves);
   let server, pool;
   t.after(async () => {
-    if (server) await new Promise(resolve => server.close(resolve));
-    if (pool) await pool.end();
-    await copia.eliminar();
+    try {
+      if (server) await new Promise(resolve => server.close(resolve));
+      if (pool) await pool.end();
+    } finally {
+      try { await copia.eliminar(); }
+      finally { await copia.verificarOrigen(); }
+    }
   });
   pool = createDatabasePool({ ...process.env, DB_NAME: copia.nombre });
   const [filas] = await pool.execute(`SELECT u.*, p.nombres, p.apellidos, r.codigo AS rol FROM usuarios u

@@ -1,5 +1,12 @@
 # Contexto de SICE-Local
 
+## Verificación del aislamiento de pruebas — 2 de noviembre de 2026
+
+- Inicio limpio en `feature/incidencias-informes`, HEAD `aadfdd1`. El usuario ratifica autorización exclusiva para crear/eliminar la copia temporal propia, previa comprobación de nombre e identidad; prohíbe modificar SICE, sice_desarrollo o bases existentes durante las pruebas.
+- La suite comprueba creación propia, patrón y nombre exacto de la base seleccionada, CONNECTION_ID() y UUID del servidor antes del único DROP DATABASE. Una discrepancia impide eliminarla. No se usa IF NOT EXISTS para apropiarse de una base previa.
+- Se comparan en memoria cantidades y SHA-256 de estructura/datos de las 22 tablas de SICE antes/después, con lecturas transaccionales de solo lectura; también se exige conservar 24 expedientes. La verificación final se ejecuta aun cuando falle la limpieza de la copia. Sin archivos nuevos ni cambios del servidor o interfaz.
+- `npm.cmd test`: **5 aprobadas**. `npm.cmd run test:mysql`: **15 aprobadas**, incluida la comparación final de SICE sin cambios. Comprobación adicional de solo lectura: **24 expedientes, 72 FK y cero referencias huérfanas**; sice_desarrollo conserva 58 incidencias y no quedan copias temporales. `git diff --check` correcto. Sin capturas/PDF permanentes, push ni Pull Request.
+
 ## Limpieza y consolidación en SICE — 2 de noviembre de 2026
 
 Estado vigente. Los apartados siguientes son históricos y pueden mencionar configuraciones y archivos retirados.
