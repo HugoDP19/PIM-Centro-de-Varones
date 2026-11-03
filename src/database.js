@@ -21,7 +21,9 @@ export function createDatabasePool(env = process.env) {
     connectTimeout: 10000,
     multipleStatements: false,
     charset: 'utf8mb4',
-    timezone: 'Z'
+    timezone: 'Z',
+    supportBigNumbers: true,
+    bigNumberStrings: true
   });
 }
 

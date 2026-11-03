@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test",
+    "test": "node --test test/server.test.js test/seguridad.test.js",
     "db:check": "node src/database.js",
     "db:prepare": "node database/preparar.js"
   },
