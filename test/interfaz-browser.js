@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, basename, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { personalEscolar } from '../database/cargar-escolar.js';
 
 const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function verificarInterfaz(base, credenciales) {
@@ -80,10 +81,13 @@ export async function verificarInterfaz(base, credenciales) {
     await esperar("!document.querySelector('#feedback').hidden");
     assert.equal(await evaluar("document.querySelector('#feedback').textContent"), 'Usuario o contraseña incorrectos.');
     const contrasena = credenciales.ADMINISTRADOR_PASSWORD;
+    const [, nombreAdministrador, apellidoAdministrador, usuarioAdministrador] = personalEscolar.find(([rol]) => rol === 'administrador');
     assert.ok(contrasena);
-    await evaluar(`document.querySelector('#username').value = 'vgutierrez'; document.querySelector('#password').value = ${JSON.stringify(contrasena)}; document.querySelector('#login-form').requestSubmit();`);
+    await evaluar(`document.querySelector('#username').value = ${JSON.stringify(usuarioAdministrador)}; document.querySelector('#password').value = ${JSON.stringify(contrasena)}; document.querySelector('#login-form').requestSubmit();`);
     await esperar("!document.querySelector('#session-panel').hidden");
     assert.equal(await evaluar("document.querySelector('#session-role').textContent"), 'Administrador');
+    assert.equal(await evaluar("document.querySelector('#session-name').textContent"), `${nombreAdministrador} ${apellidoAdministrador}`);
+    assert.equal(await evaluar("document.querySelector('#session-username').textContent"), usuarioAdministrador);
     assert.equal(await evaluar("document.cookie.includes('sice_session')"), false);
     assert.equal(await evaluar("document.querySelector('#password').value"), '');
     await enviar('Page.reload');
@@ -106,7 +110,7 @@ export async function verificarInterfaz(base, credenciales) {
         assert.equal(medidas.contenido, medidas.disponible, `${nombre}: desbordamiento a ${ancho}px`);
       }
     }
-    await ingresar('vgutierrez', contrasena);
+    await ingresar(usuarioAdministrador, contrasena);
     await esperar("document.querySelector('#accounts-view')?.hidden === false && document.querySelector('#account-rows').children.length > 0");
     assert.equal(await evaluar("document.querySelector('#nav-list').hidden"), true);
     assert.equal(await evaluar("document.querySelector('#authorization-form').hidden"), true);
@@ -166,7 +170,7 @@ export async function verificarInterfaz(base, credenciales) {
     await esperar("document.querySelector('#message').textContent.includes('Autorización registrada')");
     await evaluar("document.querySelector('#logout').click()");
     await esperar("document.querySelector('#login-form')?.hidden === false");
-    await ingresar('vgutierrez', contrasena);
+    await ingresar(usuarioAdministrador, contrasena);
     await esperar("document.querySelector('#accounts-view')?.hidden === false && document.querySelector('#authorization-list').children.length > 0");
     await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivo)})).querySelector('button').click()`);
     await esperar("document.querySelector('#execution-form').hidden === false");

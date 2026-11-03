@@ -33,7 +33,7 @@ La configuración se limita a `.env` (servidor/MySQL) y `.env.escolar.local` (cr
 | `jparedes` | Coordinador de Tutoría |
 | `lramos` | Docente |
 | `ctorres` | Auxiliar |
-| `vgutierrez` | Administrador |
+| `hugodp19` | Administrador — Hugo Vargas |
 | `rvega` | Docente (cuenta adicional de esta instalación) |
 
 Para ingresar, abrir http://127.0.0.1:3000 y escribir el usuario de la tabla y su clave local. Para cambiar de cuenta, cerrar la sesión actual. El 3 de noviembre de 2026 se restablecieron las siete claves locales por solicitud expresa del usuario; el valor se conserva únicamente en la configuración privada. Este mantenimiento no cambia roles ni permisos ni el flujo de autorización de cuentas de la aplicación.
@@ -78,7 +78,7 @@ npm run test:mysql
 
 `node test/interfaz-browser.js` ejecuta la misma suite aislada y abre un servidor temporal para Chrome a 1280/1024/768 px; no requiere `npm start`. Comprueba acceso, registro, seguimiento y autorización/ejecución de cuentas. `CHROME_PATH` permite indicar la ruta del navegador local. El perfil de Chrome se crea en el directorio temporal del sistema y se elimina al finalizar. No se guardan capturas ni PDF de prueba. PDF.js inspecciona páginas y contenido en memoria; PDFKit genera los informes del servidor.
 
-La colección cubre las seis categorías y estados confirmada/en seguimiento/cerrada/anulada. Ningún dato corresponde a personas reales del colegio. Los resultados y límites de cada etapa se registran en [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md).
+La colección cubre las seis categorías y estados confirmada/en seguimiento/cerrada/anulada. Los expedientes escolares contienen datos sintéticos; la cuenta administrativa usa el nombre configurado expresamente por el usuario. Los resultados y límites de cada etapa se registran en [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md).
 
 ## Organización
 

@@ -13,7 +13,7 @@ export const personalEscolar = [
   ['coordinador_tutoria', 'José Luis', 'Paredes Díaz', 'jparedes'],
   ['docente', 'Lucía Patricia', 'Ramos Vega', 'lramos'],
   ['auxiliar', 'Carlos Enrique', 'Torres Castillo', 'ctorres'],
-  ['administrador', 'Valeria Inés', 'Gutiérrez Ponce', 'vgutierrez']
+  ['administrador', 'Hugo', 'Vargas', 'hugodp19']
 ];
 const estudiantesNombres = [
   ['Diego Alonso', 'Quispe Flores'], ['Mateo André', 'Quispe Flores'],

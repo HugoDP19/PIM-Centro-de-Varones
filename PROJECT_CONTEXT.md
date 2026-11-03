@@ -1,5 +1,11 @@
 # Contexto de SICE-Local
 
+## Identidad del Administrador — 3 de noviembre de 2026
+
+- Por solicitud expresa del usuario, el Administrador de SICE pasa a llamarse **Hugo Vargas**, con usuario **hugodp19**. Se actualizan nombres/apellidos y nombre de acceso de la cuenta existente, conservando identificadores, contraseña, estado, rol y permisos. Sus sesiones anteriores se revocan para ingresar con el nuevo usuario.
+- Mantenimiento local transaccional sobre SICE, separado de las pruebas. Las otras 19 tablas comparadas permanecen idénticas, incluidos los 24 expedientes, relaciones e historial; no se reescriben nombres históricos ni se modifican otras bases existentes.
+- Carga escolar, README y pruebas de navegador actualizados. El navegador obtiene la identidad administrativa desde la colección, sin repetir el usuario en varios pasos. Suite API/Chrome: **16 aprobadas**, incluida la comprobación de nombre, usuario, rol y restricciones del Administrador; usa y elimina solo la copia temporal propia y verifica las 22 tablas de SICE sin cambios durante las pruebas. Sin archivos de verificación permanentes, push ni Pull Request.
+
 ## Contraseñas y acceso local — 3 de noviembre de 2026
 
 - El usuario solicita la misma clave para las siete cuentas de SICE y cambia expresamente la política anterior: máximo 12 caracteres, mayúscula, minúscula, número y signo. Se establece un mínimo de ocho, comunicado antes de aplicar el cambio. La validación común se aplica al crear/restablecer claves; el login conserva compatibilidad con hashes existentes.
