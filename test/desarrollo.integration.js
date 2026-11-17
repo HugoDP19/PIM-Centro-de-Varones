@@ -191,6 +191,36 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     const sesion = await peticion('auth/sesion', 'director'); assert.equal(sesion.status, 200); assert.equal(sesion.headers.get('cache-control'), 'no-store');
   });
 
+  await t.test('cambio consecutivo de usuario: revocación en MySQL, cookie y CSRF', async () => {
+    const secuencia = ['administrador', 'director', 'subdirector', 'administrador', 'coordinador_tutoria', 'docente', 'auxiliar'];
+    for (const rol of secuencia) {
+      const acceso = await peticion('auth/login', null, 'POST', { usuario: usuarios[rol].nombre_usuario, contrasena: claves[`${rol.toUpperCase()}_PASSWORD`] });
+      assert.equal(acceso.status, 200, `Acceso consecutivo: ${rol}`);
+      const cookie = acceso.headers.get('set-cookie').split(';')[0];
+      const token = cookie.slice(cookie.indexOf('=') + 1);
+      const sesion = await peticion('auth/sesion', null, 'GET', undefined, { Cookie: cookie });
+      assert.equal((await sesion.json()).usuario.rol, rol);
+      const [[antes]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM sesiones WHERE token_hash = SHA2(?, 256)', [token]);
+      assert.equal(Number(antes.cantidad), 1);
+      const cierre = await peticion('auth/logout', null, 'POST', {}, { Cookie: cookie });
+      assert.equal(cierre.status, 204);
+      const borrado = cierre.headers.get('set-cookie');
+      assert.ok(/^sice_session=;/.test(borrado), 'Logout debe vaciar la cookie');
+      assert.ok(/Path=\//.test(borrado));
+      assert.ok(/HttpOnly/.test(borrado));
+      assert.ok(/SameSite=Strict/.test(borrado));
+      assert.ok(new Date(borrado.match(/Expires=([^;]+)/)[1]).getTime() < Date.now());
+      assert.ok(!/Domain=/i.test(borrado));
+      const [[despues]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM sesiones WHERE token_hash = SHA2(?, 256)', [token]);
+      assert.equal(Number(despues.cantidad), 0);
+      assert.equal((await peticion('auth/sesion', null, 'GET', undefined, { Cookie: cookie })).status, 401);
+      assert.equal((await peticion('auth/sesion', null)).status, 401);
+    }
+    const origenDistinto = await peticion('auth/login', null, 'POST', { usuario: usuarios.director.nombre_usuario, contrasena: claves.DIRECTOR_PASSWORD }, { Origin: 'http://localhost:3000' });
+    assert.equal(origenDistinto.status, 403);
+    assert.equal((await origenDistinto.json()).error, 'Origen de la solicitud no autorizado.');
+  });
+
   await t.test('caducidad absoluta e inactividad invalidan la sesión en el servidor', async () => {
     for (const columna of ['vence_en', 'ultima_actividad_en']) {
       await pool.execute(`UPDATE sesiones SET ${columna} = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 9 HOUR) WHERE id_usuario = ?`, [usuarios.director.id]);

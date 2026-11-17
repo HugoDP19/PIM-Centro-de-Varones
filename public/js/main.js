@@ -5,7 +5,15 @@ const password = document.getElementById('password');
 const loginButton = document.getElementById('login-button');
 let redirigiendo = false;
 
+function limpiarAvisos() {
+  for (const mensaje of [feedback, status]) {
+    mensaje.hidden = true;
+    mensaje.textContent = '';
+  }
+}
+
 function mostrarError(mensaje) {
+  limpiarAvisos();
   feedback.textContent = mensaje;
   feedback.hidden = false;
 }
@@ -19,11 +27,21 @@ function abrirPanel() {
 }
 
 function mostrarAcceso() {
+  limpiarAvisos();
+  form.reset();
+  password.type = 'password';
+  document.getElementById('show-password').textContent = 'Mostrar';
+  document.getElementById('show-password').setAttribute('aria-pressed', 'false');
   const mensajes = {
     expirada: 'Tu sesión ha finalizado o ya no es válida. Inicia sesión nuevamente.',
-    cerrada: 'Has cerrado la sesión.'
+    cerrada: 'Sesión cerrada correctamente'
   };
-  const motivo = new URLSearchParams(location.search).get('sesion');
+  const direccion = new URL(location.href);
+  const motivo = direccion.searchParams.get('sesion');
+  if (direccion.searchParams.has('sesion')) {
+    direccion.searchParams.delete('sesion');
+    history.replaceState(null, '', direccion.pathname + direccion.search + direccion.hash);
+  }
   status.textContent = mensajes[motivo] || '';
   status.hidden = !status.textContent;
   form.hidden = false;
@@ -43,7 +61,7 @@ async function solicitar(ruta, datos) {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (loginButton.disabled || redirigiendo) return;
-  feedback.hidden = true;
+  limpiarAvisos();
   loginButton.disabled = true;
   loginButton.textContent = 'Verificando…';
   try {
@@ -53,6 +71,8 @@ form.addEventListener('submit', async (event) => {
   } catch { mostrarError('No se pudo contactar al servidor. Comprueba la conexión e inténtalo de nuevo.'); }
   finally { password.value = ''; loginButton.disabled = false; loginButton.textContent = 'Iniciar sesión'; }
 });
+
+form.addEventListener('input', limpiarAvisos);
 
 document.getElementById('show-password').addEventListener('click', (event) => {
   const mostrar = password.type === 'password';
@@ -74,6 +94,6 @@ async function recuperarSesion() {
     if (!response.ok && response.status !== 401) mostrarError(resultado.error || 'No se pudo comprobar la sesión.');
   } catch { mostrarAcceso(); mostrarError('No se pudo comprobar la sesión. Comprueba tu conexión.'); }
 }
-window.addEventListener('pagehide', () => { form.hidden = true; password.value = ''; });
+window.addEventListener('pagehide', () => { form.hidden = true; form.reset(); limpiarAvisos(); });
 window.addEventListener('pageshow', (event) => { if (event.persisted) recuperarSesion(); });
 recuperarSesion();

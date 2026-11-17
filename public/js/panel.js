@@ -32,6 +32,8 @@ function volverAlAcceso(motivo) {
   redirigiendo = true;
   $('workspace').hidden = true;
   $('session-header').hidden = true;
+  $('user-label').textContent = '';
+  usuario = null;
   location.replace(`/?sesion=${motivo}`);
 }
 async function api(ruta, method = 'GET', datos) {

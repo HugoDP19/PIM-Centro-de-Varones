@@ -17,6 +17,19 @@ export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion =
     next();
   });
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  // Un único origen local para las páginas; las API mantienen su validación CSRF.
+  const direccion = new URL(origin);
+  const aliasLocal = direccion.hostname === '127.0.0.1' ? 'localhost' : direccion.hostname === 'localhost' ? '127.0.0.1' : null;
+  app.use((req, res, next) => {
+    const hostAlternativo = aliasLocal + (direccion.port ? `:${direccion.port}` : '');
+    if (!produccion && aliasLocal && ['GET', 'HEAD'].includes(req.method)
+        && ['/', '/index.html', '/panel.html'].includes(req.path)
+        && req.get('host')?.toLowerCase() === hostAlternativo) {
+      res.set('Cache-Control', 'no-store');
+      return res.redirect(302, origin + req.originalUrl);
+    }
+    next();
+  });
   app.use(express.json({ limit: '64kb' }));
   const auth = configurarAutenticacion({ pool, origin, produccion });
   app.use('/api/auth', auth.router);

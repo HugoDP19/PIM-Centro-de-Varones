@@ -36,7 +36,7 @@ La configuración se limita a `.env` (servidor/MySQL) y `.env.escolar.local` (la
 | `hugodp19` | Administrador — Hugo Vargas |
 | `rvega` | Docente (cuenta adicional de esta instalación) |
 
-Para ingresar, abrir http://127.0.0.1:3000 y escribir el usuario de la tabla y su clave local. El acceso correcto lleva directamente al panel; si ya existe una sesión válida, se entra automáticamente. La cabecera muestra nombre, rol y «Cerrar sesión» para cambiar de cuenta. Si el servidor detecta una sesión caducada al cargar o utilizar el panel, se vuelve al login con un mensaje claro. El Administrador solo ve cuentas y permisos autorizados.
+Para ingresar, abrir http://127.0.0.1:3000 y escribir el usuario de la tabla y su clave local. El acceso correcto lleva directamente al panel; si ya existe una sesión válida, se entra automáticamente. La cabecera muestra nombre, rol y «Cerrar sesión» para cambiar de cuenta. Al salir, el formulario queda limpio y muestra «Sesión cerrada correctamente»; el aviso desaparece al iniciar otro acceso y no se repite al recargar. Las páginas de desarrollo unifican `localhost` y `127.0.0.1` en el origen configurado, conservando las comprobaciones CSRF. Si el servidor detecta una sesión caducada al cargar o utilizar el panel, se vuelve al login con un mensaje claro. El Administrador solo ve cuentas y permisos autorizados.
 
 El 12 de noviembre de 2026 se verificó la contraseña inicial común y se regeneraron los hashes de las seis cuentas institucionales mediante el mecanismo existente, revocando sus sesiones anteriores. Fue un mantenimiento local solicitado por el usuario: conserva roles, permisos, autores históricos y los 24 expedientes, sin cambiar el flujo de autorización de cuentas de la aplicación ni otras bases existentes.
 

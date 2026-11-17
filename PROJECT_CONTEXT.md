@@ -1,5 +1,13 @@
 # Contexto de SICE-Local
 
+## Cierre de sesión y cambio de usuario — 17 de noviembre de 2026
+
+- Diagnóstico previo: las siete cuentas de `SICE` están activas y sus claves locales coinciden con sus hashes, comprobado mediante lecturas sin imprimir secretos. Reproducida la superposición del aviso de cierre y el error de un nuevo login: el formulario no limpiaba el aviso anterior. El backend ya revocaba correctamente la sesión y borraba la cookie; no se reprodujo el rechazo de otra cuenta con credenciales válidas.
+- Login limpia avisos y datos anteriores, muestra únicamente «Sesión cerrada correctamente» al volver del cierre y consume el parámetro `sesion` mediante `history.replaceState`. Al editar o enviar el formulario se retira el aviso, y una recarga no lo repite. Se limpia la identidad visible del panel al salir.
+- Las páginas locales normalizan `localhost`/`127.0.0.1` al origen configurado y mismo puerto, únicamente en desarrollo. API, CSRF, atributos de cookies y autorización se conservan; el origen incorrecto devuelve 403, distinto del 401 de credenciales. El proceso local existente ya sirve el JavaScript corregido, pero requiere reinicio para cargar la normalización del backend.
+- `npm.cmd test`: **7 aprobadas**. Suite MySQL/Chrome: **18 aprobadas**, incluidos Administrador → Director → Subdirector → Administrador y los demás roles, error seguido de acceso válido, eliminación de cookie en navegador, revocación comprobada en MySQL, rechazo de cookie anterior, mensajes sin superposición, recarga/historial y alias locales sin bucles. Todas las escrituras de prueba se hicieron en la copia temporal propia; comparación final de las 22 tablas de `SICE` sin cambios y **24 expedientes** conservados. Sin capturas/PDF permanentes.
+- Alcance de esta corrección: autenticación y navegación. La ampliación de gestión de cuentas descrita en el adjunto no se implementa en esta tarea. Sin cambios de credenciales o reglas institucionales; sin push ni Pull Request.
+
 ## Presentación del Administrador — 17 de noviembre de 2026
 
 - Ajuste visual exclusivo del Administrador en `panel.js` y `styles.css`: aviso de desarrollo oculto para ese rol, estados Activo/Inactivo con distintivos verde/rojo y autorizaciones en tarjetas compactas con acción, motivo, datos afectados y metadatos separados. Se conserva el guinda, logo, permisos, acciones y configuración interna; sin cambios de backend, SQL o dependencias.

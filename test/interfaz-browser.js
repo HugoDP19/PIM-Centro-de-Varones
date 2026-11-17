@@ -93,8 +93,30 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     await esperar("document.querySelector('#workspace')?.hidden === false && document.querySelector('#account-rows')?.children.length > 0");
     await evaluar("document.querySelector('#logout').click()");
     await esperar("document.querySelector('#login-form')?.hidden === false");
-    assert.equal(await evaluar("document.querySelector('#session-status').textContent"), 'Has cerrado la sesión.');
+    await verificarCierre();
+    await evaluar("document.querySelector('#username').value = 'rsalazar'; document.querySelector('#password').value = 'incorrecta-solo-local'; document.querySelector('#login-form').requestSubmit();");
+    await esperar("document.querySelector('#feedback')?.hidden === false");
+    assert.equal(await evaluar("document.querySelector('#feedback').textContent"), 'Usuario o contraseña incorrectos.');
+    assert.equal(await evaluar("document.querySelector('#session-status').hidden"), true, 'El error del nuevo acceso debe sustituir el aviso de cierre');
+    await ingresar('rsalazar', credenciales.DIRECTOR_PASSWORD);
+    await evaluar("document.querySelector('#logout').click()");
+    await verificarCierre();
+    await enviar('Page.reload');
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    assert.equal(await evaluar("document.querySelector('#session-status').hidden && document.querySelector('#feedback').hidden"), true, 'Recargar no repite mensajes consumidos');
+    await enviar('Page.navigate', { url: base.replace('127.0.0.1', 'localhost') });
+    await esperar("document.querySelector('#login-form')?.hidden === false && location.hostname === '127.0.0.1'");
+    assert.equal(await evaluar('location.origin'), new URL(base).origin);
     console.log('Interfaz: error de acceso, login, cookie inaccesible a JavaScript, recarga y logout aprobados.');
+    async function verificarCierre() {
+      await esperar("document.querySelector('#login-form')?.hidden === false");
+      assert.equal(await evaluar("document.querySelector('#session-status').textContent"), 'Sesión cerrada correctamente');
+      assert.equal(await evaluar("document.querySelector('#feedback').hidden && document.querySelector('#feedback').textContent === ''"), true);
+      assert.equal(await evaluar("document.querySelector('#username').value === '' && document.querySelector('#password').value === '' && document.querySelector('#password').type === 'password'"), true);
+      assert.equal(await evaluar("new URLSearchParams(location.search).has('sesion')"), false);
+      const cookies = await enviar('Network.getCookies', { urls: [base] });
+      assert.equal(cookies.cookies.some((cookie) => cookie.name === 'sice_session'), false, 'Cookie eliminada del navegador');
+    }
     async function ingresar(nombre, clave) {
       await evaluar(`document.querySelector('#username').value = ${JSON.stringify(nombre)}; document.querySelector('#password').value = ${JSON.stringify(clave)}; document.querySelector('#login-form').requestSubmit();`);
       await esperar("location.pathname === '/panel.html' && document.querySelector('#workspace')?.hidden === false");
@@ -109,7 +131,9 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       }
     }
     const cargos = { director: 'Director', subdirector: 'Subdirector', coordinador_tutoria: 'Coordinador de Tutoría', docente: 'Docente', auxiliar: 'Auxiliar', administrador: 'Administrador' };
-    for (const [rol, nombre, apellido, acceso] of personalEscolar) {
+    const secuenciaRoles = ['administrador', 'director', 'subdirector', 'administrador', 'coordinador_tutoria', 'docente', 'auxiliar'];
+    for (const rol of secuenciaRoles) {
+      const [, nombre, apellido, acceso] = personalEscolar.find(([cargo]) => cargo === rol);
       await ingresar(acceso, credenciales[`${rol.toUpperCase()}_PASSWORD`]);
       assert.equal(await evaluar("document.querySelector('#user-label').textContent"), `${nombre} ${apellido} · ${cargos[rol]}`);
       const opciones = await evaluar(`Object.fromEntries(['nav-list', 'nav-new', 'nav-accounts'].map(id => [id, !document.getElementById(id).hidden]))`);
@@ -125,7 +149,7 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       assert.equal(navegaciones - antes, 2, `${rol}: entrada con sesión válida sin bucles`);
       assert.equal(await evaluar("document.querySelector('#user-label').textContent"), `${nombre} ${apellido} · ${cargos[rol]}`);
       await evaluar("document.querySelector('#logout').click()");
-      await esperar("document.querySelector('#login-form')?.hidden === false");
+      await verificarCierre();
       assert.equal(await evaluar("(async () => (await fetch('/api/auth/sesion')).status)()"), 401);
     }
     // Acceso directo sin sesión y caducidad real, tanto al actuar como al recargar.
