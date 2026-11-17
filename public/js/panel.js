@@ -275,10 +275,47 @@ function camposAutorizacion() {
   if (['asignar_permiso', 'retirar_permiso'].includes(tipo)) campoCuenta('id_permiso', 'Permiso', cuentaCatalogo.permisos, (p) => p.id, (p) => nombresPermisos[p.codigo] || p.codigo);
   if (['crear_cuenta', 'actualizar_cuenta'].includes(tipo)) { const input = campoCuenta('nombre_usuario', 'Nombre de usuario'); input.minLength = 3; input.maxLength = 60; campoCuenta('activo', 'Estado', [{ id: 'true', nombre: 'Activo' }, { id: 'false', nombre: 'Inactivo' }]); }
 }
+function mostrarCuentas() {
+  $('account-rows').replaceChildren();
+  for (const cuenta of cuentaCatalogo.usuarios) {
+    const fila = elemento('tr');
+    const valores = [cuenta.nombre, cuenta.nombre_usuario, cargos[cuenta.rol], cuenta.activo ? 'Activo' : 'Inactivo'];
+    valores.forEach((valor, indice) => {
+      const celda = elemento('td');
+      celda.dataset.label = ['Nombre', 'Usuario', 'Rol', 'Estado'][indice];
+      if (indice === 3 && usuario.rol === 'administrador') {
+        celda.append(elemento('span', valor, `status-label account-status ${cuenta.activo ? 'account-active' : 'account-inactive'}`));
+      } else celda.textContent = valor;
+      fila.append(celda);
+    });
+    $('account-rows').append(fila);
+  }
+}
+
+function tarjetaAutorizacion(autorizacion, resumen) {
+  const tarjeta = elemento('article', undefined, 'authorization-card');
+  const nombreAccion = [...$('account-action').options].find((opcion) => opcion.value === autorizacion.tipo)?.textContent || estado(autorizacion.tipo);
+  tarjeta.append(elemento('h4', nombreAccion, 'authorization-title'));
+  tarjeta.append(elemento('p', autorizacion.motivo, 'authorization-reason'));
+  const datosAfectados = elemento('div', undefined, 'authorization-target');
+  datosAfectados.append(elemento('span', 'Cuenta o permiso afectado', 'small text-secondary d-block mb-1'), elemento('p', resumen, 'mb-0'));
+  tarjeta.append(datosAfectados);
+  const metadatos = elemento('dl', undefined, 'authorization-meta');
+  const estadoAutorizacion = autorizacion.ejecutada_en ? 'Ejecutada' : new Date(autorizacion.vence_en) > new Date() ? 'Pendiente' : 'Vencida';
+  const datos = [['Autoridad responsable', autorizacion.autorizante], ['Autorizada el', fecha(autorizacion.autorizada_en)],
+    ['Estado', estadoAutorizacion], [autorizacion.ejecutada_en ? 'Ejecutada el' : 'Vence el', fecha(autorizacion.ejecutada_en || autorizacion.vence_en)]];
+  for (const [etiqueta, valor] of datos) {
+    const grupo = elemento('div');
+    grupo.append(elemento('dt', etiqueta), elemento('dd', valor));
+    metadatos.append(grupo);
+  }
+  tarjeta.append(metadatos);
+  return tarjeta;
+}
+
 async function cuentas() {
   [cuentaCatalogo, { autorizaciones }] = await Promise.all([json('cuentas/catalogos'), json('cuentas/autorizaciones')]);
-  mostrar('accounts-view'); $('account-rows').replaceChildren();
-  cuentaCatalogo.usuarios.forEach((u) => { const tr = elemento('tr'); [u.nombre, u.nombre_usuario, cargos[u.rol], u.activo ? 'Activo' : 'Inactivo'].forEach((v, indice) => { const td = elemento('td', v); td.dataset.label = ['Nombre', 'Usuario', 'Rol', 'Estado'][indice]; tr.append(td); }); $('account-rows').append(tr); });
+  mostrar('accounts-view'); mostrarCuentas();
   $('authorization-form').hidden = !puede('cuentas.autorizar'); camposAutorizacion(); $('authorization-list').replaceChildren(); $('execution-form').hidden = true;
   for (const a of autorizaciones) {
     const rol = cuentaCatalogo.roles.find((r) => String(r.id) === String(a.id_rol_objetivo));
@@ -287,8 +324,11 @@ async function cuentas() {
     const persona = cuentaCatalogo.personas.find((p) => String(p.id) === String(a.id_persona));
     const resumen = [objetivo?.nombre || persona?.nombre, a.nombre_usuario, rol?.nombre,
       permiso ? nombresPermisos[permiso.codigo] || permiso.codigo : null, a.activo === null ? null : a.activo ? 'Cuenta activa' : 'Cuenta inactiva'].filter(Boolean).join(' · ');
-    const item = elemento('article', undefined, 'history-entry'); item.append(elemento('strong', `${estado(a.tipo)} · ${a.nombre_usuario || cuentaCatalogo.usuarios.find((u) => String(u.id) === String(a.id_usuario_objetivo))?.nombre || 'Permiso por rol'}`), elemento('p', a.motivo), elemento('small', `${a.autorizante} · ${fecha(a.autorizada_en)} · ${a.ejecutada_en ? 'Ejecutada' : 'Vence: ' + fecha(a.vence_en)}`));
-    item.append(elemento('p', resumen, 'small mt-2'));
+    const item = usuario.rol === 'administrador' ? tarjetaAutorizacion(a, resumen) : elemento('article', undefined, 'history-entry');
+    if (usuario.rol !== 'administrador') {
+      item.append(elemento('strong', `${estado(a.tipo)} · ${a.nombre_usuario || objetivo?.nombre || 'Permiso por rol'}`), elemento('p', a.motivo), elemento('small', `${a.autorizante} · ${fecha(a.autorizada_en)} · ${a.ejecutada_en ? 'Ejecutada' : 'Vence: ' + fecha(a.vence_en)}`));
+      item.append(elemento('p', resumen, 'small mt-2'));
+    }
     if (puede('cuentas.administrar') && !a.ejecutada_en && new Date(a.vence_en) > new Date()) item.append(accion('Seleccionar para ejecutar', () => { ejecucion = a; $('execution-form').hidden = false; $('execution-summary').textContent = `${estado(a.tipo)} · ${resumen} · ${a.motivo}`; const necesita = ['crear_cuenta', 'restablecer_clave'].includes(a.tipo); $('execution-password-group').hidden = !necesita; $('new-password').required = necesita; $('new-password').value = ''; }));
     $('authorization-list').append(item);
   }
@@ -317,7 +357,8 @@ async function iniciar() {
   for (const id of ['nav-list', 'nav-new', 'nav-accounts']) $(id).hidden = true;
   try {
     const sesion = await json('auth/sesion'); usuario = sesion.usuario;
-    $('environment').hidden = sesion.entorno !== 'desarrollo'; $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
+    document.body.classList.toggle('admin-panel', usuario.rol === 'administrador');
+    $('environment').hidden = usuario.rol === 'administrador' || sesion.entorno !== 'desarrollo'; $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
     $('session-header').hidden = false;
     const operativo = usuario.rol !== 'administrador';
     $('nav-list').hidden = !operativo || !puede('incidencias.consultar'); $('nav-new').hidden = !operativo || !puede('incidencias.registrar'); $('nav-accounts').hidden = !puede('cuentas.consultar');

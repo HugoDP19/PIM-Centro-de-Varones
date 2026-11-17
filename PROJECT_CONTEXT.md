@@ -1,5 +1,11 @@
 # Contexto de SICE-Local
 
+## Presentación del Administrador — 17 de noviembre de 2026
+
+- Ajuste visual exclusivo del Administrador en `panel.js` y `styles.css`: aviso de desarrollo oculto para ese rol, estados Activo/Inactivo con distintivos verde/rojo y autorizaciones en tarjetas compactas con acción, motivo, datos afectados y metadatos separados. Se conserva el guinda, logo, permisos, acciones y configuración interna; sin cambios de backend, SQL o dependencias.
+- Suite MySQL/Chrome: **17 aprobadas**. Revisión adicional temporal de tabla, información de autorizaciones, botones y ausencia de excepciones JavaScript; distribución sin desbordamiento a 1440/1280/1024/768/640 px e inspección visual a 1280/768 px. Contraste texto/fondo de estados: 6,96:1 y 6,83:1. Sin nuevas pruebas permanentes para este cambio de presentación.
+- Pruebas sobre la copia temporal propia, eliminada al terminar; comparación final de las 22 tablas de `SICE` sin cambios, con los **24 expedientes** conservados. Capturas y auxiliar de revisión retirados; sintaxis JavaScript y `git diff --check` correctos. Sin push ni Pull Request.
+
 ## Acceso directo al panel institucional — 17 de noviembre de 2026
 
 - Retirada la pantalla «Tu sesión institucional» y sus estilos exclusivos. El login correcto y la apertura con sesión válida redirigen al panel; sin sesión se muestra el formulario. El panel conserva nombre, rol y botón «Cerrar sesión», con opciones según permisos efectivos y Administrador limitado a cuentas/permisos autorizados.

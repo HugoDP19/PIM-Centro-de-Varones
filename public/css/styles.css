@@ -51,6 +51,21 @@ h2 { font-size: 1.85rem; font-weight: 700; letter-spacing: -.04em; margin-bottom
 .workspace .table-responsive { max-width: 100%; overflow-x: auto; }
 .table th { color: var(--school-red); font-size: .78rem; white-space: nowrap; }
 .status-label { display: inline-block; padding: .2rem .6rem; border-radius: 2rem; font-size: .75rem; background: #f1ece8; white-space: nowrap; }
+/* Presentación exclusiva del Administrador; los permisos se validan en el servidor. */
+.admin-panel { background: #f4f5f7; }
+.admin-panel #accounts-view .table td { vertical-align: middle; }
+.account-status { padding: .3rem .7rem; font-weight: 650; }
+.account-active { background: #e8f3ec; color: #215c38; }
+.account-inactive { background: #fbeaea; color: #922d32; }
+.admin-panel #authorization-list { display: grid; gap: 1rem; margin-top: 1rem; }
+.authorization-card { padding: 1.15rem 1.25rem; border: 1px solid #dfe2e6; border-radius: .65rem; background: #fff; overflow-wrap: anywhere; min-width: 0; }
+.authorization-title { margin: 0 0 .5rem; color: var(--school-red); font-size: 1rem; font-weight: 650; }
+.authorization-reason { margin-bottom: .85rem; font-size: .9rem; line-height: 1.6; white-space: pre-wrap; }
+.authorization-target { padding: .65rem .85rem; border-radius: .4rem; background: #f5f6f7; font-size: .85rem; }
+.authorization-meta { display: flex; flex-wrap: wrap; gap: .75rem 2rem; margin: .85rem 0 0; font-size: .8rem; }
+.authorization-meta dt { margin-bottom: .2rem; color: var(--muted); font-size: .72rem; font-weight: 500; }
+.authorization-meta dd { margin: 0; }
+.authorization-card > .btn { margin-top: 1rem; }
 @media (max-width: 575.98px) {
   .surface { padding: 1rem; }
   .site-header #user-label { font-size: .72rem; max-width: 8rem; }
