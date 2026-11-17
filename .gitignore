@@ -1,9 +1,35 @@
+# Dependencias instaladas
 node_modules/
+
+# Configuración privada; conservar la plantilla sin credenciales
 .env
 .env.*
 !.env.example
+
+# Archivos locales, respaldos y temporales
+.local/
+/backups/
+/respaldos/
+/tmp/
+/temp/
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# Registros y cobertura de pruebas
 *.log
+logs/
 coverage/
+.nyc_output/
+
+# Configuración personal de editores
+.vscode/
+.idea/
+*.code-workspace
+
+# Archivos del sistema operativo
 .DS_Store
 Thumbs.db
-.local/
+Desktop.ini

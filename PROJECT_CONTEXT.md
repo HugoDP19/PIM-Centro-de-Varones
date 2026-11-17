@@ -1,5 +1,11 @@
 # Contexto de SICE-Local
 
+## Exclusiones de Git — 17 de noviembre de 2026
+
+- Revisados los archivos versionados y ampliado `.gitignore` para configuraciones privadas, dependencias, archivos locales, carpetas de respaldos/temporales, registros, cobertura y ajustes personales de editores. `.env.escolar.local` continúa excluido; `.env.example` permanece versionado.
+- Se conservan código, pruebas, scripts SQL, documentación, `package-lock.json` y el logo original. No se encontraron archivos ya versionados que requieran retirarse del índice.
+- Verificación con `git check-ignore`, revisión del índice y `git diff --check`. Sin cambios del servidor ni ejecución de pruebas de aplicación; sin modificaciones de credenciales o bases de datos.
+
 ## Simplificación de credenciales locales — 12 de noviembre de 2026
 
 - Inicio limpio en `feature/incidencias-informes`, HEAD `062423b`. El usuario autoriza limpiar credenciales antiguas y utilizar la contraseña inicial ya indicada en las seis variables institucionales privadas. Se comprobó, sin mostrar valores, que eran iguales, válidas y ya coincidían con los hashes existentes.
