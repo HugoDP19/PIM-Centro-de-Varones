@@ -404,6 +404,39 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     assert.ok(ultimo.length > 700, 'La última página del informe extenso debe conservar texto junto a las firmas.');
     await pdf.cleanup?.(); await pdfLargo.cleanup?.();
   });
+  await t.test('PDF desde MySQL: actuaciones y observaciones extensas completas, sin filas fuera de página', async () => {
+    const nuevo = await datos('incidencias', 'subdirector', 'POST', cuerpo('seguridad'), 201);
+    await datos(`incidencias/${nuevo.id}/confirmar`, 'subdirector', 'POST', {});
+    const marcadores = [];
+    for (const tipo of ['actuacion', 'observacion']) {
+      const detalle = Array.from({ length: 60 }, (_, i) => {
+        const marca = `${tipo.toUpperCase()}-${String(i).padStart(3, '0')}`; marcadores.push(marca);
+        return `${marca}: Se registró el acompañamiento y la verificación del ambiente escolar, conservando la descripción completa para su seguimiento.`;
+      }).join('\n');
+      await datos(`incidencias/${nuevo.id}/actuaciones`, 'subdirector', 'POST', { tipo, detalle,
+        id_responsable: usuarios.subdirector.id, fecha_limite: '2026-12-18', contenido_sensible: false }, 201);
+    }
+    const response = await peticion(`incidencias/${nuevo.id}/pdf`, 'subdirector');
+    assert.equal(response.status, 200);
+    const pdf = await getDocument({ data: new Uint8Array(await response.arrayBuffer()), useSystemFonts: true }).promise;
+    const textos = [];
+    for (let pagina = 1; pagina <= pdf.numPages; pagina++) {
+      const contenido = await (await pdf.getPage(pagina)).getTextContent();
+      const texto = contenido.items.map(item => item.str).join(' '); textos.push(texto);
+      assert.ok(texto.length > 400, `Página ${pagina}: evitar hojas vacías o solo con encabezado`);
+      for (const item of contenido.items.filter(item => item.str.trim())) {
+        const margenInferior = item.str.includes('Página ') ? 25 : 60;
+        assert.ok(item.transform[5] >= margenInferior && item.transform[5] <= 810, `Texto dentro de márgenes en página ${pagina}`);
+        assert.ok(item.transform[4] >= 47 && item.transform[4] + item.width <= 549, `Texto dentro del ancho en página ${pagina}`);
+      }
+    }
+    const texto = textos.join(' ');
+    for (const marca of marcadores) assert.equal(texto.split(marca).length - 1, 1, `Conservar una vez ${marca}`);
+    assert.match(texto, /Continuación del registro/);
+    assert.match(texto, /Plazo: 18\/12\/26/);
+    assert.ok(textos.at(-1).includes('Firma del registrador') && textos.at(-1).includes('Sello del Director'));
+    await pdf.cleanup?.();
+  });
   await t.test('logout revoca las sesiones de los seis roles', async () => {
     for (const [rol] of personalEscolar) { assert.equal((await peticion('auth/logout', rol, 'POST', {})).status, 204); assert.equal((await peticion('auth/sesion', rol)).status, 401); }
   });

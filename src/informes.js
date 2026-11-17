@@ -94,10 +94,56 @@ export function generarInforme(datos) {
     function actuaciones(filas, reserva = 0) {
       if (!filas.length) { parrafo('No hay registros en esta sección.', reserva); return; }
       for (const [indice, fila] of filas.entries()) {
-        espacio(65);
-        parrafo(`${fecha(fila.realizada_en)} · ${fila.autor} · ${fila.cargo_autor}`);
-        parrafo(fila.detalle, indice === filas.length - 1 ? reserva : 0);
-        if (!reserva && fila.responsable) parrafo(`Responsable: ${fila.responsable}${fila.fecha_limite ? ` · Plazo: ${fechaCivil(fila.fecha_limite)}` : ''}`);
+        const columnas = [ancho * .25, ancho * .45, ancho * .30];
+        const valores = [fecha(fila.realizada_en), fila.autor, fila.cargo_autor];
+        const metadatos = valores.map((valor, i) => lineas(valor, columnas[i] - 16, 'Helvetica', 9));
+        const altoCabecera = 28 + Math.max(...metadatos.map(texto => texto.length)) * 12;
+        const contenido = [];
+        function agregar(texto, negrita = false) {
+          for (const linea of lineas(texto, ancho - 20, negrita ? 'Helvetica-Bold' : 'Helvetica', 10)) contenido.push({ linea, negrita });
+        }
+        agregar(fila.detalle);
+        if (fila.responsable || fila.fecha_limite) {
+          agregar('Seguimiento', true);
+          agregar([fila.responsable ? `Responsable: ${fila.responsable}` : null,
+            fila.fecha_limite ? `Plazo: ${fechaCivil(fila.fecha_limite)}` : null].filter(Boolean).join(' · '));
+        }
+        const reservaFinal = indice === filas.length - 1 ? reserva : 0;
+        const altoCompleto = altoCabecera + contenido.length * 14 + 20;
+        // Mantener unidos los registros cortos; dividir únicamente los que exceden una página.
+        if (altoCompleto + reservaFinal <= limite - 118) espacio(altoCompleto + reservaFinal);
+        else espacio(altoCabecera + 62);
+        let posicion = 0;
+        while (posicion < contenido.length) {
+          const y = doc.y;
+          let x = 48;
+          metadatos.forEach((texto, i) => {
+            doc.rect(x, y, columnas[i], altoCabecera).fillAndStroke('#f5f2f3', '#d1c7ca');
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(guinda).text(['Fecha y hora', 'Registrado por', 'Cargo'][i], x + 8, y + 7, { lineBreak: false });
+            texto.forEach((linea, n) => doc.font('Helvetica').fontSize(9).fillColor('#222222').text(linea, x + 8, y + 22 + n * 12, { lineBreak: false }));
+            x += columnas[i];
+          });
+          const restantes = contenido.length - posicion;
+          let capacidad = Math.floor((limite - y - altoCabecera - 20) / 14);
+          if (reservaFinal && restantes <= capacidad && altoCabecera + restantes * 14 + 20 + reservaFinal > limite - y) {
+            capacidad = Math.max(1, restantes - 6);
+          }
+          const cantidad = Math.min(restantes, capacidad);
+          const alto = cantidad * 14 + 20;
+          doc.rect(48, y + altoCabecera, ancho, alto).fillAndStroke('#ffffff', '#d1c7ca');
+          for (let n = 0; n < cantidad; n++) {
+            const { linea, negrita } = contenido[posicion + n];
+            doc.font(negrita ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor('#222222')
+              .text(linea, 58, y + altoCabecera + 9 + n * 14, { width: ancho - 20, lineBreak: false });
+          }
+          posicion += cantidad;
+          doc.y = y + altoCabecera + alto + 12;
+          if (posicion < contenido.length) {
+            doc.addPage();
+            doc.font('Helvetica-Bold').fontSize(9).fillColor(guinda).text('Continuación del registro', 48, doc.y, { lineBreak: false });
+            doc.y += 18;
+          }
+        }
       }
     }
     try {
@@ -130,13 +176,15 @@ export function generarInforme(datos) {
       seccion('5. ACTUACIONES REALIZADAS');
       actuaciones(datos.actuaciones.filter((a) => a.tipo === 'actuacion'));
       const altoNombre = lineas(i.nombre_registrador, ancho / 2 - 12, 'Helvetica', 9).length * 12;
-      const reservaFirma = 170 + Math.max(0, altoNombre - 24);
-      espacio(reservaFirma + 170);
+      const reservaFirma = 145 + Math.max(0, altoNombre - 24);
+      espacio(160);
       seccion('6. SEGUIMIENTO Y ESTADO');
-      parrafo(`Estado actual: ${nombreEstado(i.estado)}. Prioridad de atención: ${i.prioridad}.`);
       const ultima = datos.actuaciones.at(-1);
-      if (ultima?.responsable) parrafo(`Último responsable de seguimiento registrado: ${ultima.responsable}.`);
-      parrafo(`Versión vigente: ${v.numero_version}. Las versiones anteriores se conservan en el expediente.`);
+      tabla(['Estado actual', 'Prioridad de atención', 'Versión vigente'], [[nombreEstado(i.estado), i.prioridad,
+        `${v.numero_version}. Versiones anteriores conservadas.`]], [.30, .30, .40]);
+      if (ultima?.responsable) parrafo(`Responsable de seguimiento: ${ultima.responsable}${ultima.fecha_limite ? ` · Plazo: ${fechaCivil(ultima.fecha_limite)}` : ''}`);
+      // Reservar el encabezado junto a su contenido y las firmas cuando no hay observaciones.
+      if (!datos.actuaciones.some(a => a.tipo === 'observacion')) espacio(reservaFirma + 38);
       seccion('7. OBSERVACIONES AUTORIZADAS');
       actuaciones(datos.actuaciones.filter((a) => a.tipo === 'observacion'), reservaFirma);
       espacio(reservaFirma - 15);
