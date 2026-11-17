@@ -16,6 +16,7 @@ let usuario, catalogo, detalleActual, borradorId = null, cuentaCatalogo, autoriz
 let anterior, cursores = [], ultimaPagina = [];
 let redirigiendo = false;
 let decisionActual;
+let actualizandoSolicitudes = false;
 const puede = (permiso) => usuario.permisos.includes(permiso);
 const fecha = (valor) => valor ? new Date(valor).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : 'No precisada';
 const estado = (valor) => String(valor).replaceAll('_', ' ');
@@ -28,7 +29,8 @@ function elemento(etiqueta, contenido, clase) {
   return el;
 }
 function aviso(mensaje, error = false) { if (redirigiendo) return; $('message').textContent = mensaje; $('message').className = `alert alert-${error ? 'danger' : 'success'}`; $('message').hidden = false; }
-function mostrar(vista) { for (const id of ['list-view', 'form-view', 'detail-view', 'accounts-view']) $(id).hidden = id !== vista; $('message').hidden = true; }
+function limpiarAviso() { $('message').hidden = true; $('message').textContent = ''; }
+function mostrar(vista) { for (const id of ['list-view', 'form-view', 'detail-view', 'accounts-view']) $(id).hidden = id !== vista; limpiarAviso(); }
 function volverAlAcceso(motivo) {
   if (redirigiendo) return;
   redirigiendo = true;
@@ -305,6 +307,7 @@ function actualizarModoCuenta() {
 }
 
 function prepararCuenta(tipo, cuenta) {
+  $('account-error').hidden = true; limpiarAviso();
   $('authorization-form').reset();
   $('account-action').value = tipo;
   camposAutorizacion();
@@ -392,11 +395,21 @@ async function cuentas() {
   let pendientes;
   [cuentaCatalogo, { autorizaciones, pendientes }] = await Promise.all([json('cuentas/catalogos'), json('cuentas/autorizaciones')]);
   mostrar('accounts-view'); mostrarCuentas();
-  $('pending-accounts').textContent = pendientes;
+  mostrarPendientes(pendientes);
   $('create-account').hidden = !puede('cuentas.solicitar'); $('request-account-change').hidden = !puede('cuentas.solicitar');
   $('authorization-form').hidden = true; $('decision-form').hidden = true; $('account-history').hidden = true;
   $('initial-password').value = ''; $('decision-password').value = '';
-  camposAutorizacion(); $('authorization-list').replaceChildren(); $('execution-form').hidden = true;
+  camposAutorizacion(); $('execution-form').hidden = true;
+  mostrarAutorizaciones();
+}
+
+function mostrarPendientes(cantidad) {
+  $('pending-accounts').textContent = cantidad;
+  $('nav-pending').textContent = `Pendientes: ${cantidad}`;
+}
+
+function mostrarAutorizaciones() {
+  $('authorization-list').replaceChildren();
   for (const a of autorizaciones) {
     const rol = cuentaCatalogo.roles.find((r) => String(r.id) === String(a.id_rol_objetivo));
     const permiso = cuentaCatalogo.permisos.find((p) => String(p.id) === String(a.id_permiso));
@@ -407,6 +420,7 @@ async function cuentas() {
     const item = tarjetaAutorizacion(a, resumen);
     if (a.puede_decidir) {
       for (const [etiqueta, decision] of [['Aprobar', 'aprobar'], ['Rechazar', 'rechazar']]) item.append(accion(etiqueta, () => {
+        limpiarAviso();
         decisionActual = { id: a.id, decision };
         $('decision-form').reset(); $('decision-form').hidden = false;
         $('decision-summary').textContent = `${etiqueta}: ${estado(a.tipo)} · ${resumen} · ${a.motivo}`;
@@ -416,6 +430,22 @@ async function cuentas() {
     if (a.puede_ejecutar) item.append(accion('Seleccionar para ejecutar', () => { ejecucion = a; $('execution-form').hidden = false; $('execution-summary').textContent = `${estado(a.tipo)} · ${resumen} · ${a.motivo}`; const necesita = ['crear_cuenta', 'restablecer_clave'].includes(a.tipo); $('execution-password-group').hidden = !necesita; $('new-password').required = necesita; $('new-password').value = ''; $('execution-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
     $('authorization-list').append(item);
   }
+}
+
+async function actualizarSolicitudes() {
+  if (!usuario || redirigiendo || !puede('cuentas.consultar') || actualizandoSolicitudes || document.hidden) return;
+  actualizandoSolicitudes = true;
+  try {
+    const respuesta = await json('cuentas/autorizaciones');
+    if (redirigiendo) return;
+    autorizaciones = respuesta.autorizaciones;
+    mostrarPendientes(respuesta.pendientes);
+    // Actualizar la lista sin borrar los formularios que la autoridad está completando.
+    if (!$('accounts-view').hidden && cuentaCatalogo) mostrarAutorizaciones();
+  } catch (error) {
+    $('nav-pending').textContent = 'Pendientes: sin actualizar';
+    aviso(error.message, true);
+  } finally { actualizandoSolicitudes = false; }
 }
 
 $('category').addEventListener('change', () => { tipos(); camposCategoria(); }); $('incident-type').addEventListener('change', minimo); $('reporter').addEventListener('change', () => condicion());
@@ -430,7 +460,9 @@ $('authorization-form').addEventListener('submit', async event => {
   event.preventDefault();
   const boton = $('submit-account-change');
   if (boton.disabled || !confirm('¿Confirmas esta operación y los valores indicados?')) return;
+  limpiarAviso();
   boton.disabled = true;
+  $('account-error').hidden = true;
   const datos = { tipo: $('account-action').value, motivo: $('authorization-reason').value };
   for (const input of $('authorization-fields').querySelectorAll('[name]')) datos[input.name] = input.value;
   const directa = operacionDirecta();
@@ -439,13 +471,14 @@ $('authorization-form').addEventListener('submit', async event => {
     await json(directa ? 'cuentas/directas' : 'cuentas/autorizaciones', 'POST', datos);
     await cuentas();
     aviso(directa ? 'Cambio guardado y registrado en el historial.' : 'Solicitud registrada. Requiere una decisión independiente antes de ejecutarse.');
-  } catch (error) { aviso(error.message, true); }
+  } catch (error) { $('account-error').textContent = error.message; $('account-error').hidden = false; }
   finally { $('initial-password').value = ''; boton.disabled = false; }
 });
 $('decision-form').addEventListener('submit', async event => {
   event.preventDefault();
   const boton = $('submit-decision');
   if (boton.disabled || !confirm('¿Confirmas esta decisión institucional?')) return;
+  limpiarAviso();
   boton.disabled = true;
   try {
     await json(`cuentas/autorizaciones/${decisionActual.id}/decidir`, 'POST', {
@@ -460,6 +493,7 @@ $('execution-form').addEventListener('submit', async event => {
   event.preventDefault();
   const boton = event.target.querySelector('button');
   if (boton.disabled || !confirm('¿Confirmas la ejecución de los valores aprobados?')) return;
+  limpiarAviso();
   boton.disabled = true;
   try {
     await json(`cuentas/autorizaciones/${ejecucion.id}/ejecutar`, 'POST', $('new-password').required ? { contrasena: $('new-password').value } : {});
@@ -486,7 +520,7 @@ async function iniciar() {
   try {
     const sesion = await json('auth/sesion'); usuario = sesion.usuario;
     document.body.classList.toggle('admin-panel', usuario.rol === 'administrador');
-    $('environment').hidden = usuario.rol === 'administrador' || sesion.entorno !== 'desarrollo'; $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
+    $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
     $('session-header').hidden = false;
     const operativo = usuario.rol !== 'administrador';
     $('nav-list').hidden = !operativo || !puede('incidencias.consultar'); $('nav-new').hidden = !operativo || !puede('incidencias.registrar'); $('nav-accounts').hidden = !puede('cuentas.consultar');
@@ -494,6 +528,7 @@ async function iniciar() {
     else if (!$('nav-accounts').hidden) await cuentas();
     else if (!$('nav-new').hidden) await formulario();
     else aviso('Tu cuenta no tiene acciones asignadas. Contacta a la autoridad autorizada.');
+    if ($('accounts-view').hidden) await actualizarSolicitudes();
   } catch (error) { aviso(error.message, true); }
   finally {
     if (!redirigiendo) { $('panel-status').hidden = true; $('workspace').hidden = false; }
@@ -502,4 +537,6 @@ async function iniciar() {
 // Al volver desde el historial se valida la sesión antes de mostrar datos guardados.
 window.addEventListener('pagehide', () => { $('workspace').hidden = true; $('session-header').hidden = true; });
 window.addEventListener('pageshow', (event) => { if (event.persisted) iniciar(); });
+window.addEventListener('focus', actualizarSolicitudes);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) actualizarSolicitudes(); });
 iniciar();

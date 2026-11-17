@@ -47,7 +47,17 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
     assert.deepEqual(concurrentes.map(r => r.status).sort(), [200, 409]);
     assert.equal((await obtener(solicitud.id)).estado, 'ejecutada');
     const denegada = await solicitar('administrador', { tipo: 'desactivar_cuenta', id_usuario_objetivo: idCuenta });
+    const [[persistida]] = await pool.execute('SELECT estado, id_solicitante, tipo FROM autorizaciones_cuentas WHERE id = ?', [denegada.id]);
+    assert.equal(persistida.estado, 'pendiente');
+    assert.equal(String(persistida.id_solicitante), String(usuarios.administrador.id));
+    for (const rol of ['director', 'subdirector']) {
+      const respuesta = await datos('cuentas/autorizaciones', rol);
+      const visible = respuesta.autorizaciones.find(a => String(a.id) === String(denegada.id));
+      assert.ok(visible?.puede_decidir, `La desactivación guardada en MySQL debe llegar por HTTP a ${rol}`);
+      assert.ok(respuesta.pendientes >= 1);
+    }
     await decidir(denegada.id, 'subdirector', 'rechazar');
+    await decidir(denegada.id, 'director', 'aprobar', {}, 409);
     assert.equal((await obtener(denegada.id)).estado, 'rechazada');
     await ejecutar(denegada.id, 'administrador', {}, 409);
   });

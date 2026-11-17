@@ -144,6 +144,8 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       assert.equal(await evaluar("document.querySelector('#user-label').textContent"), `${nombre} ${apellido} · ${cargos[rol]}`);
       const opciones = await evaluar(`Object.fromEntries(['nav-list', 'nav-new', 'nav-accounts'].map(id => [id, !document.getElementById(id).hidden]))`);
       assert.deepEqual(opciones, { 'nav-list': rol !== 'administrador', 'nav-new': rol !== 'administrador', 'nav-accounts': ['director', 'subdirector', 'administrador'].includes(rol) });
+      assert.equal(await evaluar("document.body.textContent.includes('Todos los datos personales de la colección escolar son sintéticos')"), false);
+      assert.equal(await evaluar("document.body.innerText.includes('Debe mantenerse al menos una cuenta activa')"), false);
       if (rol === 'administrador') {
         assert.equal(await evaluar("document.querySelector('#list-view').hidden && document.querySelector('#form-view').hidden && document.querySelector('#detail-view').hidden"), true);
         assert.equal(await evaluar("(async () => (await fetch('/api/incidencias')).status)()"), 403);
@@ -254,8 +256,8 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         const [, , , nombre] = personalEscolar.find(([cargo]) => cargo === rol);
         await evaluar(`document.querySelector('#username').value = ${JSON.stringify(nombre)}; document.querySelector('#password').value = ${JSON.stringify(credenciales[`${rol.toUpperCase()}_PASSWORD`])}; document.querySelector('#login-form').requestSubmit();`, sessionId);
         await esperar("document.querySelector('#workspace')?.hidden === false", sessionId);
-        await evaluar("document.querySelector('#nav-accounts').click()", sessionId);
-        await esperar("document.querySelector('#accounts-view')?.hidden === false && document.querySelector('#account-rows')?.children.length > 0", sessionId);
+        if (rol === 'administrador') await esperar("document.querySelector('#account-rows')?.children.length > 0", sessionId);
+        else assert.equal(await evaluar("document.querySelector('#list-view').hidden", sessionId), false);
         assert.equal(await evaluar("(async () => (await (await fetch('/api/auth/sesion')).json()).usuario.rol)()", sessionId), rol);
       }
       const motivo = 'Activar el acceso solicitado por el Administrador desde el panel.';
@@ -267,6 +269,16 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         document.querySelector('#authorization-form').requestSubmit();
       })()`, admin);
       await esperar("document.querySelector('#message').textContent.includes('Solicitud registrada')", admin);
+      for (const rol of ['director', 'subdirector']) {
+        const sesion = sesiones[rol];
+        const cantidad = await evaluar("document.querySelector('#nav-pending').textContent", sesion);
+        await evaluar("window.dispatchEvent(new Event('focus'))", sesion);
+        await esperar(`document.querySelector('#nav-pending').textContent !== ${JSON.stringify(cantidad)}`, sesion);
+        assert.equal(await evaluar("document.querySelector('#list-view').hidden", sesion), false);
+        await evaluar("document.querySelector('#nav-accounts').click()", sesion);
+        await esperar("document.querySelector('#accounts-view').hidden === false", sesion);
+        assert.equal(await evaluar(`[...document.querySelectorAll('#authorization-list article')].some(a => a.textContent.includes(${JSON.stringify(motivo)}) && a.querySelectorAll('button').length === 2)`, sesion), true);
+      }
       async function revisar(rol, decision, textoMotivo) {
         const sesion = sesiones[rol];
         await evaluar("document.querySelector('#refresh-accounts').click()", sesion);
@@ -282,6 +294,32 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivo)})).querySelector('button').click(); document.querySelector('#execution-form').requestSubmit();`, admin);
       await esperar("document.querySelector('#message').textContent.includes('Cambio autorizado ejecutado')", admin);
       assert.equal(await evaluar("[...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'lnavarro').querySelector('.account-status').textContent", admin), 'Activo');
+
+      const motivoDesactivar = 'Desactivación ordinaria solicitada en el formulario del Administrador.';
+      await evaluar(`(() => {
+        const fila = [...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'lnavarro');
+        [...fila.querySelectorAll('button')].find(b => b.textContent === 'Desactivar').click();
+        document.querySelector('#authorization-reason').value = ${JSON.stringify(motivoDesactivar)};
+        document.querySelector('#authorization-form').requestSubmit();
+      })()`, admin);
+      await esperar("document.querySelector('#message').textContent.includes('Solicitud registrada')", admin);
+      for (const rol of ['director', 'subdirector']) {
+        await evaluar("window.dispatchEvent(new Event('focus'))", sesiones[rol]);
+        await esperar(`[...document.querySelectorAll('#authorization-list article')].some(a => a.textContent.includes(${JSON.stringify(motivoDesactivar)}) && a.querySelectorAll('button').length === 2)`, sesiones[rol]);
+      }
+      await revisar('subdirector', 'rechazar', motivoDesactivar);
+      await evaluar("window.dispatchEvent(new Event('focus'))", sesiones.director);
+      await esperar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivoDesactivar)}))?.querySelectorAll('button').length === 0`, sesiones.director);
+
+      await evaluar(`(() => {
+        const fila = [...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'rsalazar');
+        [...fila.querySelectorAll('button')].find(b => b.textContent === 'Desactivar').click();
+        document.querySelector('#authorization-reason').value = 'Comprobar la protección de la última cuenta activa.';
+        document.querySelector('#authorization-form').requestSubmit();
+      })()`, admin);
+      await esperar("document.querySelector('#account-error').hidden === false", admin);
+      assert.match(await evaluar("document.querySelector('#account-error').textContent", admin), /al menos una cuenta activa/);
+      assert.equal(await evaluar("document.querySelector('#message').hidden", admin), true);
 
       const motivoDoble = 'Solicitar un cambio de rol con revisión de ambas autoridades.';
       await evaluar(`(async () => {

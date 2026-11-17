@@ -14,12 +14,11 @@
   <p id="panel-status" class="container-fluid workspace py-4" role="status">Comprobando tu sesión…</p>
   <noscript><p class="container">Activa JavaScript para acceder al panel institucional.</p></noscript>
   <main id="workspace" class="container-fluid workspace py-4 px-3 px-md-4" hidden>
-    <div id="environment" class="environment mb-3" hidden>Entorno de desarrollo · Todos los datos personales de la colección escolar son sintéticos.</div>
     <div class="page-heading mb-4"><div><p class="eyebrow mb-1">I.E.P. N.° 20874 Centro de Varones</p><h1 class="h2 mb-1">Gestión institucional</h1><p class="text-secondary mb-0">San Vicente de Cañete</p></div></div>
     <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">
       <button id="nav-list" class="btn btn-outline-primary" hidden>Incidencias</button>
       <button id="nav-new" class="btn btn-primary" hidden>Registrar incidencia</button>
-      <button id="nav-accounts" class="btn btn-outline-primary" hidden>Gestión de cuentas</button>
+      <button id="nav-accounts" class="btn btn-outline-primary" hidden>Gestión de cuentas <span id="nav-pending" class="badge text-bg-light" aria-live="polite">Pendientes: …</span></button>
     </nav>
     <div id="message" role="status" class="alert" hidden></div>
     <section id="list-view" class="surface" hidden aria-labelledby="list-title">
@@ -68,6 +67,7 @@
         <p id="account-mode" class="small text-secondary mb-0"></p>
         <div id="initial-password-group" class="col-md-6" hidden><label for="initial-password" class="form-label">Contraseña inicial</label><input id="initial-password" class="form-control" type="password" autocomplete="new-password" minlength="8" maxlength="12"><p class="form-text">Entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo.</p></div>
         <div class="col-12"><label for="authorization-reason" class="form-label">Motivo del cambio</label><textarea id="authorization-reason" class="form-control" maxlength="500" required></textarea></div>
+        <div class="col-12"><p id="account-error" class="alert alert-danger mb-0" role="alert" hidden></p></div>
         <div class="col-12 d-flex gap-2"><button id="submit-account-change" class="btn btn-primary">Enviar solicitud</button><button id="cancel-account-change" class="btn btn-outline-primary" type="button">Cancelar</button></div>
       </div></form>
       <section id="account-history" class="my-4 border rounded p-3" hidden aria-labelledby="account-history-title"><h3 id="account-history-title" class="h5">Historial de la cuenta</h3><div id="account-history-rows"></div></section>
