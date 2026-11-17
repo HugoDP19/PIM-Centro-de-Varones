@@ -1,5 +1,9 @@
 # SICE-Local: revisión integral del modelo relacional
 
+## Solicitudes de cuentas — 17 de noviembre de 2026
+
+`solicitudes-cuentas.sql` amplía `autorizaciones_cuentas`, sin tablas nuevas: solicitante/rol/fecha, estado, revisión doble y columnas independientes para decisor, decisión, fundamento y fecha de Director y Subdirector. Se conservan objetivo, valores exactos, huella, vencimiento, autorización y ejecución. Las filas anteriores se identifican como legado; sus datos e historial permanecen intactos. La migración se ejecuta explícitamente con `npm run db:cuentas`; el esquema escolar de 19 tablas y las 22 tablas totales se conservan. Reglas vigentes en `REGLAS_FUNCIONALES.md`.
+
 ## Implementación autorizada en desarrollo — 2 de noviembre de 2026
 
 El usuario confirma el requisito de testigos adultos/externos y autoriza la matriz de acceso propuesta, los campos O/C de formularios y el flujo independiente de cuentas **solo para desarrollo**. No constituye aprobación institucional ni habilitación de producción; los módulos de gestión se bloquean en ese entorno.

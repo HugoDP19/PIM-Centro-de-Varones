@@ -1,5 +1,15 @@
 # SICE-Local: reglas funcionales propuestas
 
+## Gestión de cuentas autorizada — 17 de noviembre de 2026
+
+Esta actualización sustituye el flujo de cuentas del 2 de noviembre, por instrucción expresa del usuario. Administrador, Director y Subdirector solicitan cambios; D y SD requieren aprobación recíproca. Para solicitudes de AD: activación/desactivación/restablecimiento se resuelven con la primera decisión válida; rol/permisos requieren registrar las dos decisiones. D y SD aprueban: aprobada; D rechaza: rechazada una vez registradas ambas; D aprueba y SD rechaza: revisión por desacuerdo bloqueada.
+
+AD puede crear directamente cuentas operativas inactivas para personal existente y editar su nombre de acceso. No se modifica la identidad escolar. Para cuentas de autoridad/AD se exige solicitud independiente; su creación por solicitud de AD requiere ambas autoridades. La activación siempre es una operación independiente. No se permiten cambios propios ni permisos del propio rol, aprobación y ejecución por la misma persona, eliminación física o acceso de AD a expedientes.
+
+Decidir requiere reautenticación, fundamento y declaración de ausencia de conflicto; rechazar sin fundamento no es válido. Operaciones exactas, plazo de 24 horas desde la solicitud, estado vigente del objetivo y actores, ejecución única y auditoría. Se revalida la sesión dentro de la transacción. Los cambios de cuenta y permisos revocan sesiones. Se conserva al menos una cuenta activa de cada autoridad y de Administrador; no se retiran permisos esenciales de sesión o gestión de esos roles.
+
+Sin procedimiento excepcional: si falta la autoridad independiente o tiene conflicto, se bloquea la decisión. Una revisión por desacuerdo no tiene ruta de desbloqueo unilateral; su resolución institucional documentada sigue pendiente. Se mantienen las restricciones de desarrollo/producción y todos los límites de expedientes. Las secciones siguientes son históricas en lo referido al flujo de cuentas.
+
 ## Aplicación autorizada para desarrollo — 2 de noviembre de 2026
 
 El usuario autoriza aplicar en desarrollo: matriz D/SD internos/restringidos, CT internos, DO/AU internos propios y AD sin expedientes; permiso específico por acción; bloqueo por conflicto; reserva de Salud/Protección y contenido sensible. Autoriza también los campos O/C del formulario y el mínimo estudiantil por tipo, con respuestas booleanas explícitas, sin diagnósticos ni gravedad disciplinaria en otras categorías. Estas respuestas no aprueban los procedimientos institucionales de producción.

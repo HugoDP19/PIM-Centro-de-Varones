@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 export async function leerSentencias(archivo) {
   const sql = await readFile(new URL(archivo, import.meta.url), 'utf8');
   const sentencias = sql.replace(/--[^\n]*/g, '').split(';').map((s) => s.trim()).filter(Boolean);
-  if (['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql'].includes(archivo)
+  if (['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql', 'solicitudes-cuentas.sql'].includes(archivo)
       && sentencias.some((s) => !/^(CREATE TABLE|ALTER TABLE)\s/i.test(s))) {
     throw new Error('DDL inesperado: no se permiten cambios de base, borrados ni instrucciones ajenas al esquema.');
   }
@@ -67,7 +67,27 @@ export async function verificarEsquema(conexion) {
     clavesForaneas: [...completo.matchAll(/FOREIGN KEY/g)].length, checks: [...completo.matchAll(/CONSTRAINT \w+ CHECK/g)].length };
 }
 
-export async function prepararBase(nombre) {
+export async function concederGestionCuentas(db) {
+  for (const [codigo, descripcion] of [['cuentas.solicitar', 'Solicitar cambios de cuentas'], ['cuentas.ejecutar', 'Ejecutar cambios aprobados de cuentas']]) {
+    await db.execute('INSERT INTO permisos (codigo, descripcion) VALUES (?, ?) ON DUPLICATE KEY UPDATE codigo = codigo', [codigo, descripcion]);
+    await db.execute(`INSERT INTO roles_permisos (id_rol, id_permiso)
+      SELECT r.id, p.id FROM roles r JOIN permisos p ON p.codigo = ?
+      WHERE r.codigo IN ('director', 'subdirector', 'administrador')
+      ON DUPLICATE KEY UPDATE id_rol = id_rol`, [codigo]);
+  }
+}
+
+export async function actualizarGestionCuentas(db) {
+  const [columnas] = await db.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'autorizaciones_cuentas' AND COLUMN_NAME = 'id_solicitante'`);
+  if (!columnas.length) for (const sentencia of await leerSentencias('solicitudes-cuentas.sql')) await db.query(sentencia);
+  await db.beginTransaction();
+  try { await concederGestionCuentas(db); await db.commit(); }
+  catch (error) { await db.rollback(); throw error; }
+}
+
+export async function prepararBase(nombre, actualizarCuentas = false) {
+  if (actualizarCuentas && process.env.NODE_ENV !== 'development') throw new Error('La actualización de cuentas solo está habilitada en desarrollo.');
   if (process.env.NODE_ENV === 'production' || nombre.toUpperCase() !== 'SICE') {
     throw new Error('La preparación solo permite SICE fuera de producción.');
   }
@@ -84,10 +104,11 @@ export async function prepararBase(nombre) {
     if (nueva) await conexion.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     await conexion.changeUser({ database: nombre });
     if (nueva) {
-      for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql']) {
+      for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql', 'solicitudes-cuentas.sql']) {
         for (const sentencia of await leerSentencias(archivo)) await conexion.query(sentencia);
       }
     }
+    if (actualizarCuentas) await actualizarGestionCuentas(conexion);
     // Nunca reejecutar DDL sobre una base existente, ni reparar parcialmente a ciegas.
     const resultado = await verificarEsquema(conexion);
     await conexion.execute('SELECT token_hash FROM sesiones LIMIT 0');
@@ -98,7 +119,7 @@ export async function prepararBase(nombre) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { console.log(JSON.stringify(await prepararBase(process.argv[2] || 'SICE'))); }
+  try { console.log(JSON.stringify(await prepararBase(process.argv[2] || 'SICE', process.argv.includes('--cuentas')))); }
   catch (error) {
     console.error(error.code ? `Preparación detenida (${error.code}); no se borraron datos.` : error.message);
     process.exitCode = 1;

@@ -20,7 +20,7 @@ try {
   await pool.execute('SELECT token_hash FROM sesiones LIMIT 0');
   await pool.execute('SELECT clave FROM intentos_acceso LIMIT 0');
   await pool.execute('SELECT id_persona FROM involucrados LIMIT 0');
-  await pool.execute('SELECT id FROM autorizaciones_cuentas LIMIT 0');
+  await pool.execute('SELECT id, id_solicitante, estado FROM autorizaciones_cuentas LIMIT 0');
   // Solo datos técnicos caducados. Nunca se eliminan incidencias ni historial.
   await pool.execute('DELETE FROM sesiones WHERE vence_en <= UTC_TIMESTAMP(6)');
   await pool.execute('DELETE FROM intentos_acceso WHERE vence_en <= UTC_TIMESTAMP(6)');

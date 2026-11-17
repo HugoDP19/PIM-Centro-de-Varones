@@ -9,12 +9,12 @@ import mysql from 'mysql2/promise';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createDatabasePool } from '../src/database.js';
 import { createApp } from '../src/app.js';
-import { verificarEsquema, leerSentencias } from '../database/preparar.js';
+import { verificarEsquema, leerSentencias, concederGestionCuentas } from '../database/preparar.js';
 import { personalEscolar, cargarColeccion } from '../database/cargar-escolar.js';
 import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-incidencias.js';
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
-import { generarContrasena } from '../src/seguridad.js';
+import { verificarGestionCuentas } from './cuentas.integration.js';
 
 async function leerEstadoOrigen(conexion) {
   const [tablas] = await conexion.query('SHOW TABLES');
@@ -64,7 +64,7 @@ async function crearCopiaTemporal(claves) {
     creada = true;
     await copia.changeUser({ database: nombre });
     const orden = [];
-    for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql']) {
+    for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql', 'solicitudes-cuentas.sql']) {
       for (const sentencia of await leerSentencias(archivo)) {
         await copia.query(sentencia);
         const tabla = sentencia.match(/^CREATE TABLE (\w+)/)?.[1];
@@ -99,6 +99,7 @@ async function crearCopiaTemporal(claves) {
         await copia.execute(`UPDATE \`${tabla}\` SET ${columnas.map(c => `\`${c}\` = ?`).join(', ')} WHERE id = ?`, [...columnas.map(c => fila[c]), fila.id]);
       }
     }
+    await concederGestionCuentas(copia);
     await copia.commit();
     await origen.rollback();
     async function verificarOrigen() {
@@ -235,7 +236,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   await t.test('MySQL 8 y esquema validado; scripts sin cambios inesperados de base', async () => {
     const [[fila]] = await pool.execute('SELECT VERSION() AS version'); assert.equal(fila.version, '8.0.46');
     assert.deepEqual(await verificarEsquema(pool), { tablas: 19, columnas: 187, clavesForaneas: 64, checks: 41 });
-    for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql']) assert.ok((await leerSentencias(archivo)).every((s) => /^(CREATE TABLE|ALTER TABLE)\s/.test(s)));
+    for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql', 'solicitudes-cuentas.sql']) assert.ok((await leerSentencias(archivo)).every((s) => /^(CREATE TABLE|ALTER TABLE)\s/.test(s)));
   });
   await t.test('colección de 24 expedientes, adulto sin matrícula y carga repetible', async () => {
     assert.equal(escenarios.length, 24);
@@ -357,47 +358,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       await assert.rejects(db.execute('UPDATE involucrados SET id_matricula = ? WHERE id_persona = ?', [alumnos[1].matricula, testigo.id]), { code: 'ER_NO_REFERENCED_ROW_2' });
     } finally { await db.rollback(); db.release(); }
   });
-  await t.test('cuentas: autorización independiente, ejecución única, hash y límites del Administrador', async () => {
-    const clavesPrueba = { CUENTA_PASSWORD: generarContrasena() };
-    const catalogo = await datos('cuentas/catalogos', 'director');
-    const [[preexistente]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'lnavarro'");
-    if (!preexistente) {
-      const persona = catalogo.personas.find((p) => p.nombre === 'Luis Fernando Navarro Espinoza');
-      const autorizacion = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'crear_cuenta', id_persona: persona.id, id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'lnavarro', activo: true, motivo: 'Habilitar el acceso del personal docente autorizado.' }, 201);
-      assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'docente', 'POST', {})).status, 403);
-      for (const contrasena of ['Ab1!xyz', 'Abc1!xyz7890A', 'abcdef1!', 'ABCDEF1!', 'Abcdef!?', 'Abcdef12']) {
-        assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena })).status, 400);
-      }
-      await datos(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD });
-      assert.equal((await peticion(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD })).status, 409);
-    }
-    const [[creada]] = await pool.execute("SELECT contrasena_hash FROM usuarios WHERE nombre_usuario = 'lnavarro'");
-    assert.ok(creada.contrasena_hash.startsWith('scrypt$')); assert.ok(creada.contrasena_hash !== clavesPrueba.CUENTA_PASSWORD);
-    assert.equal((await peticion('cuentas/autorizaciones', 'director', 'POST', { tipo: 'restablecer_clave', id_usuario_objetivo: usuarios.director.id, motivo: 'Cambio sobre la propia cuenta.' })).status, 403);
-    assert.equal((await peticion('cuentas/autorizaciones', 'administrador', 'POST', { tipo: 'restablecer_clave', id_usuario_objetivo: usuarios.director.id, motivo: 'Sin autorización independiente.' })).status, 403);
-    const permiso = catalogo.permisos.find((p) => p.codigo === 'incidencias.consultar');
-    assert.equal((await peticion('cuentas/autorizaciones', 'director', 'POST', { tipo: 'asignar_permiso', id_rol_objetivo: usuarios.administrador.id_rol, id_permiso: permiso.id, motivo: 'Permiso incompatible con el rol.' })).status, 403);
-    const revocar = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'retirar_permiso', id_rol_objetivo: usuarios.docente.id_rol, id_permiso: permiso.id, motivo: 'Comprobar la revocación efectiva del acceso autorizado.' }, 201);
-    try {
-      await datos(`cuentas/autorizaciones/${revocar.id}/ejecutar`, 'administrador', 'POST', {});
-      assert.equal((await peticion('incidencias', 'docente')).status, 403);
-    } finally {
-      const devolver = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'asignar_permiso', id_rol_objetivo: usuarios.docente.id_rol, id_permiso: permiso.id, motivo: 'Restituir el permiso tras la comprobación controlada.' }, 201);
-      await datos(`cuentas/autorizaciones/${devolver.id}/ejecutar`, 'administrador', 'POST', {});
-    }
-    assert.equal((await peticion('incidencias', 'docente')).status, 200);
-    const [[objetivo]] = await pool.execute("SELECT id FROM usuarios WHERE nombre_usuario = 'lnavarro'");
-    const autorizacionClave = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'restablecer_clave', id_usuario_objetivo: objetivo.id, motivo: 'Restablecimiento autorizado por la autoridad independiente.' }, 201);
-    await datos(`cuentas/autorizaciones/${autorizacionClave.id}/ejecutar`, 'administrador', 'POST', { contrasena: clavesPrueba.CUENTA_PASSWORD });
-    const acceso = await peticion('auth/login', null, 'POST', { usuario: 'lnavarro', contrasena: clavesPrueba.CUENTA_PASSWORD }); assert.equal(acceso.status, 200);
-    const cookieObjetivo = acceso.headers.get('set-cookie').split(';')[0];
-    for (const activo of [false, true]) {
-      const autorizacion = await datos('cuentas/autorizaciones', 'director', 'POST', { tipo: 'actualizar_cuenta', id_usuario_objetivo: objetivo.id,
-        id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'lnavarro', activo, motivo: activo ? 'Reactivar la cuenta tras la comprobación de seguridad.' : 'Suspender el acceso mediante un cambio concreto autorizado.' }, 201);
-      await datos(`cuentas/autorizaciones/${autorizacion.id}/ejecutar`, 'administrador', 'POST', {});
-      assert.equal((await fetch(`${base}/api/auth/sesion`, { headers: { Cookie: cookieObjetivo } })).status, 401);
-    }
-  });
+  await verificarGestionCuentas({ t, pool, peticion, datos, usuarios, claves, cookies });
   await t.test('PDF A4, siete secciones, registrador histórico y firma/sello sin cortes', async () => {
     const response = await peticion(`incidencias/${ids[18]}/pdf`, 'subdirector'); assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /application\/pdf/);

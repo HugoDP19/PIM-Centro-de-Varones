@@ -48,6 +48,8 @@ export const limitesPermisos = {
   'cuentas.consultar': ['director', 'subdirector', 'administrador'],
   'cuentas.administrar': ['administrador'],
   'cuentas.autorizar': ['director', 'subdirector'],
+  'cuentas.solicitar': ['director', 'subdirector', 'administrador'],
+  'cuentas.ejecutar': ['director', 'subdirector', 'administrador'],
   'incidencias.registrar': operativos,
   'incidencias.consultar': operativos,
   'incidencias.seguimiento': operativos,
