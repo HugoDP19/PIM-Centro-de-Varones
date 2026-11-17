@@ -12,7 +12,8 @@ Requiere Node.js 24 o superior y MySQL 8. Validado con MySQL 8.0.46 en `127.0.0.
 2. Configurar `.env` desde `.env.example`: `NODE_ENV=development`, `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_NAME=SICE` y las credenciales SQL locales. No compartirlas ni versionarlas.
 3. Ejecutar `npm run db:prepare`. Crea únicamente `SICE` si no existe; si existe, comprueba el esquema sin sobrescribir datos. No es una herramienta de migración de instalaciones anteriores.
 4. En una instalación nueva, ejecutar `npm run db:escolar`. Es el único comando de carga escolar: prepara 24 expedientes y seis cuentas con nombres sintéticos naturales. Repetirlo no crea duplicados ni restablece contraseñas. La instalación actual ya tiene la colección y no necesita recargarla.
-5. Ejecutar `npm start`, abrir http://127.0.0.1:3000 e ingresar. El botón «Abrir panel institucional» lleva a `/panel.html`. Para desarrollo con reinicio: `npm run dev`.
+5. En una instalación anterior al flujo de solicitudes, ejecutar `npm run db:cuentas` antes de iniciar el servidor. Amplía la tabla existente de autorizaciones y concede los dos permisos nuevos a los tres roles de gestión; conserva los expedientes y el historial. Requiere `NODE_ENV=development`.
+6. Ejecutar `npm start`, abrir http://127.0.0.1:3000 e ingresar directamente al panel. Para desarrollo con reinicio: `npm run dev`.
 
 En PowerShell con scripts deshabilitados, usar `npm.cmd`. `APP_ORIGIN` debe coincidir exactamente con el origen del navegador, incluido el puerto. El servidor verifica conexión y columnas necesarias antes de escuchar; si falta configuración o esquema, termina con un mensaje comprensible. `db:prepare` solo ejecuta DDL en bases nuevas; sobre una base existente verifica, sin borrar ni reparar a ciegas. El lector de DDL rechaza instrucciones `USE`, `CREATE DATABASE` o sentencias ajenas a CREATE/ALTER TABLE.
 
@@ -40,7 +41,17 @@ Para ingresar, abrir http://127.0.0.1:3000 y escribir el usuario de la tabla y s
 
 El 12 de noviembre de 2026 se verificó la contraseña inicial común y se regeneraron los hashes de las seis cuentas institucionales mediante el mecanismo existente, revocando sus sesiones anteriores. Fue un mantenimiento local solicitado por el usuario: conserva roles, permisos, autores históricos y los 24 expedientes, sin cambiar el flujo de autorización de cuentas de la aplicación ni otras bases existentes.
 
-El Director o Subdirector autoriza un cambio concreto de cuenta o permiso. Un Administrador independiente lo ejecuta sin poder cambiar los datos autorizados. Se admite crear una cuenta para personal existente, actualizar rol/usuario/estado, restablecer contraseña y asignar/retirar permisos compatibles con el rol. No hay cambios sensibles sobre la propia cuenta ni autoasignación por rol; se revalidan autoridad, vigencia y estado del objetivo. La autorización vence en 24 horas, admite una sola ejecución y ambas etapas se auditan. Las contraseñas se proporcionan solo al crear/restablecer, se guardan con hash y nunca forman parte de la autorización ni del historial.
+## Gestión de cuentas
+
+Administrador, Director y Subdirector comparten la sección «Gestión de cuentas»: tabla con acciones, historial, formularios y solicitudes pendientes. El Administrador puede crear directamente cuentas operativas inactivas para personal existente y editar su nombre de usuario. La identidad personal se conserva; activar/desactivar, restablecer claves y cambiar roles/permisos requieren solicitud. Las cuentas de autoridad o Administrador necesitan autorización independiente también para creación y edición básica.
+
+Las solicitudes del Director las decide el Subdirector, y viceversa. Para solicitudes del Administrador, activar/desactivar o restablecer se resuelve con la primera decisión válida de una autoridad. Cambios de rol o permisos requieren ambas decisiones: dos aprobaciones autorizan; rechazo del Director implica rechazo cuando ambas decisiones están registradas; aprobación del Director y rechazo del Subdirector deja «Revisión por desacuerdo», sin ejecución. La creación solicitada de una cuenta de autoridad o Administrador también exige ambas revisiones cuando la pide el Administrador.
+
+Para aprobar o rechazar se exige contraseña actual, fundamento y declaración de ausencia de conflicto. Quien decide no ejecuta; el solicitante u otro gestor habilitado puede ejecutar una aprobación vigente, con los valores exactos. Las solicitudes vencen 24 horas después de crearse. Se bloquean cambios propios, permisos del propio rol, escalamiento incompatible, valores obsoletos y operaciones que dejen sin Director, Subdirector o último Administrador activo. Crear cuentas no las activa automáticamente.
+
+Se auditan solicitante, decisiones, ejecutor y valores; las contraseñas solo se procesan para crear/restablecer o reautenticar y no se guardan en solicitudes ni historial. Cambios de cuenta o permisos revocan las sesiones afectadas. Las autorizaciones antiguas conservan su evidencia, pero no habilitan nuevas ejecuciones con el procedimiento anterior.
+
+Pendiente institucional: procedimiento documentado para resolver desacuerdos, ausencia o conflicto de la autoridad requerida. No hay aprobación excepcional ni resolución unilateral. Estas funciones siguen habilitadas únicamente en desarrollo.
 
 ## Incidencias e informes
 
@@ -65,6 +76,7 @@ Sesiones revocables en MySQL: tokens aleatorios de 256 bits guardados como SHA-2
 | `POST /api/incidencias`, `PUT /api/incidencias/:id/borrador`, `POST /api/incidencias/:id/confirmar` | Registro y confirmación |
 | `POST /api/incidencias/:id/actuaciones`, `GET /api/incidencias/:id/pdf` | Seguimiento e informe |
 | `GET /api/cuentas/catalogos`, `GET /api/cuentas/autorizaciones`, `POST /api/cuentas/autorizaciones`, `POST /api/cuentas/autorizaciones/:id/ejecutar` | Gestión independiente de cuentas |
+| `POST /api/cuentas/directas`, `GET /api/cuentas/:id/historial`, `POST /api/cuentas/autorizaciones/:id/decidir` | Edición básica, historial y decisión con reautenticación |
 
 Las escrituras requieren JSON, `Origin` igual a `APP_ORIGIN` y `X-SICE-Request: 1`, enviados por la interfaz. Sin CORS ni tokens en localStorage. No se exponen errores SQL al cliente. Producción requiere HTTPS; `TRUST_PROXY_LOCAL=1` solo detrás de un proxy HTTPS local de confianza. Faltan certificados/proxy y una cuenta SQL de privilegios mínimos para despliegue. `/api/health` indica disponibilidad HTTP; `npm run db:check` comprueba MySQL.
 
@@ -84,6 +96,6 @@ La colección cubre las seis categorías y estados confirmada/en seguimiento/cer
 
 ## Organización
 
-`public/` contiene interfaz y JavaScript vanilla; `src/`, servidor, reglas, rutas y consultas SQL separadas; `database/`, los tres esquemas SQL, el preparador y una carga escolar con sus casos; `test/`, pruebas. Se conservan `image/` y el logo original. Sin ORM, React, Angular, TypeScript ni Docker. No se agregaron dependencias durante la limpieza.
+`public/` contiene interfaz y JavaScript vanilla; `src/`, servidor, reglas, rutas y consultas SQL separadas; `database/`, esquemas SQL, actualización de solicitudes de cuentas, preparador y carga escolar; `test/`, pruebas. Se conservan `image/` y el logo original. Sin ORM, React, Angular, TypeScript ni Docker; sin nuevas dependencias.
 
 Referencias técnicas: [PDFKit](https://pdfkit.org/docs/getting_started.html), [contraseñas de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) y [sesiones de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html). Las decisiones institucionales pendientes se mantienen en `PROJECT_CONTEXT.md` y los documentos de diseño/reglas de `database/`.

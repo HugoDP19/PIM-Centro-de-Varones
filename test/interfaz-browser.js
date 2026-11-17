@@ -23,13 +23,16 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     }
     assert.ok(puerto, 'Chrome no inició el puerto de pruebas.');
     const paginas = await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json();
-    socket = new WebSocket(paginas.find((p) => p.type === 'page').webSocketDebuggerUrl);
+    const navegador = await (await fetch(`http://127.0.0.1:${puerto}/json/version`)).json();
+    socket = new WebSocket(navegador.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
-    let secuencia = 0, navegaciones = 0;
+    let secuencia = 0, navegaciones = 0, erroresJavaScript = 0, sesionPrincipal;
     const pendientes = new Map();
     socket.addEventListener('message', (evento) => {
       const mensaje = JSON.parse(evento.data);
-      if (mensaje.method === 'Page.frameNavigated' && !mensaje.params.frame.parentId) navegaciones++;
+      if (mensaje.method === 'Runtime.exceptionThrown') erroresJavaScript++;
+      if (mensaje.method === 'Page.frameNavigated' && !mensaje.params.frame.parentId && mensaje.sessionId === sesionPrincipal) navegaciones++;
+      if (mensaje.method === 'Page.javascriptDialogOpening') enviar('Page.handleJavaScriptDialog', { accept: true }, mensaje.sessionId).catch(() => {});
       const promesa = pendientes.get(mensaje.id);
       if (!promesa) return;
       pendientes.delete(mensaje.id);
@@ -44,24 +47,27 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       }
       pendientes.clear();
     });
-    const enviar = (method, params = {}) => new Promise((resolve, reject) => {
+    const enviar = (method, params = {}, sesion = sesionPrincipal) => new Promise((resolve, reject) => {
       const id = ++secuencia;
       const timeout = setTimeout(() => { pendientes.delete(id); reject(new Error(`Chrome no respondió a ${method}.`)); }, 10000);
-      pendientes.set(id, { resolve, reject, timeout }); socket.send(JSON.stringify({ id, method, params }));
+      pendientes.set(id, { resolve, reject, timeout }); socket.send(JSON.stringify({ id, method, params,
+        ...(!method.startsWith('Target.') && !method.startsWith('Browser.') && sesion ? { sessionId: sesion } : {}) }));
     });
-    const evaluar = async (expression) => {
-      const resultado = await enviar('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    sesionPrincipal = (await enviar('Target.attachToTarget', { targetId: paginas.find(p => p.type === 'page').id, flatten: true })).sessionId;
+    const evaluar = async (expression, sesion = sesionPrincipal) => {
+      const resultado = await enviar('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sesion);
       if (resultado.exceptionDetails) throw new Error('Falló la evaluación de la interfaz.');
       return resultado.result.value;
     };
-    const esperar = async (expresion) => {
+    const esperar = async (expresion, sesion = sesionPrincipal) => {
       for (let intento = 0; intento < 100; intento++) {
-        if (await evaluar(expresion)) return;
+        if (await evaluar(expresion, sesion)) return;
         await pausa(100);
       }
       throw new Error('La interfaz no llegó al estado esperado.');
     };
     await enviar('Page.enable');
+    await enviar('Runtime.enable');
     for (const ancho of [1280, 1024, 768]) {
       await enviar('Emulation.setDeviceMetricsOverride', { width: ancho, height: 900, deviceScaleFactor: 1, mobile: false });
       await enviar('Page.navigate', { url: base });
@@ -233,32 +239,77 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     await esperar("document.querySelector('#detail-content > .eyebrow').textContent.includes('en seguimiento')");
     await verificarPanel('expediente-detalle');
     assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Descargar PDF')"), true);
-    await evaluar("document.querySelector('#nav-accounts').click()");
-    await esperar("document.querySelector('#accounts-view').hidden === false && document.querySelector('#authorization-form').hidden === false");
-    const motivo = `Ratificar la continuidad del acceso docente según la revisión de ${new Date().toISOString().slice(0, 19).replace('T', ' ')} UTC.`;
-    await evaluar(`(async () => {
-      const datos = await (await fetch('/api/cuentas/catalogos')).json();
-      const cuenta = datos.usuarios.find(u => u.nombre_usuario === 'lramos');
-      document.querySelector('#account-action').value = 'actualizar_cuenta'; document.querySelector('#account-action').dispatchEvent(new Event('change'));
-      const form = document.querySelector('#authorization-form');
-      form.elements.id_usuario_objetivo.value = cuenta.id; form.elements.id_rol_objetivo.value = cuenta.id_rol;
-      form.elements.nombre_usuario.value = cuenta.nombre_usuario; form.elements.activo.value = 'true';
-      document.querySelector('#authorization-reason').value = ${JSON.stringify(motivo)};
-      form.requestSubmit();
-    })()`);
-    await esperar("document.querySelector('#message').textContent.includes('Autorización registrada')");
-    await evaluar("document.querySelector('#logout').click()");
-    await esperar("document.querySelector('#login-form')?.hidden === false");
-    await ingresar(usuarioAdministrador, contrasena);
-    await esperar("document.querySelector('#accounts-view')?.hidden === false && document.querySelector('#authorization-list').children.length > 0");
-    await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivo)})).querySelector('button').click()`);
-    await esperar("document.querySelector('#execution-form').hidden === false");
-    assert.equal(await evaluar("document.querySelector('#execution-password-group').hidden"), true);
-    await evaluar("document.querySelector('#execution-form').requestSubmit()");
-    await esperar("document.querySelector('#message').textContent.includes('Cambio autorizado ejecutado')");
-    await evaluar("document.querySelector('#logout').click()");
-    await esperar("document.querySelector('#login-form')?.hidden === false");
-    console.log('Panel: autorización por Director y ejecución por Administrador; listado, formularios, guardado, confirmación y seguimiento aprobados a 1280/1024/768 px.');
+    async function verificarTresSesiones() {
+      const sesiones = {};
+      const contextos = [];
+      for (const rol of ['administrador', 'director', 'subdirector']) {
+        const { browserContextId } = await enviar('Target.createBrowserContext'); contextos.push(browserContextId);
+        const { targetId } = await enviar('Target.createTarget', { url: base, browserContextId });
+        const { sessionId } = await enviar('Target.attachToTarget', { targetId, flatten: true });
+        sesiones[rol] = sessionId;
+        await enviar('Page.enable', {}, sessionId);
+        await enviar('Runtime.enable', {}, sessionId);
+        await enviar('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
+        await esperar("document.querySelector('#login-form')?.hidden === false", sessionId);
+        const [, , , nombre] = personalEscolar.find(([cargo]) => cargo === rol);
+        await evaluar(`document.querySelector('#username').value = ${JSON.stringify(nombre)}; document.querySelector('#password').value = ${JSON.stringify(credenciales[`${rol.toUpperCase()}_PASSWORD`])}; document.querySelector('#login-form').requestSubmit();`, sessionId);
+        await esperar("document.querySelector('#workspace')?.hidden === false", sessionId);
+        await evaluar("document.querySelector('#nav-accounts').click()", sessionId);
+        await esperar("document.querySelector('#accounts-view')?.hidden === false && document.querySelector('#account-rows')?.children.length > 0", sessionId);
+        assert.equal(await evaluar("(async () => (await (await fetch('/api/auth/sesion')).json()).usuario.rol)()", sessionId), rol);
+      }
+      const motivo = 'Activar el acceso solicitado por el Administrador desde el panel.';
+      const admin = sesiones.administrador;
+      await evaluar(`(() => {
+        const fila = [...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'lnavarro');
+        [...fila.querySelectorAll('button')].find(b => b.textContent === 'Activar').click();
+        document.querySelector('#authorization-reason').value = ${JSON.stringify(motivo)};
+        document.querySelector('#authorization-form').requestSubmit();
+      })()`, admin);
+      await esperar("document.querySelector('#message').textContent.includes('Solicitud registrada')", admin);
+      async function revisar(rol, decision, textoMotivo) {
+        const sesion = sesiones[rol];
+        await evaluar("document.querySelector('#refresh-accounts').click()", sesion);
+        await esperar(`[...document.querySelectorAll('#authorization-list article')].some(a => a.textContent.includes(${JSON.stringify(textoMotivo)}))`, sesion);
+        await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(textoMotivo)})).querySelectorAll('button')[${decision === 'aprobar' ? 0 : 1}].click()`, sesion);
+        await evaluar(`document.querySelector('#decision-reason').value = 'Decisión independiente de la autoridad en la prueba de navegador.'; document.querySelector('#decision-password').value = ${JSON.stringify(credenciales[`${rol.toUpperCase()}_PASSWORD`])}; document.querySelector('#decision-independent').checked = true; document.querySelector('#decision-form').requestSubmit();`, sesion);
+        await esperar("document.querySelector('#message').textContent.includes('Decisión registrada')", sesion);
+        assert.equal(await evaluar("document.querySelector('#decision-password').value"), '', 'No conservar la contraseña de reautenticación');
+      }
+      await revisar('director', 'aprobar', motivo);
+      await evaluar("document.querySelector('#refresh-accounts').click()", admin);
+      await esperar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivo)}))?.textContent.includes('Aprobada')`, admin);
+      await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivo)})).querySelector('button').click(); document.querySelector('#execution-form').requestSubmit();`, admin);
+      await esperar("document.querySelector('#message').textContent.includes('Cambio autorizado ejecutado')", admin);
+      assert.equal(await evaluar("[...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'lnavarro').querySelector('.account-status').textContent", admin), 'Activo');
+
+      const motivoDoble = 'Solicitar un cambio de rol con revisión de ambas autoridades.';
+      await evaluar(`(async () => {
+        const catalogo = await (await fetch('/api/cuentas/catalogos')).json();
+        const fila = [...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'lnavarro');
+        [...fila.querySelectorAll('button')].find(b => b.textContent === 'Cambiar rol').click();
+        document.querySelector('#authorization-form').elements.id_rol_objetivo.value = catalogo.roles.find(r => r.codigo === 'auxiliar').id;
+        document.querySelector('#authorization-reason').value = ${JSON.stringify(motivoDoble)};
+        document.querySelector('#authorization-form').requestSubmit();
+      })()`, admin);
+      await esperar("document.querySelector('#message').textContent.includes('Solicitud registrada')", admin);
+      await revisar('director', 'aprobar', motivoDoble);
+      await revisar('subdirector', 'rechazar', motivoDoble);
+      await evaluar("document.querySelector('#refresh-accounts').click()", admin);
+      await esperar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivoDoble)}))?.textContent.includes('Revisión por desacuerdo')`, admin);
+      assert.equal(await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivoDoble)})).querySelectorAll('button').length`, admin), 0);
+      for (const rol of Object.keys(sesiones)) {
+        const sesion = sesiones[rol];
+        for (const ancho of [1280, 1024, 768]) {
+          await enviar('Emulation.setDeviceMetricsOverride', { width: ancho, height: 900, deviceScaleFactor: 1, mobile: false }, sesion);
+          assert.equal(await evaluar('document.documentElement.scrollWidth === document.documentElement.clientWidth', sesion), true);
+        }
+      }
+      for (const browserContextId of contextos) await enviar('Target.disposeBrowserContext', { browserContextId });
+      console.log('Gestión de cuentas: tres sesiones independientes, solicitud, reautenticación, ejecución y desacuerdo bloqueado en navegador.');
+    }
+    await verificarTresSesiones();
+    assert.equal(erroresJavaScript, 0, 'Sin excepciones JavaScript en las sesiones del navegador');
     await enviar('Browser.close');
   } finally {
     socket?.close();

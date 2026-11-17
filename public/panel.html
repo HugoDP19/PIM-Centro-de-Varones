@@ -19,7 +19,7 @@
     <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">
       <button id="nav-list" class="btn btn-outline-primary" hidden>Incidencias</button>
       <button id="nav-new" class="btn btn-primary" hidden>Registrar incidencia</button>
-      <button id="nav-accounts" class="btn btn-outline-primary" hidden>Cuentas y permisos</button>
+      <button id="nav-accounts" class="btn btn-outline-primary" hidden>Gestión de cuentas</button>
     </nav>
     <div id="message" role="status" class="alert" hidden></div>
     <section id="list-view" class="surface" hidden aria-labelledby="list-title">
@@ -58,15 +58,22 @@
     </section>
     <section id="detail-view" class="surface" hidden aria-labelledby="detail-title"><div id="detail-content"></div></section>
     <section id="accounts-view" class="surface" hidden aria-labelledby="accounts-title">
-      <h2 id="accounts-title" class="h4">Cuentas y permisos autorizados</h2><p class="text-secondary">Una autoridad independiente autoriza el cambio concreto; un Administrador habilitado lo ejecuta. No se permiten cambios sobre la propia cuenta.</p>
-      <div class="table-responsive"><table class="table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr></thead><tbody id="account-rows"></tbody></table></div>
-      <form id="authorization-form" class="my-4" hidden><h3 class="h5">Autorizar un cambio</h3><div class="row g-3">
-        <div class="col-md-6"><label for="account-action" class="form-label">Acción</label><select id="account-action" class="form-select"><option value="crear_cuenta">Crear cuenta</option><option value="actualizar_cuenta">Actualizar cuenta</option><option value="restablecer_clave">Restablecer contraseña</option><option value="asignar_permiso">Asignar permiso a un rol</option><option value="retirar_permiso">Retirar permiso de un rol</option></select></div>
+      <h2 id="accounts-title" class="h4">Gestión de cuentas</h2>
+      <p class="text-secondary">Administra el acceso del personal del colegio. Los cambios sensibles requieren aprobación independiente y tienen una vigencia de 24 horas. No se permiten cambios sobre la propia cuenta.</p>
+      <div class="d-flex flex-wrap gap-2 mb-3"><button id="create-account" class="btn btn-primary" type="button">Crear cuenta</button><button id="request-account-change" class="btn btn-outline-primary" type="button">Solicitar cambio o permiso</button></div>
+      <div class="table-responsive"><table class="table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Cargo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="account-rows"></tbody></table></div>
+      <form id="authorization-form" class="my-4 border rounded p-3" hidden><h3 class="h5">Datos de la operación</h3><div class="row g-3">
+        <div class="col-md-6"><label for="account-action" class="form-label">Acción</label><select id="account-action" class="form-select"><option value="crear_cuenta">Crear cuenta</option><option value="editar_cuenta">Editar nombre de usuario</option><option value="activar_cuenta">Activar cuenta</option><option value="desactivar_cuenta">Desactivar cuenta</option><option value="restablecer_clave">Restablecer contraseña</option><option value="cambiar_rol">Cambiar rol</option><option value="asignar_permiso">Asignar permiso a un rol</option><option value="retirar_permiso">Retirar permiso de un rol</option></select></div>
         <div id="authorization-fields" class="row g-3 m-0 p-0"></div>
+        <p id="account-mode" class="small text-secondary mb-0"></p>
+        <div id="initial-password-group" class="col-md-6" hidden><label for="initial-password" class="form-label">Contraseña inicial</label><input id="initial-password" class="form-control" type="password" autocomplete="new-password" minlength="8" maxlength="12"><p class="form-text">Entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo.</p></div>
         <div class="col-12"><label for="authorization-reason" class="form-label">Motivo del cambio</label><textarea id="authorization-reason" class="form-control" maxlength="500" required></textarea></div>
-        <div class="col-12"><button class="btn btn-primary">Registrar autorización</button></div>
+        <div class="col-12 d-flex gap-2"><button id="submit-account-change" class="btn btn-primary">Enviar solicitud</button><button id="cancel-account-change" class="btn btn-outline-primary" type="button">Cancelar</button></div>
       </div></form>
-      <h3 class="h5 mt-4">Autorizaciones registradas</h3><div id="authorization-list"></div>
+      <section id="account-history" class="my-4 border rounded p-3" hidden aria-labelledby="account-history-title"><h3 id="account-history-title" class="h5">Historial de la cuenta</h3><div id="account-history-rows"></div></section>
+      <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-4 mb-3"><h3 class="h5 mb-0">Solicitudes y autorizaciones</h3><span class="small">Solicitudes pendientes: <strong id="pending-accounts">0</strong></span><button id="refresh-accounts" class="btn btn-sm btn-outline-primary" type="button">Actualizar</button></div>
+      <div id="authorization-list"></div>
+      <form id="decision-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Decisión de la autoridad</h3><p id="decision-summary"></p><label class="form-label" for="decision-reason">Fundamento de la decisión</label><textarea id="decision-reason" class="form-control mb-3" maxlength="500" required></textarea><label class="form-label" for="decision-password">Confirma tu contraseña actual</label><input id="decision-password" class="form-control mb-3" type="password" autocomplete="current-password" maxlength="256" required><div class="form-check mb-3"><input id="decision-independent" class="form-check-input" type="checkbox" required><label class="form-check-label" for="decision-independent">Declaro que no tengo conflicto de interés para decidir esta solicitud.</label></div><p class="small text-secondary">Si existe un conflicto o la otra autoridad está ausente, la solicitud queda bloqueada hasta contar con un procedimiento institucional válido.</p><button id="submit-decision" class="btn btn-primary">Confirmar decisión</button></form>
       <form id="execution-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Ejecutar autorización seleccionada</h3><p id="execution-summary"></p><div id="execution-password-group"><label for="new-password" class="form-label">Nueva contraseña</label><input id="new-password" class="form-control" type="password" autocomplete="new-password" minlength="8" maxlength="12" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,12}" aria-describedby="password-rules"><p id="password-rules" class="form-text">Entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo. Se almacena con hash.</p></div><button class="btn btn-primary mt-3">Ejecutar el cambio autorizado</button></form>
     </section>
   </main>
