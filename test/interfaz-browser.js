@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { personalEscolar } from '../database/cargar-escolar.js';
 
 const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-export async function verificarInterfaz(base, credenciales) {
+export async function verificarInterfaz(base, credenciales, expirarSesion) {
   const chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   await access(chrome);
   const perfil = await mkdtemp(join(tmpdir(), 'sice-preview-'));
@@ -25,10 +25,11 @@ export async function verificarInterfaz(base, credenciales) {
     const paginas = await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json();
     socket = new WebSocket(paginas.find((p) => p.type === 'page').webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
-    let secuencia = 0;
+    let secuencia = 0, navegaciones = 0;
     const pendientes = new Map();
     socket.addEventListener('message', (evento) => {
       const mensaje = JSON.parse(evento.data);
+      if (mensaje.method === 'Page.frameNavigated' && !mensaje.params.frame.parentId) navegaciones++;
       const promesa = pendientes.get(mensaje.id);
       if (!promesa) return;
       pendientes.delete(mensaje.id);
@@ -84,22 +85,19 @@ export async function verificarInterfaz(base, credenciales) {
     const [, nombreAdministrador, apellidoAdministrador, usuarioAdministrador] = personalEscolar.find(([rol]) => rol === 'administrador');
     assert.ok(contrasena);
     await evaluar(`document.querySelector('#username').value = ${JSON.stringify(usuarioAdministrador)}; document.querySelector('#password').value = ${JSON.stringify(contrasena)}; document.querySelector('#login-form').requestSubmit();`);
-    await esperar("!document.querySelector('#session-panel').hidden");
-    assert.equal(await evaluar("document.querySelector('#session-role').textContent"), 'Administrador');
-    assert.equal(await evaluar("document.querySelector('#session-name').textContent"), `${nombreAdministrador} ${apellidoAdministrador}`);
-    assert.equal(await evaluar("document.querySelector('#session-username').textContent"), usuarioAdministrador);
+    await esperar("location.pathname === '/panel.html' && document.querySelector('#workspace')?.hidden === false && document.querySelector('#account-rows')?.children.length > 0");
+    assert.equal(await evaluar("document.querySelector('#user-label').textContent"), `${nombreAdministrador} ${apellidoAdministrador} · Administrador`);
     assert.equal(await evaluar("document.cookie.includes('sice_session')"), false);
-    assert.equal(await evaluar("document.querySelector('#password').value"), '');
+    assert.equal(await evaluar("document.querySelector('#logout').textContent"), 'Cerrar sesión');
     await enviar('Page.reload');
-    await esperar("document.querySelector('#session-panel')?.hidden === false");
-    await evaluar("document.querySelector('#logout-button').click()");
-    await esperar("!document.querySelector('#login-form').hidden");
+    await esperar("document.querySelector('#workspace')?.hidden === false && document.querySelector('#account-rows')?.children.length > 0");
+    await evaluar("document.querySelector('#logout').click()");
+    await esperar("document.querySelector('#login-form')?.hidden === false");
     assert.equal(await evaluar("document.querySelector('#session-status').textContent"), 'Has cerrado la sesión.');
     console.log('Interfaz: error de acceso, login, cookie inaccesible a JavaScript, recarga y logout aprobados.');
     async function ingresar(nombre, clave) {
       await evaluar(`document.querySelector('#username').value = ${JSON.stringify(nombre)}; document.querySelector('#password').value = ${JSON.stringify(clave)}; document.querySelector('#login-form').requestSubmit();`);
-      await esperar("!document.querySelector('#session-panel').hidden");
-      await enviar('Page.navigate', { url: `${base}/panel.html` });
+      await esperar("location.pathname === '/panel.html' && document.querySelector('#workspace')?.hidden === false");
     }
     async function verificarPanel(nombre) {
       for (const ancho of [1280, 1024, 768]) {
@@ -110,6 +108,63 @@ export async function verificarInterfaz(base, credenciales) {
         assert.equal(medidas.contenido, medidas.disponible, `${nombre}: desbordamiento a ${ancho}px`);
       }
     }
+    const cargos = { director: 'Director', subdirector: 'Subdirector', coordinador_tutoria: 'Coordinador de Tutoría', docente: 'Docente', auxiliar: 'Auxiliar', administrador: 'Administrador' };
+    for (const [rol, nombre, apellido, acceso] of personalEscolar) {
+      await ingresar(acceso, credenciales[`${rol.toUpperCase()}_PASSWORD`]);
+      assert.equal(await evaluar("document.querySelector('#user-label').textContent"), `${nombre} ${apellido} · ${cargos[rol]}`);
+      const opciones = await evaluar(`Object.fromEntries(['nav-list', 'nav-new', 'nav-accounts'].map(id => [id, !document.getElementById(id).hidden]))`);
+      assert.deepEqual(opciones, { 'nav-list': rol !== 'administrador', 'nav-new': rol !== 'administrador', 'nav-accounts': ['director', 'subdirector', 'administrador'].includes(rol) });
+      if (rol === 'administrador') {
+        assert.equal(await evaluar("document.querySelector('#list-view').hidden && document.querySelector('#form-view').hidden && document.querySelector('#detail-view').hidden"), true);
+        assert.equal(await evaluar("(async () => (await fetch('/api/incidencias')).status)()"), 403);
+      }
+      const antes = navegaciones;
+      await enviar('Page.navigate', { url: base });
+      await esperar("location.pathname === '/panel.html' && document.querySelector('#workspace')?.hidden === false");
+      await pausa(250);
+      assert.equal(navegaciones - antes, 2, `${rol}: entrada con sesión válida sin bucles`);
+      assert.equal(await evaluar("document.querySelector('#user-label').textContent"), `${nombre} ${apellido} · ${cargos[rol]}`);
+      await evaluar("document.querySelector('#logout').click()");
+      await esperar("document.querySelector('#login-form')?.hidden === false");
+      assert.equal(await evaluar("(async () => (await fetch('/api/auth/sesion')).status)()"), 401);
+    }
+    // Acceso directo sin sesión y caducidad real, tanto al actuar como al recargar.
+    await enviar('Page.navigate', { url: `${base}/panel.html` });
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    for (const recargar of [false, true]) {
+      await ingresar(usuarioAdministrador, contrasena);
+      await expirarSesion(usuarioAdministrador);
+      const antes = navegaciones;
+      if (recargar) await enviar('Page.reload');
+      else await evaluar("document.querySelector('#nav-accounts').click()");
+      await esperar("document.querySelector('#login-form')?.hidden === false");
+      assert.match(await evaluar("document.querySelector('#session-status').textContent"), /Tu sesión ha finalizado/);
+      await pausa(250);
+      assert.equal(navegaciones - antes, recargar ? 2 : 1, 'La caducidad no genera redirecciones repetidas');
+      assert.equal(await evaluar("document.querySelector('#password').value"), '');
+    }
+    // El historial no debe restaurar un panel cuya sesión ya se cerró.
+    await ingresar(usuarioAdministrador, contrasena);
+    const historial = await enviar('Page.getNavigationHistory');
+    const entradaPanel = historial.entries[historial.currentIndex].id;
+    await enviar('Page.navigate', { url: `${base}/api/health` });
+    await esperar("location.pathname === '/api/health'");
+    assert.equal(await evaluar("(async () => (await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-SICE-Request': '1' }, body: '{}' })).status)()"), 204);
+    await enviar('Page.navigateToHistoryEntry', { entryId: entradaPanel });
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    assert.match(await evaluar("document.querySelector('#session-status').textContent"), /Tu sesión ha finalizado/);
+    // Un fallo de conexión se informa sin convertirlo en una cadena de redirecciones.
+    await enviar('Network.enable');
+    await enviar('Network.setBlockedURLs', { urls: ['*/api/auth/sesion'] });
+    await enviar('Page.navigate', { url: `${base}/panel.html` });
+    await esperar("document.querySelector('#workspace')?.hidden === false && document.querySelector('#message')?.hidden === false");
+    assert.equal(await evaluar("location.pathname"), '/panel.html');
+    assert.match(await evaluar("document.querySelector('#message').textContent"), /No se pudo contactar al servidor/);
+    assert.equal(await evaluar("document.querySelector('#session-header').hidden && document.querySelector('#nav-list').hidden && document.querySelector('#nav-accounts').hidden"), true);
+    await enviar('Network.setBlockedURLs', { urls: [] });
+    await enviar('Page.navigate', { url: base });
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    console.log('Navegación: seis roles, acceso directo, sesión persistente, logout, caducidad y fallo de conexión sin bucles aprobados.');
     await ingresar(usuarioAdministrador, contrasena);
     await esperar("document.querySelector('#accounts-view')?.hidden === false && document.querySelector('#account-rows').children.length > 0");
     assert.equal(await evaluar("document.querySelector('#nav-list').hidden"), true);

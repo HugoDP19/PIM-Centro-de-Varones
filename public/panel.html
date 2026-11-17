@@ -9,9 +9,11 @@
 <body>
   <header class="site-header px-3 px-md-4 py-3 bg-white">
     <a class="brand" href="/panel.html">SICE<span>LOCAL</span></a>
-    <div class="d-flex align-items-center gap-3"><span id="user-label" class="small"></span><button id="logout" class="btn btn-sm btn-outline-primary">Salir</button></div>
+    <div id="session-header" class="d-flex align-items-center gap-3" hidden><span id="user-label" class="small"></span><button id="logout" class="btn btn-sm btn-outline-primary" type="button">Cerrar sesión</button></div>
   </header>
-  <main class="container-fluid workspace py-4 px-3 px-md-4">
+  <p id="panel-status" class="container-fluid workspace py-4" role="status">Comprobando tu sesión…</p>
+  <noscript><p class="container">Activa JavaScript para acceder al panel institucional.</p></noscript>
+  <main id="workspace" class="container-fluid workspace py-4 px-3 px-md-4" hidden>
     <div id="environment" class="environment mb-3" hidden>Entorno de desarrollo · Todos los datos personales de la colección escolar son sintéticos.</div>
     <div class="page-heading mb-4"><div><p class="eyebrow mb-1">I.E.P. N.° 20874 Centro de Varones</p><h1 class="h2 mb-1">Gestión institucional</h1><p class="text-secondary mb-0">San Vicente de Cañete</p></div></div>
     <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">

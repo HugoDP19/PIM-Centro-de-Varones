@@ -191,6 +191,17 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     const sesion = await peticion('auth/sesion', 'director'); assert.equal(sesion.status, 200); assert.equal(sesion.headers.get('cache-control'), 'no-store');
   });
 
+  await t.test('caducidad absoluta e inactividad invalidan la sesión en el servidor', async () => {
+    for (const columna of ['vence_en', 'ultima_actividad_en']) {
+      await pool.execute(`UPDATE sesiones SET ${columna} = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 9 HOUR) WHERE id_usuario = ?`, [usuarios.director.id]);
+      assert.equal((await peticion('auth/sesion', 'director')).status, 401);
+      assert.equal((await peticion('incidencias', 'director')).status, 401);
+      const acceso = await peticion('auth/login', null, 'POST', { usuario: usuarios.director.nombre_usuario, contrasena: claves.DIRECTOR_PASSWORD });
+      assert.equal(acceso.status, 200);
+      cookies.director = acceso.headers.get('set-cookie').split(';')[0];
+    }
+  });
+
   await t.test('MySQL 8 y esquema validado; scripts sin cambios inesperados de base', async () => {
     const [[fila]] = await pool.execute('SELECT VERSION() AS version'); assert.equal(fila.version, '8.0.46');
     assert.deepEqual(await verificarEsquema(pool), { tablas: 19, columnas: 187, clavesForaneas: 64, checks: 41 });
@@ -413,7 +424,11 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       server = createApp({ pool, origin }).listen(Number(direccion.port), '127.0.0.1');
       await once(server, 'listening');
       const { verificarInterfaz } = await import('./interfaz-browser.js');
-      await verificarInterfaz(base, claves);
+      await verificarInterfaz(base, claves, async (nombreUsuario) => {
+        // Solo modifica sesiones de la copia temporal creada por esta suite.
+        await pool.execute(`UPDATE sesiones s JOIN usuarios u ON u.id = s.id_usuario
+          SET s.vence_en = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND) WHERE u.nombre_usuario = ?`, [nombreUsuario]);
+      });
     });
   }
 });

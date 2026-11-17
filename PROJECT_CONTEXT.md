@@ -1,5 +1,12 @@
 # Contexto de SICE-Local
 
+## Acceso directo al panel institucional — 17 de noviembre de 2026
+
+- Retirada la pantalla «Tu sesión institucional» y sus estilos exclusivos. El login correcto y la apertura con sesión válida redirigen al panel; sin sesión se muestra el formulario. El panel conserva nombre, rol y botón «Cerrar sesión», con opciones según permisos efectivos y Administrador limitado a cuentas/permisos autorizados.
+- Validación de sesión antes de mostrar el contenido, redirección única mediante `location.replace` y nueva comprobación al restaurar desde el historial. Un 401 al cargar o utilizar el panel vuelve al login con un mensaje de sesión finalizada; el cierre muestra su confirmación. Los fallos de conexión se informan sin redirecciones. Se mantienen las validaciones del backend, diseño y logo; no se añaden archivos ni dependencias.
+- `npm.cmd test`: **6 aprobadas**. `node test/interfaz-browser.js`: **17 aprobadas** con MySQL real y Chrome a 1280/1024/768 px: login inválido/válido, seis roles, sesión existente, recarga, cierre, caducidad absoluta/inactividad en backend, caducidad al actuar/recargar, retorno desde historial y ausencia de bucles. Chrome requirió permisos de proceso local tras una desconexión en el entorno restringido.
+- Todas las escrituras de prueba se realizan en la copia temporal propia, eliminada al finalizar. Comparación final de estructura/datos de las 22 tablas de `SICE` sin cambios, incluidos los **24 expedientes**. `git diff --check` correcto; configuración privada intacta. Los ajustes previos de `.gitignore` quedaron en el commit local separado `2c9e488`. Sin push ni Pull Request.
+
 ## Exclusiones de Git — 17 de noviembre de 2026
 
 - Revisados los archivos versionados y ampliado `.gitignore` para configuraciones privadas, dependencias, archivos locales, carpetas de respaldos/temporales, registros, cobertura y ajustes personales de editores. `.env.escolar.local` continúa excluido; `.env.example` permanece versionado.

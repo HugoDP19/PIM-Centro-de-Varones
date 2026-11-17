@@ -13,6 +13,7 @@ const campos = {
 };
 let usuario, catalogo, detalleActual, borradorId = null, cuentaCatalogo, autorizaciones, ejecucion;
 let anterior, cursores = [], ultimaPagina = [];
+let redirigiendo = false;
 const puede = (permiso) => usuario.permisos.includes(permiso);
 const fecha = (valor) => valor ? new Date(valor).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : 'No precisada';
 const estado = (valor) => String(valor).replaceAll('_', ' ');
@@ -24,13 +25,23 @@ function elemento(etiqueta, contenido, clase) {
   if (clase) el.className = clase;
   return el;
 }
-function aviso(mensaje, error = false) { $('message').textContent = mensaje; $('message').className = `alert alert-${error ? 'danger' : 'success'}`; $('message').hidden = false; }
+function aviso(mensaje, error = false) { if (redirigiendo) return; $('message').textContent = mensaje; $('message').className = `alert alert-${error ? 'danger' : 'success'}`; $('message').hidden = false; }
 function mostrar(vista) { for (const id of ['list-view', 'form-view', 'detail-view', 'accounts-view']) $(id).hidden = id !== vista; $('message').hidden = true; }
+function volverAlAcceso(motivo) {
+  if (redirigiendo) return;
+  redirigiendo = true;
+  $('workspace').hidden = true;
+  $('session-header').hidden = true;
+  location.replace(`/?sesion=${motivo}`);
+}
 async function api(ruta, method = 'GET', datos) {
-  const response = await fetch(`/api/${ruta}`, { method, credentials: 'same-origin',
-    headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-SICE-Request': '1' },
-    body: method === 'GET' ? undefined : JSON.stringify(datos || {}), signal: AbortSignal.timeout(20000) });
-  if (response.status === 401) { location.assign('/'); throw new Error('La sesión ha finalizado.'); }
+  let response;
+  try {
+    response = await fetch(`/api/${ruta}`, { method, credentials: 'same-origin',
+      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-SICE-Request': '1' },
+      body: method === 'GET' ? undefined : JSON.stringify(datos || {}), signal: AbortSignal.timeout(20000) });
+  } catch { throw new Error('No se pudo contactar al servidor. Comprueba tu conexión e inténtalo de nuevo.'); }
+  if (response.status === 401) { volverAlAcceso(ruta === 'auth/logout' ? 'cerrada' : 'expirada'); throw new Error('La sesión ha finalizado.'); }
   if (!response.ok) { const resultado = await response.json(); throw new Error(resultado.error || 'No se pudo completar la solicitud.'); }
   return response;
 }
@@ -291,12 +302,35 @@ $('execution-form').addEventListener('submit', async (e) => { e.preventDefault()
 $('search-form').addEventListener('submit', async (e) => { e.preventDefault(); anterior = undefined; cursores = []; try { await listar(); } catch (error) { aviso(error.message, true); } });
 $('next-page').addEventListener('click', async () => { cursores.push(anterior); anterior = ultimaPagina.at(-1).id; try { await listar(); } catch (error) { aviso(error.message, true); } });
 $('previous-page').addEventListener('click', async () => { anterior = cursores.pop(); try { await listar(); } catch (error) { aviso(error.message, true); } });
-for (const [id, tarea] of [['nav-list', listar], ['nav-new', () => formulario()], ['cancel-form', listar], ['nav-accounts', cuentas], ['logout', async () => { await api('auth/logout', 'POST', {}); location.assign('/'); }]]) $(id).addEventListener('click', async () => { try { await tarea(); } catch (error) { aviso(error.message, true); } });
+for (const [id, tarea] of [['nav-list', listar], ['nav-new', () => formulario()], ['cancel-form', listar], ['nav-accounts', cuentas], ['logout', async () => { await api('auth/logout', 'POST', {}); volverAlAcceso('cerrada'); }]]) $(id).addEventListener('click', async () => {
+  if ($(id).disabled || redirigiendo) return;
+  $(id).disabled = true;
+  try { await tarea(); } catch (error) { aviso(error.message, true); } finally { $(id).disabled = false; }
+});
 
 async function iniciar() {
-  const sesion = await json('auth/sesion'); usuario = sesion.usuario;
-  $('environment').hidden = sesion.entorno !== 'desarrollo'; $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
-  $('nav-list').hidden = !puede('incidencias.consultar'); $('nav-new').hidden = !puede('incidencias.registrar'); $('nav-accounts').hidden = !puede('cuentas.consultar');
-  if (puede('incidencias.consultar')) await listar(); else if (puede('cuentas.consultar')) await cuentas(); else aviso('Tu cuenta no tiene acciones asignadas. Contacta a la autoridad autorizada.');
+  redirigiendo = false;
+  $('workspace').hidden = true;
+  $('session-header').hidden = true;
+  $('panel-status').hidden = false;
+  mostrar(null);
+  for (const id of ['nav-list', 'nav-new', 'nav-accounts']) $(id).hidden = true;
+  try {
+    const sesion = await json('auth/sesion'); usuario = sesion.usuario;
+    $('environment').hidden = sesion.entorno !== 'desarrollo'; $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
+    $('session-header').hidden = false;
+    const operativo = usuario.rol !== 'administrador';
+    $('nav-list').hidden = !operativo || !puede('incidencias.consultar'); $('nav-new').hidden = !operativo || !puede('incidencias.registrar'); $('nav-accounts').hidden = !puede('cuentas.consultar');
+    if (!$('nav-list').hidden) await listar();
+    else if (!$('nav-accounts').hidden) await cuentas();
+    else if (!$('nav-new').hidden) await formulario();
+    else aviso('Tu cuenta no tiene acciones asignadas. Contacta a la autoridad autorizada.');
+  } catch (error) { aviso(error.message, true); }
+  finally {
+    if (!redirigiendo) { $('panel-status').hidden = true; $('workspace').hidden = false; }
+  }
 }
-iniciar().catch((error) => aviso(error.message, true));
+// Al volver desde el historial se valida la sesión antes de mostrar datos guardados.
+window.addEventListener('pagehide', () => { $('workspace').hidden = true; $('session-header').hidden = true; });
+window.addEventListener('pageshow', (event) => { if (event.persisted) iniciar(); });
+iniciar();
