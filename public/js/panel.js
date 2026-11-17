@@ -17,6 +17,9 @@ let anterior, cursores = [], ultimaPagina = [];
 let redirigiendo = false;
 let decisionActual;
 let actualizandoSolicitudes = false;
+const lugares = ['Aula', 'Patio de formación', 'Patio de primaria', 'Patio de secundaria', 'Pasillo', 'Pasillo de primaria',
+  'Servicios higiénicos', 'Biblioteca', 'Sala de cómputo', 'Losa deportiva', 'Escaleras', 'Ingreso', 'Ingreso de secundaria',
+  'Acceso al patio', 'Acceso de secundaria', 'Portería', 'Dirección', 'Atención a familias', 'Espacio de orientación', 'Espacio de atención reservada'];
 const puede = (permiso) => usuario.permisos.includes(permiso);
 const fecha = (valor) => valor ? new Date(valor).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : 'No precisada';
 const estado = (valor) => String(valor).replaceAll('_', ' ');
@@ -137,18 +140,40 @@ async function formulario(datos) {
   opciones($('reporter'), catalogo.personas, (p) => p.id, (p) => `${p.nombres} ${p.apellidos}`, datos?.version.id_reportante);
   condicion(datos?.version.condicion_reportante); $('registrar').value = `${usuario.nombre} · ${cargos[usuario.rol]}`;
   tipos(datos?.version.id_tipo); camposCategoria(datos?.version);
+  prepararLugar(datos?.version.lugar);
   if (datos) {
     const v = datos.version;
-    for (const [campo, valor] of Object.entries({ 'incident-title': v.titulo, description: v.descripcion, place: v.lugar, priority: datos.incidencia.prioridad, confidentiality: datos.incidencia.confidencialidad })) $(campo).value = valor || '';
+    for (const [campo, valor] of Object.entries({ 'incident-title': v.titulo, description: v.descripcion, priority: datos.incidencia.prioridad, confidentiality: datos.incidencia.confidencialidad })) $(campo).value = valor || '';
     if (v.ocurrida_en) $('occurred').value = new Date(new Date(v.ocurrida_en).getTime() - 5 * 3600000).toISOString().slice(0, 16);
     $('sensitive').value = String(datos.incidencia.confidencialidad === 'restringida');
     datos.involucrados.forEach(involucrado);
   }
   mostrar('form-view');
 }
+function prepararLugar(valor = '') {
+  opciones($('place'), lugares, lugar => lugar, lugar => lugar);
+  $('place').options[0].textContent = 'Sin precisar';
+  $('place').add(new Option('Otro lugar', 'otro'));
+  const aulas = catalogo.aulas.map(aula => `Aula de ${aula.grado}.º de ${aula.nivel} ${aula.seccion}`);
+  opciones($('place-classroom'), aulas, aula => aula, aula => aula);
+  if (aulas.includes(valor)) { $('place').value = 'Aula'; $('place-classroom').value = valor; }
+  else {
+    // Los borradores históricos conservan su texto exacto, aunque no figure en el selector.
+    if (valor && !lugares.includes(valor)) $('place').add(new Option(valor, valor));
+    $('place').value = valor || '';
+  }
+  actualizarLugar();
+}
+function actualizarLugar() {
+  const aula = $('place').value === 'Aula', otro = $('place').value === 'otro';
+  $('place-classroom-group').hidden = !aula; $('place-classroom').required = aula; $('place-classroom').disabled = !aula;
+  $('place-other-group').hidden = !otro; $('place-other').required = otro; $('place-other').disabled = !otro;
+  $('place-other').setCustomValidity(otro && !$('place-other').value.trim() ? 'Especifica el otro lugar.' : '');
+}
 function contenidoFormulario() {
   const cuerpo = { id_tipo: $('incident-type').value, titulo: $('incident-title').value.trim(), descripcion: $('description').value.trim(),
-    lugar: $('place').value.trim(), ocurrida_en: $('occurred').value ? new Date(`${$('occurred').value}-05:00`).toISOString() : null,
+    lugar: $('place').value === 'Aula' ? $('place-classroom').value : $('place').value === 'otro' ? $('place-other').value.trim() : $('place').value,
+    ocurrida_en: $('occurred').value ? new Date(`${$('occurred').value}-05:00`).toISOString() : null,
     id_reportante: $('reporter').value, condicion_reportante: $('reporter-condition').value,
     prioridad: $('priority').value, confidencialidad: $('confidentiality').value, contenido_sensible: $('sensitive').value === 'true',
     involucrados: [...$('involved-rows').children].map((fila) => ({ id_persona: fila.querySelector('[data-persona]').value, id_matricula: fila.querySelector('[data-matricula]').value || null, participacion: fila.querySelector('[data-participacion]').value })) };
@@ -448,6 +473,8 @@ async function actualizarSolicitudes() {
   } finally { actualizandoSolicitudes = false; }
 }
 
+$('place').addEventListener('change', actualizarLugar);
+$('place-other').addEventListener('input', actualizarLugar);
 $('category').addEventListener('change', () => { tipos(); camposCategoria(); }); $('incident-type').addEventListener('change', minimo); $('reporter').addEventListener('change', () => condicion());
 $('add-person').addEventListener('click', () => involucrado()); $('account-action').addEventListener('change', camposAutorizacion);
 $('incident-form').addEventListener('submit', async (e) => { e.preventDefault(); $('save-draft').disabled = true; try { const resultado = await json(borradorId ? `incidencias/${borradorId}/borrador` : 'incidencias', borradorId ? 'PUT' : 'POST', contenidoFormulario()); await abrir(borradorId || resultado.id); aviso('Borrador guardado. Revisa los datos antes de confirmar.'); } catch (error) { aviso(error.message, true); } finally { $('save-draft').disabled = false; } });

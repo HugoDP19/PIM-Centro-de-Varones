@@ -229,6 +229,26 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       document.querySelector('#incident-form').requestSubmit();
     })()`);
     await esperar("document.querySelector('#detail-view').hidden === false && document.querySelector('#detail-content').textContent.includes('Agua acumulada advertida')");
+    async function editarLugar(valor, detalle) {
+      await evaluar("[...document.querySelectorAll('#detail-content button')].find(b => b.textContent === 'Editar borrador').click()");
+      await esperar("document.querySelector('#form-view').hidden === false");
+      await evaluar(`document.querySelector('#place').value = ${JSON.stringify(valor)}; document.querySelector('#place').dispatchEvent(new Event('change'));`);
+      if (valor === 'otro') {
+        assert.equal(await evaluar("document.querySelector('#place-other').checkValidity()"), false);
+        await evaluar(`document.querySelector('#place-other').value = ${JSON.stringify(detalle)}; document.querySelector('#place-other').dispatchEvent(new Event('input'));`);
+      }
+      if (valor === 'Aula') {
+        assert.equal(await evaluar("document.querySelector('#place-classroom').checkValidity()"), false);
+        await evaluar("document.querySelector('#place-classroom').selectedIndex = 1");
+        detalle = await evaluar("document.querySelector('#place-classroom').value");
+      }
+      await evaluar("document.querySelector('#incident-form').requestSubmit()");
+      await esperar("document.querySelector('#detail-view').hidden === false");
+      assert.equal(await evaluar(`document.querySelector('#detail-content').textContent.includes(${JSON.stringify(detalle || valor)})`), true);
+    }
+    await editarLugar('Aula');
+    await editarLugar('otro', 'Zona de reunión temporal junto a portería');
+    await editarLugar('Patio de primaria');
     await evaluar("[...document.querySelectorAll('#detail-content button')].find(b => b.textContent === 'Confirmar incidencia').click()");
     await esperar("document.querySelector('#detail-content > .eyebrow').textContent.includes('confirmada')");
     assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Editar borrador')"), false);

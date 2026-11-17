@@ -179,6 +179,18 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       involucrados: Array.from({ length: cantidad }, (_, indice) => ({ id_persona: alumnos[indice + 1].id, id_matricula: alumnos[indice + 1].matricula, participacion: indice ? 'testigo' : 'afectado' })), ...categoriaDatos[categoria] };
   }
 
+  await t.test('ubicaciones escolares y aulas: guardado y conservación de lugares históricos', async () => {
+    const [antes] = await pool.execute('SELECT id, lugar FROM versiones_incidencia ORDER BY id');
+    assert.ok(catalogo.aulas.length > 0);
+    const aula = catalogo.aulas[0];
+    for (const lugar of ['Patio de primaria', `Aula de ${aula.grado}.º de ${aula.nivel} ${aula.seccion}`, 'Zona de reunión temporal junto a portería']) {
+      const nuevo = await datos('incidencias', 'director', 'POST', { ...cuerpo('seguridad'), lugar }, 201);
+      assert.equal((await datos(`incidencias/${nuevo.id}`, 'director')).version.lugar, lugar);
+    }
+    const [despues] = await pool.execute('SELECT id, lugar FROM versiones_incidencia WHERE id <= ? ORDER BY id', [antes.at(-1).id]);
+    assert.deepEqual(despues, antes);
+  });
+
   await t.test('login inválido, rotación de sesión y cabeceras seguras', async () => {
     const invalida = await peticion('auth/login', null, 'POST', { usuario: 'lramos', contrasena: randomBytes(20).toString('hex') });
     const inexistente = await peticion('auth/login', null, 'POST', { usuario: 'cuenta.inexistente', contrasena: randomBytes(20).toString('hex') });

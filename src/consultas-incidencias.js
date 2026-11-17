@@ -57,7 +57,8 @@ export async function catalogos(db, usuario) {
   const ids = new Set(personas.map((p) => String(p.id)));
   const [matriculas] = await db.execute(`SELECT m.id, m.id_estudiante AS id_persona, m.fecha_inicio, m.fecha_fin,
     a.anio_lectivo, a.nivel, a.grado, a.seccion FROM matriculas m JOIN aulas a ON a.id = m.id_aula ORDER BY a.anio_lectivo DESC`);
-  return { tipos, personas, matriculas: matriculas.filter((m) => ids.has(String(m.id_persona))) };
+  const [aulas] = await db.execute('SELECT DISTINCT nivel, grado, seccion FROM aulas ORDER BY nivel, grado, seccion');
+  return { tipos, personas, aulas, matriculas: matriculas.filter((m) => ids.has(String(m.id_persona))) };
 }
 
 export async function persona(db, id) {
