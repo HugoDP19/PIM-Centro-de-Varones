@@ -349,6 +349,9 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         await evaluar("document.querySelector('#refresh-accounts').click()", sesion);
         await esperar(`[...document.querySelectorAll('#authorization-list article')].some(a => a.textContent.includes(${JSON.stringify(textoMotivo)}))`, sesion);
         await evaluar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(textoMotivo)})).querySelectorAll('button')[${decision === 'aprobar' ? 0 : 1}].click()`, sesion);
+        assert.equal(await evaluar(`document.querySelector('#submit-decision').classList.contains(${JSON.stringify(decision === 'aprobar' ? 'btn-success' : 'btn-danger')})`, sesion), true);
+        assert.equal(await evaluar("document.querySelector('#submit-decision').textContent", sesion), decision === 'aprobar' ? 'Aprobar' : 'Rechazar');
+        assert.equal(await evaluar("document.querySelector('#decision-form').textContent.includes('Si existe un conflicto o la otra autoridad está ausente')", sesion), false);
         await evaluar(`document.querySelector('#decision-reason').value = 'Decisión independiente de la autoridad en la prueba de navegador.'; document.querySelector('#decision-password').value = ${JSON.stringify(credenciales[`${rol.toUpperCase()}_PASSWORD`])}; document.querySelector('#decision-independent').checked = true; document.querySelector('#decision-form').requestSubmit();`, sesion);
         await esperar("document.querySelector('#message').textContent.includes('Decisión registrada')", sesion);
         assert.equal(await evaluar("document.querySelector('#decision-password').value"), '', 'No conservar la contraseña de reautenticación');

@@ -477,9 +477,11 @@ function mostrarAutorizaciones() {
         limpiarAviso();
         decisionActual = { id: a.id, decision };
         $('decision-form').reset(); $('decision-form').hidden = false;
+        $('submit-decision').textContent = etiqueta;
+        $('submit-decision').className = `btn ${decision === 'aprobar' ? 'btn-success' : 'btn-danger'}`;
         $('decision-summary').textContent = `${etiqueta}: ${estado(a.tipo)} · ${resumen} · ${a.motivo}`;
         $('decision-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }));
+      }, `btn btn-sm ${decision === 'aprobar' ? 'btn-success' : 'btn-danger'}`));
     }
     if (a.puede_ejecutar) item.append(accion('Seleccionar para ejecutar', () => { ejecucion = a; $('execution-form').hidden = false; $('execution-summary').textContent = `${estado(a.tipo)} · ${resumen} · ${a.motivo}`; const necesita = ['crear_cuenta', 'restablecer_clave'].includes(a.tipo); $('execution-password-group').hidden = !necesita; $('new-password').required = necesita; $('new-password').value = ''; $('execution-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
     (a.pendiente_para_usuario ? pendientes : registradas).append(item);
