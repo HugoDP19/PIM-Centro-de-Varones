@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import { createDatabasePool } from '../src/database.js';
 import { crearHash, generarContrasena, limitesPermisos } from '../src/seguridad.js';
 import { insertar, auditar } from '../src/consultas-incidencias.js';
-import { casos } from './casos-escolares.js';
+import { casos, casosAdicionales } from './casos-escolares.js';
 
 export const personalEscolar = [
   ['director', 'Ricardo Alberto', 'Salazar Mendoza', 'rsalazar'],
@@ -117,7 +117,7 @@ async function crearCaso(db, caso, identidades) {
   }
   for (const adulto of caso.adultos || []) await insertar(db, 'involucrados', { id_version: version, id_persona: adulto.id, participacion: 'testigo' });
   await db.execute('UPDATE incidencias SET id_version_vigente = ?, confirmada_en = ?, estado = ? WHERE id = ?', [version, confirmada, 'confirmada', id]);
-  await historial(db, registrador, 'carga_escolar', confirmada,
+  await historial(db, registrador, caso.numero > 24 ? 'carga_escolar_adicional' : 'carga_escolar', confirmada,
     { id_incidencia: id, id_version: version, campo: 'escenario', valor_nuevo: String(caso.numero) });
   const responsable = usuarios[caso.restringida ? 'subdirector' : 'coordinador_tutoria'];
   const seguimiento = minutosSeguimiento(caso);
@@ -220,7 +220,56 @@ export async function cargarColeccion(conexion, claves) {
   return { cargadas: casos.length, existentes: 0 };
 }
 
-export async function cargarEscolar() {
+async function identidadesExistentes(db) {
+  const usuarios = {}, personas = {}, estudiantes = {};
+  for (const [indice, [rol]] of personalEscolar.entries()) {
+    const [[usuario]] = await db.execute(`SELECT u.id, u.id_rol, u.id_persona, CONCAT(p.nombres, ' ', p.apellidos) AS nombre
+      FROM usuarios u JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol
+      WHERE p.codigo_interno = ? AND r.codigo = ?`, [`PER-2026-${String(indice + 1).padStart(3, '0')}`, rol]);
+    if (!usuario) throw new Error('No se encuentra el personal de la colección original; no se añade información.');
+    usuarios[rol] = usuario;
+    personas[rol] = { id: usuario.id_persona, nombre: usuario.nombre, condicion: 'personal' };
+  }
+  const [alumnos] = await db.execute(`SELECT p.id, p.codigo_interno, CONCAT(p.nombres, ' ', p.apellidos) AS nombre,
+    m.id AS matricula, CONCAT(pa.nombres, ' ', pa.apellidos) AS apoderado
+    FROM personas p JOIN estudiantes e ON e.id_persona = p.id JOIN matriculas m ON m.id_estudiante = p.id
+    JOIN aulas a ON a.id = m.id_aula JOIN estudiantes_apoderados ea ON ea.id_estudiante = p.id
+    JOIN personas pa ON pa.id = ea.id_apoderado
+    WHERE p.codigo_interno LIKE 'EST-2026-%' AND m.fecha_fin IS NULL AND a.anio_lectivo = 2026 AND ea.es_principal = 1`);
+  for (const alumno of alumnos) estudiantes[Number(alumno.codigo_interno.slice(-3))] = { ...alumno, apoderado: { nombre: alumno.apoderado } };
+  for (const numero of [1, 2, 5, 6]) if (!estudiantes[numero]) throw new Error('Faltan estudiantes o matrículas de la colección original.');
+  return { usuarios, personas, estudiantes };
+}
+
+// Completa únicamente la colección autorizada; el llamador mantiene la transacción y el bloqueo.
+export async function completarColeccion(db) {
+  if (process.env.NODE_ENV !== 'development') throw new Error('La ampliación escolar solo está habilitada en desarrollo.');
+  const [expedientes] = await db.execute('SELECT id, id_version_vigente FROM incidencias FOR UPDATE');
+  const [marcas] = await db.execute("SELECT id_incidencia, valor_nuevo FROM historial WHERE accion = 'carga_escolar_adicional' AND campo = 'escenario'");
+  if (expedientes.length === 26 && marcas.length === 2 && new Set(marcas.map(marca => marca.valor_nuevo)).size === 2
+      && marcas.every(marca => ['25', '26'].includes(marca.valor_nuevo))) return { cargadas: 0, total: 26, codigos: marcas.map(marca => `INC-${String(marca.id_incidencia).padStart(6, '0')}`) };
+  const [[originales]] = await db.execute("SELECT COUNT(DISTINCT id_incidencia) AS total FROM historial WHERE accion = 'carga_escolar' AND campo = 'escenario'");
+  if (expedientes.length !== 24 || Number(originales.total) !== 24 || marcas.length || expedientes.some(fila => !fila.id_version_vigente)) {
+    throw new Error('Se requieren exactamente los 24 expedientes originales, sin una ampliación previa o parcial.');
+  }
+  const datos = await identidadesExistentes(db);
+  const codigos = [];
+  for (const caso of casosAdicionales) {
+    const registro = await crearCaso(db, caso, datos);
+    const instante = fecha(registro.confirmada, 24 * 60);
+    const observacion = await insertar(db, 'actuaciones', { id_incidencia: registro.id,
+      id_autor: registro.responsable.id, id_rol_autor: registro.responsable.id_rol, tipo: 'observacion',
+      detalle: caso.observacion, realizada_en: instante, registrada_en: instante, id_responsable: registro.responsable.id });
+    await historial(db, registro.responsable, 'seguimiento_agregado', instante, { id_incidencia: registro.id, id_actuacion: observacion });
+    await db.execute("UPDATE incidencias SET estado = 'en_seguimiento' WHERE id = ?", [registro.id]);
+    await historial(db, registro.responsable, 'estado_actualizado', instante, { id_incidencia: registro.id,
+      campo: 'estado', valor_anterior: 'confirmada', valor_nuevo: 'en_seguimiento' });
+    codigos.push(`INC-${String(registro.id).padStart(6, '0')}`);
+  }
+  return { cargadas: 2, total: 26, codigos };
+}
+
+export async function cargarEscolar(completar = false) {
   if (process.env.NODE_ENV !== 'development' || process.env.DB_NAME?.toUpperCase() !== 'SICE' || process.env.DB_HOST !== '127.0.0.1') {
     throw new Error('La carga solo permite SICE local en modo development.');
   }
@@ -230,6 +279,11 @@ export async function cargarEscolar() {
     const [[bloqueo]] = await conexion.execute("SELECT GET_LOCK('sice_coleccion_escolar', 0) AS adquirido");
     if (!bloqueo.adquirido) throw new Error('Otra carga está en curso.');
     await conexion.beginTransaction();
+    if (completar) {
+      const resultado = await completarColeccion(conexion);
+      await conexion.commit();
+      return resultado;
+    }
     const [[existente]] = await conexion.execute("SELECT COUNT(*) AS cantidad FROM historial WHERE accion = 'carga_escolar'");
     let claves;
     if (Number(existente.cantidad) === casos.length) {
@@ -247,7 +301,10 @@ export async function cargarEscolar() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { console.log(JSON.stringify(await cargarEscolar())); }
+  try {
+    if (process.argv.slice(2).some(argumento => argumento !== '--completar-26')) throw new Error('Opción de carga no reconocida.');
+    console.log(JSON.stringify(await cargarEscolar(process.argv.includes('--completar-26'))));
+  }
   catch (error) {
     console.error(error.code ? 'No se pudo completar la carga; revisa la conexión y las claves locales.' : error.message);
     process.exitCode = 1;

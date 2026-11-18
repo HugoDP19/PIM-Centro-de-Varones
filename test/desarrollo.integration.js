@@ -10,7 +10,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createDatabasePool } from '../src/database.js';
 import { createApp } from '../src/app.js';
 import { verificarEsquema, leerSentencias, concederGestionCuentas } from '../database/preparar.js';
-import { personalEscolar, cargarColeccion } from '../database/cargar-escolar.js';
+import { personalEscolar, cargarColeccion, completarColeccion } from '../database/cargar-escolar.js';
 import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-incidencias.js';
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
@@ -29,7 +29,7 @@ async function leerEstadoOrigen(conexion) {
     estado[tabla] = { cantidad: filas.length,
       huella: createHash('sha256').update(JSON.stringify([estructura, filas])).digest('hex') };
   }
-  assert.equal(estado.incidencias?.cantidad, 24, 'SICE debe conservar los 24 expedientes escolares.');
+  assert.ok([24, 26].includes(estado.incidencias?.cantidad), 'SICE conserva la colección original o su ampliación autorizada a 26.');
   return estado;
 }
 
@@ -75,6 +75,17 @@ async function crearCopiaTemporal(claves) {
     await copia.beginTransaction();
     assert.deepEqual(await cargarColeccion(copia, claves), { cargadas: 24, existentes: 0 });
     assert.deepEqual(await cargarColeccion(copia, claves), { cargadas: 0, existentes: 24 });
+    const anteriores = {};
+    for (const tabla of orden) anteriores[tabla] = (await copia.query(`SELECT * FROM \`${tabla}\``))[0];
+    const ampliacion = await completarColeccion(copia);
+    assert.equal(ampliacion.cargadas, 2); assert.equal(ampliacion.total, 26);
+    assert.equal(new Set(ampliacion.codigos).size, 2);
+    assert.equal((await completarColeccion(copia)).cargadas, 0);
+    for (const tabla of orden) {
+      const [filas] = await copia.query(`SELECT * FROM \`${tabla}\``);
+      const conservadas = new Set(filas.map(fila => JSON.stringify(fila)));
+      assert.ok(anteriores[tabla].every(fila => conservadas.has(JSON.stringify(fila))), `Ampliación conserva filas originales de ${tabla}`);
+    }
     await copia.rollback();
     const originales = {};
     await copia.beginTransaction();
@@ -100,6 +111,7 @@ async function crearCopiaTemporal(claves) {
       }
     }
     await concederGestionCuentas(copia);
+    await copia.execute("UPDATE usuarios u JOIN personas p ON p.id = u.id_persona SET u.activo = 1 WHERE p.codigo_interno LIKE 'PER-2026-00%'");
     await copia.commit();
     await origen.rollback();
     async function verificarOrigen() {

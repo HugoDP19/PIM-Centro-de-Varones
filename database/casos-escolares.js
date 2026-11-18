@@ -196,3 +196,26 @@ export const casos = [
     actuacion: 'Se dejó constancia del conflicto y se suspendió la intervención del Director en la evaluación del caso. La solicitud continúa pendiente; el Administrador no recibe facultades de sustitución.'
   }
 ];
+
+export const casosAdicionales = [
+  {
+    numero: 25, categoria: 'bienes', tipo: 'Deterioro de material didáctico',
+    titulo: 'Regla de medición fracturada durante una actividad de primaria',
+    fecha: '2026-11-12 15:30:00', lugar: 'Aula de 5.º de primaria A', registrador: 'docente',
+    alumnos: [[1, 'involucrado'], [2, 'testigo']], prioridad: 'normal', estado: 'en_seguimiento',
+    descripcion: 'Durante una actividad de medición, Diego Alonso Quispe Flores advirtió una fractura en la regla que utilizaba su grupo y la entregó a la docente. Mateo André Quispe Flores confirmó que ambos habían usado el material durante la sesión, sin poder precisar cuándo se produjo la fractura. La docente observó un borde irregular y retiró la regla. Ningún estudiante refirió una lesión. Se registra el deterioro sin atribuir responsabilidades ni exigir reposición a la familia.',
+    campos: { descripcion_dano: 'Regla plástica de uso compartido fracturada en un extremo; material retirado por presentar un borde irregular.' },
+    actuacion: 'Se retiró y separó la regla deteriorada, se entregó un instrumento íntegro al grupo y se revisó el resto del material utilizado en la sesión. Tutoría coordinó con la docente la comprobación del material antes de la próxima actividad.',
+    observacion: 'En la siguiente sesión se comprobó que el instrumento de reemplazo se encontraba íntegro y que los estudiantes pudieron completar la medición. Se mantiene la revisión del material común durante la semana.'
+  },
+  {
+    numero: 26, categoria: 'seguridad', tipo: 'Mobiliario inestable en ambiente escolar',
+    titulo: 'Estante inestable advertido durante una visita de secundaria a la biblioteca',
+    fecha: '2026-11-13 16:10:00', lugar: 'Biblioteca', registrador: 'subdirector',
+    alumnos: [[5, 'testigo'], [6, 'testigo']], prioridad: 'alta', estado: 'en_seguimiento',
+    descripcion: 'Durante una visita de segundo de secundaria a la biblioteca, Joaquín Eduardo Mendoza Paredes comunicó que un estante se movía al retirar un libro. Samuel Ignacio Mendoza Paredes indicó haber observado el movimiento. La Subdirectora verificó una oscilación leve sin manipular la fijación, alejó al grupo y delimitó el sector. No se registraron caídas de libros ni lesiones. La causa técnica permanece pendiente de evaluación por personal competente.',
+    campos: { riesgo_identificado: 'Estante con oscilación observable en una zona de consulta; requiere evaluación de estabilidad y fijaciones.', riesgo_persistente: 1 },
+    actuacion: 'Se restringió el acceso al estante y se trasladó la actividad a una mesa alejada. Se comunicó la necesidad de revisión a Dirección y se acordó mantener el sector delimitado hasta recibir una comprobación de estabilidad.',
+    observacion: 'Al día siguiente se comprobó que la delimitación seguía instalada y que los estudiantes accedían al material por una ruta alternativa. No se reabrió el sector ni se dio por solucionado el riesgo sin la verificación correspondiente.'
+  }
+];
