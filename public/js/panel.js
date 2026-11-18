@@ -13,7 +13,7 @@ const campos = {
   proteccion_estudiantil: [['riesgo_inmediato', '¿Existe riesgo inmediato?', 'booleano'], ['requiere_derivacion', '¿Requiere derivación?', 'booleano']]
 };
 let usuario, catalogo, detalleActual, borradorId = null, cuentaCatalogo, autorizaciones, ejecucion;
-let paginaActual = 1, busquedaActual = '', revisionLista = 0;
+let paginaActual = 1, filtrosActuales = {}, revisionLista = 0;
 let redirigiendo = false;
 let decisionActual;
 let actualizandoSolicitudes = false;
@@ -71,7 +71,7 @@ function opciones(select, filas, valor, etiqueta, seleccionado = '') {
 async function listar(pagina = paginaActual) {
   const revision = ++revisionLista;
   mostrar('list-view');
-  const parametros = new URLSearchParams({ buscar: busquedaActual, pagina });
+  const parametros = new URLSearchParams({ ...filtrosActuales, pagina });
   const { incidencias, paginacion } = await json(`incidencias?${parametros}`);
   if (revision !== revisionLista || redirigiendo) return;
   paginaActual = paginacion.pagina;
@@ -91,7 +91,7 @@ async function listar(pagina = paginaActual) {
 }
 
 function mostrarPaginacion({ pagina, paginas, total, desde, hasta }) {
-  $('page-summary').textContent = `${desde}–${hasta} de ${total} incidencias`;
+  $('page-summary').textContent = `Página ${pagina} de ${paginas} · ${desde}–${hasta} de ${total} incidencias`;
   $('previous-page').disabled = pagina === 1; $('next-page').disabled = pagina === paginas;
   $('page-numbers').replaceChildren();
   const numeros = [...new Set([1, pagina - 2, pagina - 1, pagina, pagina + 1, pagina + 2, paginas])]
@@ -565,7 +565,17 @@ $('execution-form').addEventListener('submit', async event => {
   } catch (error) { aviso(error.message, true); }
   finally { $('new-password').value = ''; boton.disabled = false; }
 });
-$('search-form').addEventListener('submit', async (e) => { e.preventDefault(); busquedaActual = $('search').value.trim(); try { await listar(1); } catch (error) { aviso(error.message, true); } });
+$('search-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  filtrosActuales = { buscar: $('search').value.trim(), categoria: $('search-category').value, estado: $('search-state').value };
+  try { await listar(1); } catch (error) { aviso(error.message, true); }
+});
+for (const id of ['search-category', 'search-state']) $(id).addEventListener('change', () => $('search-form').requestSubmit());
+$('search').addEventListener('search', () => $('search-form').requestSubmit());
+opciones($('search-category'), Object.keys(categorias), valor => valor, valor => categorias[valor]);
+opciones($('search-state'), ['borrador', 'confirmada', 'en_seguimiento', 'cerrada', 'anulada'], valor => valor, estado);
+$('search-category').options[0].textContent = 'Todas';
+$('search-state').options[0].textContent = 'Todos';
 $('next-page').addEventListener('click', async () => { try { await listar(paginaActual + 1); } catch (error) { aviso(error.message, true); } });
 $('previous-page').addEventListener('click', async () => { try { await listar(paginaActual - 1); } catch (error) { aviso(error.message, true); } });
 for (const [id, tarea] of [['nav-list', listar], ['nav-new', () => formulario()], ['cancel-form', listar], ['nav-accounts', cuentas], ['logout', async () => { await api('auth/logout', 'POST', {}); volverAlAcceso('cerrada'); }]]) $(id).addEventListener('click', async () => {

@@ -382,7 +382,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       await assert.rejects(db.execute('UPDATE involucrados SET id_matricula = ? WHERE id_persona = ?', [alumnos[1].matricula, testigo.id]), { code: 'ER_NO_REFERENCED_ROW_2' });
     } finally { await db.rollback(); db.release(); }
   });
-  await t.test('paginación MySQL: 25 filas, orden estable, búsquedas y totales autorizados', async () => {
+  await t.test('paginación MySQL: 20 filas, orden estable, búsquedas y totales autorizados', async () => {
     const roles = ['director', 'subdirector', 'coordinador_tutoria', 'docente', 'auxiliar'];
     const iniciales = {};
     for (const rol of roles) iniciales[rol] = (await datos('incidencias', rol)).paginacion.total;
@@ -399,14 +399,14 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       assert.equal((await datos('incidencias', rol)).paginacion.total, iniciales[rol] + cantidad);
       const primera = await datos('incidencias?buscar=Paginaci%C3%B3n%20institucional&pagina=1', rol);
       assert.equal(primera.paginacion.total, cantidad);
-      assert.equal(primera.incidencias.length, Math.min(25, cantidad));
+      assert.equal(primera.incidencias.length, Math.min(20, cantidad));
       const ultima = await datos('incidencias?buscar=Paginaci%C3%B3n%20institucional&pagina=999', rol);
       assert.equal(ultima.paginacion.pagina, cantidad ? 2 : 1);
       if (cantidad) {
-        assert.equal(ultima.incidencias.length, cantidad - 25);
+        assert.equal(ultima.incidencias.length, cantidad - 20);
         const esperados = nuevos.slice(0, cantidad).reverse();
         assert.deepEqual([...primera.incidencias, ...ultima.incidencias].map(fila => String(fila.id)), esperados);
-        assert.deepEqual([ultima.paginacion.desde, ultima.paginacion.hasta], [26, cantidad]);
+        assert.deepEqual([ultima.paginacion.desde, ultima.paginacion.hasta], [21, cantidad]);
       } else assert.deepEqual([primera.paginacion.desde, primera.paginacion.hasta], [0, 0]);
     }
     assert.equal((await peticion('incidencias?pagina=2', 'administrador')).status, 403);
@@ -414,7 +414,34 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       assert.equal((await peticion(`incidencias?pagina=${pagina}`, 'director')).status, 400);
     }
     const vacia = await datos('incidencias?buscar=sin-coincidencias-verificadas&pagina=2', 'director');
-    assert.deepEqual(vacia.paginacion, { pagina: 1, paginas: 1, porPagina: 25, total: 0, desde: 0, hasta: 0 });
+    assert.deepEqual(vacia.paginacion, { pagina: 1, paginas: 1, porPagina: 20, total: 0, desde: 0, hasta: 0 });
+  });
+  await t.test('búsqueda por código, estudiante, fecha de Lima y filtros sin revelar expedientes restringidos', async () => {
+    const codigo = `INC-${String(ids[24]).padStart(6, '0')}`;
+    assert.equal((await datos(`incidencias?buscar=${codigo}`, 'subdirector')).paginacion.total, 1);
+    for (const rol of ['director', 'docente', 'coordinador_tutoria']) assert.equal((await datos(`incidencias?buscar=${codigo}`, rol)).paginacion.total, 0);
+    const [[alumno]] = await pool.execute('SELECT CONCAT(nombres, \' \', apellidos) AS nombre FROM personas WHERE id = ?', [alumnos[1].id]);
+    for (const rol of ['director', 'subdirector', 'docente', 'coordinador_tutoria']) {
+      const busqueda = await datos(`incidencias?buscar=${encodeURIComponent(alumno.nombre)}`, rol);
+      const primera = await datos('incidencias', rol);
+      const autorizadas = [...primera.incidencias];
+      for (let pagina = 2; pagina <= primera.paginacion.paginas; pagina++) autorizadas.push(...(await datos(`incidencias?pagina=${pagina}`, rol)).incidencias);
+      const [vinculadas] = await pool.execute('SELECT DISTINCT i.id FROM incidencias i JOIN involucrados inv ON inv.id_version = i.id_version_vigente WHERE inv.id_persona = ?', [alumnos[1].id]);
+      const esperadas = autorizadas.filter(fila => vinculadas.some(vinculo => String(vinculo.id) === String(fila.id)));
+      assert.equal(busqueda.paginacion.total, esperadas.length);
+      assert.deepEqual(busqueda.incidencias.map(fila => fila.id), esperadas.slice(0, 20).map(fila => fila.id));
+    }
+    const limites = [];
+    for (const ocurrida_en of ['2026-11-10T04:59:59Z', '2026-11-10T05:00:00Z', '2026-11-11T04:59:59Z', '2026-11-11T05:00:00Z']) {
+      limites.push((await datos('incidencias', 'director', 'POST', { ...cuerpo('seguridad'), ocurrida_en }, 201)).id);
+    }
+    const dia = await datos('incidencias?buscar=10%2F11%2F2026&categoria=seguridad&estado=borrador', 'director');
+    assert.deepEqual(new Set(dia.incidencias.map(fila => String(fila.id))), new Set(limites.slice(1, 3).map(String)));
+    assert.equal((await datos('incidencias?buscar=10%2F11%2F2026&estado=confirmada', 'director')).paginacion.total, 0);
+    for (const consulta of ['buscar=31%2F02%2F2026', 'categoria=inventada', 'estado=inventado', 'categoria=salud&categoria=bienes']) {
+      assert.equal((await peticion(`incidencias?${consulta}`, 'director')).status, 400);
+    }
+    for (const buscar of ['%', "%' OR 1=1 --"]) assert.equal((await datos(`incidencias?buscar=${encodeURIComponent(buscar)}`, 'director')).paginacion.total, 0);
   });
   await verificarGestionCuentas({ t, pool, peticion, datos, usuarios, claves, cookies });
   await t.test('PDF A4, siete secciones, registrador histórico y firma/sello sin cortes', async () => {

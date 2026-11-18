@@ -35,6 +35,26 @@ function fechaCivilValida(valor) {
   return fecha && Number.isFinite(fecha.getTime()) && fecha.toISOString().slice(0, 10) === valor;
 }
 
+// Interpreta la fecha civil de Lima y valida los filtros antes de consultar MySQL.
+function filtrosListado(consulta) {
+  const buscar = consulta.buscar ? validarTexto(consulta.buscar, 'búsqueda', 100) : '';
+  const categoria = consulta.categoria || '', estado = consulta.estado || '';
+  if (typeof categoria !== 'string' || typeof estado !== 'string') rechazar(400, 'Filtros de búsqueda no válidos.');
+  if (categoria && !Object.hasOwn(camposCategoria, categoria)) rechazar(400, 'Categoría de búsqueda no válida.');
+  if (estado && !['borrador', 'confirmada', 'en_seguimiento', 'cerrada', 'anulada'].includes(estado)) rechazar(400, 'Estado de búsqueda no válido.');
+  const filtros = { buscar, categoria, estado };
+  const codigo = buscar.match(/^(?:INC-)?(\d{1,20})$/i);
+  const fecha = buscar.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (codigo) filtros.codigo = validarIdentificador(String(BigInt(codigo[1])));
+  else if (fecha) {
+    const civil = `${fecha[3]}-${fecha[2]}-${fecha[1]}`;
+    if (!fechaCivilValida(civil)) rechazar(400, 'La fecha del hecho debe ser válida y usar dd/mm/aaaa.');
+    filtros.desde = new Date(`${civil}T00:00:00-05:00`);
+    filtros.hasta = new Date(filtros.desde.getTime() + 86400000);
+  }
+  return filtros;
+}
+
 async function personaPermitida(conexion, identificador, personasPermitidas) {
   const idPersona = validarIdentificador(identificador);
   if (!personasPermitidas.has(idPersona)) rechazar(403, 'No puedes seleccionar esa identidad desde este acceso.');
@@ -137,11 +157,11 @@ export function rutasIncidencias(pool) {
   });
   router.get('/catalogos', autorizar('incidencias.registrar'), async (req, res) => res.json(await consultas.catalogos(pool, req.usuario)));
   router.get('/', autorizar('incidencias.consultar'), async (req, res) => {
-    const buscar = req.query.buscar ? validarTexto(req.query.buscar, 'búsqueda', 100) : '';
+    const filtros = filtrosListado(req.query);
     const pagina = req.query.pagina ?? '1';
     if (typeof pagina !== 'string' || !/^[1-9]\d{0,6}$/.test(pagina)) rechazar(400, 'Selecciona una página válida.');
     // Contar y leer con la misma instantánea y el mismo alcance de autorización.
-    res.json(await transaccion(pool, db => consultas.listarIncidencias(db, req.usuario, { buscar, pagina: Number(pagina) })));
+    res.json(await transaccion(pool, db => consultas.listarIncidencias(db, req.usuario, { ...filtros, pagina: Number(pagina) })));
   });
   router.post('/', autorizar('incidencias.registrar'), async (req, res) => {
     const id = await transaccion(pool, async (db) => {

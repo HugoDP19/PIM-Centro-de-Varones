@@ -14,19 +14,32 @@ export function alcance(usuario) {
   };
 }
 
-export async function listarIncidencias(db, usuario, { buscar = '', pagina = 1 } = {}) {
+export async function listarIncidencias(db, usuario, { buscar = '', pagina = 1, codigo, desde, hasta, categoria = '', estado = '' } = {}) {
   const filtro = alcance(usuario);
+  const condiciones = [filtro.sql], parametros = [...filtro.valores];
+  if (codigo) { condiciones.push('i.id = ?'); parametros.push(codigo); }
+  else if (desde) { condiciones.push('v.ocurrida_en >= ? AND v.ocurrida_en < ?'); parametros.push(desde, hasta); }
+  else if (buscar) {
+    const patron = `%${buscar.replace(/[!%_]/g, '!$&')}%`;
+    // EXISTS busca estudiantes de la versión visible sin duplicar filas ni revelar otros expedientes.
+    condiciones.push(`(v.titulo LIKE ? ESCAPE '!' OR EXISTS (
+      SELECT 1 FROM involucrados inv JOIN estudiantes e ON e.id_persona = inv.id_persona
+      JOIN personas p ON p.id = e.id_persona WHERE inv.id_version = v.id
+        AND CONCAT(p.nombres, ' ', p.apellidos) LIKE ? ESCAPE '!'))`);
+    parametros.push(patron, patron);
+  }
+  if (categoria) { condiciones.push('t.categoria = ?'); parametros.push(categoria); }
+  if (estado) { condiciones.push('i.estado = ?'); parametros.push(estado); }
   const origen = `FROM incidencias i JOIN versiones_incidencia v ON v.id = i.id_version_vigente
-    JOIN tipos_incidencia t ON t.id = v.id_tipo WHERE ${filtro.sql} AND v.titulo LIKE ?`;
-  const parametros = [...filtro.valores, `%${buscar}%`];
+    JOIN tipos_incidencia t ON t.id = v.id_tipo WHERE ${condiciones.join(' AND ')}`;
   const [[conteo]] = await db.execute(`SELECT COUNT(*) AS total ${origen}`, parametros);
-  const total = Number(conteo.total), porPagina = 25;
+  const total = Number(conteo.total), porPagina = 20;
   const paginas = Math.max(1, Math.ceil(total / porPagina));
   pagina = Math.min(pagina, paginas);
   const desplazamiento = (pagina - 1) * porPagina;
   const [filas] = await db.execute(`
     SELECT i.id, i.estado, i.prioridad, i.confidencialidad, i.registrada_en, v.titulo, t.categoria,
-           i.nombre_registrador ${origen} ORDER BY i.registrada_en DESC, i.id DESC LIMIT 25 OFFSET ?`,
+           i.nombre_registrador ${origen} ORDER BY i.registrada_en DESC, i.id DESC LIMIT 20 OFFSET ?`,
   [...parametros, String(desplazamiento)]);
   return { incidencias: filas, paginacion: { pagina, paginas, porPagina, total,
     desde: total ? desplazamiento + 1 : 0, hasta: desplazamiento + filas.length } };

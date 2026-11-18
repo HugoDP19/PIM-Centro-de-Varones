@@ -23,7 +23,12 @@
     <div id="message" role="status" class="alert" hidden></div>
     <section id="list-view" class="surface" hidden aria-labelledby="list-title">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4"><h2 id="list-title" class="h4 mb-0">Expedientes de incidencias</h2>
-        <form id="search-form" class="d-flex gap-2"><label for="search" class="visually-hidden">Buscar por título</label><input id="search" class="form-control" type="search" placeholder="Buscar por título" maxlength="100"><button class="btn btn-outline-primary">Buscar</button></form>
+        <form id="search-form" class="row g-2 align-items-end w-100">
+          <div class="col-lg-5"><label for="search" class="form-label">Código, estudiante, fecha del hecho o título</label><input id="search" class="form-control" type="search" placeholder="INC-000024, nombre o dd/mm/aaaa" maxlength="100"></div>
+          <div class="col-sm-5 col-lg-3"><label for="search-category" class="form-label">Categoría</label><select id="search-category" class="form-select"></select></div>
+          <div class="col-sm-5 col-lg-3"><label for="search-state" class="form-label">Estado</label><select id="search-state" class="form-select"></select></div>
+          <div class="col-sm-2 col-lg-1"><button class="btn btn-outline-primary">Buscar</button></div>
+        </form>
       </div>
       <p class="small text-secondary">Solo aparecen los expedientes incluidos en tu permiso y ámbito de consulta.</p>
       <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Código</th><th>Fecha de registro</th><th>Categoría y título</th><th>Estado</th><th>Prioridad</th><th><span class="visually-hidden">Acción</span></th></tr></thead><tbody id="incident-rows"></tbody></table></div>
