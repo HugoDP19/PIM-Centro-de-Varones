@@ -370,6 +370,40 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       await assert.rejects(db.execute('UPDATE involucrados SET id_matricula = ? WHERE id_persona = ?', [alumnos[1].matricula, testigo.id]), { code: 'ER_NO_REFERENCED_ROW_2' });
     } finally { await db.rollback(); db.release(); }
   });
+  await t.test('paginación MySQL: 25 filas, orden estable, búsquedas y totales autorizados', async () => {
+    const roles = ['director', 'subdirector', 'coordinador_tutoria', 'docente', 'auxiliar'];
+    const iniciales = {};
+    for (const rol of roles) iniciales[rol] = (await datos('incidencias', rol)).paginacion.total;
+    const nuevos = [];
+    for (let numero = 1; numero <= 31; numero++) {
+      const nuevo = await datos('incidencias', 'director', 'POST', { ...cuerpo('seguridad'),
+        titulo: `Paginación institucional ${String(numero).padStart(3, '0')}`, contenido_sensible: numero > 28 }, 201);
+      await datos(`incidencias/${nuevo.id}/confirmar`, 'director', 'POST', {});
+      nuevos.push(String(nuevo.id));
+      await pool.execute("UPDATE incidencias SET registrada_en = '2026-11-17 18:00:00' WHERE id = ?", [nuevo.id]);
+    }
+    for (const rol of roles) {
+      const cantidad = ['director', 'subdirector'].includes(rol) ? 31 : rol === 'coordinador_tutoria' ? 28 : 0;
+      assert.equal((await datos('incidencias', rol)).paginacion.total, iniciales[rol] + cantidad);
+      const primera = await datos('incidencias?buscar=Paginaci%C3%B3n%20institucional&pagina=1', rol);
+      assert.equal(primera.paginacion.total, cantidad);
+      assert.equal(primera.incidencias.length, Math.min(25, cantidad));
+      const ultima = await datos('incidencias?buscar=Paginaci%C3%B3n%20institucional&pagina=999', rol);
+      assert.equal(ultima.paginacion.pagina, cantidad ? 2 : 1);
+      if (cantidad) {
+        assert.equal(ultima.incidencias.length, cantidad - 25);
+        const esperados = nuevos.slice(0, cantidad).reverse();
+        assert.deepEqual([...primera.incidencias, ...ultima.incidencias].map(fila => String(fila.id)), esperados);
+        assert.deepEqual([ultima.paginacion.desde, ultima.paginacion.hasta], [26, cantidad]);
+      } else assert.deepEqual([primera.paginacion.desde, primera.paginacion.hasta], [0, 0]);
+    }
+    assert.equal((await peticion('incidencias?pagina=2', 'administrador')).status, 403);
+    for (const pagina of ['0', '-1', '2.5', 'abc', '100000000', '1&pagina=2']) {
+      assert.equal((await peticion(`incidencias?pagina=${pagina}`, 'director')).status, 400);
+    }
+    const vacia = await datos('incidencias?buscar=sin-coincidencias-verificadas&pagina=2', 'director');
+    assert.deepEqual(vacia.paginacion, { pagina: 1, paginas: 1, porPagina: 25, total: 0, desde: 0, hasta: 0 });
+  });
   await verificarGestionCuentas({ t, pool, peticion, datos, usuarios, claves, cookies });
   await t.test('PDF A4, siete secciones, registrador histórico y firma/sello sin cortes', async () => {
     const response = await peticion(`incidencias/${ids[18]}/pdf`, 'subdirector'); assert.equal(response.status, 200);

@@ -13,7 +13,7 @@ const campos = {
   proteccion_estudiantil: [['riesgo_inmediato', '¿Existe riesgo inmediato?', 'booleano'], ['requiere_derivacion', '¿Requiere derivación?', 'booleano']]
 };
 let usuario, catalogo, detalleActual, borradorId = null, cuentaCatalogo, autorizaciones, ejecucion;
-let anterior, cursores = [], ultimaPagina = [];
+let paginaActual = 1, busquedaActual = '', revisionLista = 0;
 let redirigiendo = false;
 let decisionActual;
 let actualizandoSolicitudes = false;
@@ -68,13 +68,15 @@ function opciones(select, filas, valor, etiqueta, seleccionado = '') {
   select.value = String(seleccionado ?? '');
 }
 
-async function listar() {
+async function listar(pagina = paginaActual) {
+  const revision = ++revisionLista;
   mostrar('list-view');
-  const parametros = new URLSearchParams({ buscar: $('search').value.trim() });
-  if (anterior) parametros.set('anterior', anterior);
-  ultimaPagina = (await json(`incidencias?${parametros}`)).incidencias;
+  const parametros = new URLSearchParams({ buscar: busquedaActual, pagina });
+  const { incidencias, paginacion } = await json(`incidencias?${parametros}`);
+  if (revision !== revisionLista || redirigiendo) return;
+  paginaActual = paginacion.pagina;
   $('incident-rows').replaceChildren();
-  for (const fila of ultimaPagina) {
+  for (const fila of incidencias) {
     const tr = elemento('tr');
     tr.append(elemento('td', codigo(fila.id)), elemento('td', fecha(fila.registrada_en)));
     const asunto = elemento('td'); asunto.append(elemento('small', categorias[fila.categoria], 'text-secondary d-block'), elemento('span', fila.titulo));
@@ -84,7 +86,23 @@ async function listar() {
     [...tr.children].forEach((td, indice) => { if (indice < 5) td.dataset.label = ['Código', 'Fecha', 'Categoría y título', 'Estado', 'Prioridad'][indice]; });
     $('incident-rows').append(tr);
   }
-  $('list-empty').hidden = ultimaPagina.length !== 0; $('previous-page').hidden = cursores.length === 0; $('next-page').hidden = ultimaPagina.length < 50;
+  $('list-empty').hidden = incidencias.length !== 0;
+  mostrarPaginacion(paginacion);
+}
+
+function mostrarPaginacion({ pagina, paginas, total, desde, hasta }) {
+  $('page-summary').textContent = `${desde}–${hasta} de ${total} incidencias`;
+  $('previous-page').disabled = pagina === 1; $('next-page').disabled = pagina === paginas;
+  $('page-numbers').replaceChildren();
+  const numeros = [...new Set([1, pagina - 2, pagina - 1, pagina, pagina + 1, pagina + 2, paginas])]
+    .filter(numero => numero >= 1 && numero <= paginas).sort((a, b) => a - b);
+  numeros.forEach((numero, indice) => {
+    if (indice && numero > numeros[indice - 1] + 1) $('page-numbers').append(elemento('span', '…', 'align-self-center'));
+    const boton = accion(String(numero), () => listar(numero), `btn btn-sm ${numero === pagina ? 'btn-primary' : 'btn-outline-primary'}`);
+    boton.setAttribute('aria-label', `Página ${numero}`);
+    if (numero === pagina) boton.setAttribute('aria-current', 'page');
+    $('page-numbers').append(boton);
+  });
 }
 
 function camposCategoria(valores = {}) {
@@ -547,9 +565,9 @@ $('execution-form').addEventListener('submit', async event => {
   } catch (error) { aviso(error.message, true); }
   finally { $('new-password').value = ''; boton.disabled = false; }
 });
-$('search-form').addEventListener('submit', async (e) => { e.preventDefault(); anterior = undefined; cursores = []; try { await listar(); } catch (error) { aviso(error.message, true); } });
-$('next-page').addEventListener('click', async () => { cursores.push(anterior); anterior = ultimaPagina.at(-1).id; try { await listar(); } catch (error) { aviso(error.message, true); } });
-$('previous-page').addEventListener('click', async () => { anterior = cursores.pop(); try { await listar(); } catch (error) { aviso(error.message, true); } });
+$('search-form').addEventListener('submit', async (e) => { e.preventDefault(); busquedaActual = $('search').value.trim(); try { await listar(1); } catch (error) { aviso(error.message, true); } });
+$('next-page').addEventListener('click', async () => { try { await listar(paginaActual + 1); } catch (error) { aviso(error.message, true); } });
+$('previous-page').addEventListener('click', async () => { try { await listar(paginaActual - 1); } catch (error) { aviso(error.message, true); } });
 for (const [id, tarea] of [['nav-list', listar], ['nav-new', () => formulario()], ['cancel-form', listar], ['nav-accounts', cuentas], ['logout', async () => { await api('auth/logout', 'POST', {}); volverAlAcceso('cerrada'); }]]) $(id).addEventListener('click', async () => {
   if ($(id).disabled || redirigiendo) return;
   $(id).disabled = true;

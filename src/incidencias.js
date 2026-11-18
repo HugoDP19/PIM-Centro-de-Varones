@@ -138,8 +138,10 @@ export function rutasIncidencias(pool) {
   router.get('/catalogos', autorizar('incidencias.registrar'), async (req, res) => res.json(await consultas.catalogos(pool, req.usuario)));
   router.get('/', autorizar('incidencias.consultar'), async (req, res) => {
     const buscar = req.query.buscar ? validarTexto(req.query.buscar, 'búsqueda', 100) : '';
-    const anterior = req.query.anterior ? validarIdentificador(req.query.anterior) : undefined;
-    res.json({ incidencias: await consultas.listarIncidencias(pool, req.usuario, { buscar, anterior }) });
+    const pagina = req.query.pagina ?? '1';
+    if (typeof pagina !== 'string' || !/^[1-9]\d{0,6}$/.test(pagina)) rechazar(400, 'Selecciona una página válida.');
+    // Contar y leer con la misma instantánea y el mismo alcance de autorización.
+    res.json(await transaccion(pool, db => consultas.listarIncidencias(db, req.usuario, { buscar, pagina: Number(pagina) })));
   });
   router.post('/', autorizar('incidencias.registrar'), async (req, res) => {
     const id = await transaccion(pool, async (db) => {
