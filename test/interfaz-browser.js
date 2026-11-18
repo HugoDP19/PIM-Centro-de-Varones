@@ -289,6 +289,8 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         document.querySelector('#authorization-form').requestSubmit();
       })()`, admin);
       await esperar("document.querySelector('#message').textContent.includes('Solicitud registrada')", admin);
+      const codigoSolicitud = (await evaluar("document.querySelector('#message').textContent", admin)).match(/SOL-\d+/)?.[0];
+      assert.ok(codigoSolicitud, 'La confirmación identifica la solicitud guardada');
       for (const rol of ['director', 'subdirector']) {
         const sesion = sesiones[rol];
         const cantidad = await evaluar("document.querySelector('#nav-pending').textContent", sesion);
@@ -298,6 +300,14 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         await evaluar("document.querySelector('#nav-accounts').click()", sesion);
         await esperar("document.querySelector('#accounts-view').hidden === false", sesion);
         assert.equal(await evaluar(`[...document.querySelectorAll('#authorization-list article')].some(a => a.textContent.includes(${JSON.stringify(motivo)}) && a.querySelectorAll('button').length === 2)`, sesion), true);
+        assert.equal(await evaluar(`document.querySelector('#pending-authorization-list').textContent.includes(${JSON.stringify(codigoSolicitud)})`, sesion), true);
+        await enviar('Page.reload', {}, sesion);
+        await esperar("document.querySelector('#workspace')?.hidden === false", sesion);
+        const conteo = await evaluar("(async () => (await (await fetch('/api/cuentas/autorizaciones')).json()).pendientes)()", sesion);
+        assert.equal(await evaluar("document.querySelector('#nav-pending').textContent", sesion), `Pendientes: ${conteo}`);
+        await evaluar("document.querySelector('#nav-accounts').click()", sesion);
+        await esperar(`document.querySelector('#pending-authorization-list')?.textContent.includes(${JSON.stringify(codigoSolicitud)})`, sesion);
+        assert.equal(await evaluar("document.querySelectorAll('#pending-authorization-list article').length", sesion), conteo);
       }
       async function revisar(rol, decision, textoMotivo) {
         const sesion = sesiones[rol];
@@ -332,14 +342,21 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       await esperar(`[...document.querySelectorAll('#authorization-list article')].find(a => a.textContent.includes(${JSON.stringify(motivoDesactivar)}))?.querySelectorAll('button').length === 0`, sesiones.director);
 
       await evaluar(`(() => {
-        const fila = [...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'rsalazar');
+        const fila = [...document.querySelectorAll('#account-rows tr')].find(f => f.cells[1].textContent === 'mhuaman');
         [...fila.querySelectorAll('button')].find(b => b.textContent === 'Desactivar').click();
         document.querySelector('#authorization-reason').value = 'Comprobar la protección de la última cuenta activa.';
         document.querySelector('#authorization-form').requestSubmit();
       })()`, admin);
       await esperar("document.querySelector('#account-error').hidden === false", admin);
       assert.match(await evaluar("document.querySelector('#account-error').textContent", admin), /al menos una cuenta activa/);
+      assert.match(await evaluar("document.querySelector('#account-error').textContent", admin), /única cuenta activa de subdirector/);
       assert.equal(await evaluar("document.querySelector('#message').hidden", admin), true);
+      assert.match(await evaluar("document.querySelector('#account-error').textContent", admin), /Solicitud no registrada/);
+      await evaluar("document.querySelector('#account-action').value = 'restablecer_clave'; document.querySelector('#account-action').dispatchEvent(new Event('change'))", admin);
+      assert.equal(await evaluar("document.querySelector('#account-error').hidden && document.querySelector('#account-error').textContent === ''", admin), true);
+      await evaluar("document.querySelector('#nav-accounts').click()", admin);
+      await esperar("document.querySelector('#authorization-form').hidden === true", admin);
+      assert.equal(await evaluar("document.querySelector('#account-error').hidden"), true);
 
       const motivoDoble = 'Solicitar un cambio de rol con revisión de ambas autoridades.';
       await evaluar(`(async () => {

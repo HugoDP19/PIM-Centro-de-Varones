@@ -32,7 +32,9 @@ function elemento(etiqueta, contenido, clase) {
   return el;
 }
 function aviso(mensaje, error = false) { if (redirigiendo) return; $('message').textContent = mensaje; $('message').className = `alert alert-${error ? 'danger' : 'success'}`; $('message').hidden = false; }
-function limpiarAviso() { $('message').hidden = true; $('message').textContent = ''; }
+function limpiarAviso() {
+  for (const id of ['message', 'account-error']) { $(id).hidden = true; $(id).textContent = ''; }
+}
 function mostrar(vista) { for (const id of ['list-view', 'form-view', 'detail-view', 'accounts-view']) $(id).hidden = id !== vista; limpiarAviso(); }
 function volverAlAcceso(motivo) {
   if (redirigiendo) return;
@@ -299,6 +301,7 @@ function campoCuenta(nombre, etiqueta, filas, valor, mostrar) {
   label.append(input); grupo.append(label); $('authorization-fields').append(grupo); return input;
 }
 function camposAutorizacion() {
+  limpiarAviso();
   $('authorization-fields').replaceChildren(); const tipo = $('account-action').value;
   if (tipo === 'crear_cuenta') campoCuenta('id_persona', 'Personal sin cuenta', cuentaCatalogo.personas);
   if (['editar_cuenta', 'activar_cuenta', 'desactivar_cuenta', 'restablecer_clave', 'cambiar_rol'].includes(tipo)) campoCuenta('id_usuario_objetivo', 'Cuenta objetivo', cuentaCatalogo.usuarios.filter((u) => String(u.id) !== String(usuario.id)));
@@ -388,6 +391,8 @@ function mostrarCuentas() {
 
 function tarjetaAutorizacion(autorizacion, resumen) {
   const tarjeta = elemento('article', undefined, 'authorization-card');
+  tarjeta.dataset.solicitud = autorizacion.id;
+  tarjeta.append(elemento('p', autorizacion.codigo, 'small text-secondary mb-1'));
   const nombreAccion = [...$('account-action').options].find((opcion) => opcion.value === autorizacion.tipo)?.textContent || estado(autorizacion.tipo);
   tarjeta.append(elemento('h4', nombreAccion, 'authorization-title'));
   tarjeta.append(elemento('p', autorizacion.motivo, 'authorization-reason'));
@@ -435,6 +440,12 @@ function mostrarPendientes(cantidad) {
 
 function mostrarAutorizaciones() {
   $('authorization-list').replaceChildren();
+  const pendientes = elemento('section'); pendientes.id = 'pending-authorization-list';
+  pendientes.append(elemento('h4', 'Solicitudes pendientes', 'h5'));
+  const registradas = elemento('section', undefined, 'mt-4');
+  registradas.append(elemento('h4', 'Otras solicitudes y autorizaciones registradas', 'h5'));
+  $('authorization-list').append(pendientes, registradas);
+  if (!autorizaciones.some(a => a.pendiente_para_usuario)) pendientes.append(elemento('p', 'No tienes solicitudes pendientes.', 'text-secondary'));
   for (const a of autorizaciones) {
     const rol = cuentaCatalogo.roles.find((r) => String(r.id) === String(a.id_rol_objetivo));
     const permiso = cuentaCatalogo.permisos.find((p) => String(p.id) === String(a.id_permiso));
@@ -453,7 +464,7 @@ function mostrarAutorizaciones() {
       }));
     }
     if (a.puede_ejecutar) item.append(accion('Seleccionar para ejecutar', () => { ejecucion = a; $('execution-form').hidden = false; $('execution-summary').textContent = `${estado(a.tipo)} · ${resumen} · ${a.motivo}`; const necesita = ['crear_cuenta', 'restablecer_clave'].includes(a.tipo); $('execution-password-group').hidden = !necesita; $('new-password').required = necesita; $('new-password').value = ''; $('execution-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
-    $('authorization-list').append(item);
+    (a.pendiente_para_usuario ? pendientes : registradas).append(item);
   }
 }
 
@@ -479,6 +490,8 @@ $('category').addEventListener('change', () => { tipos(); camposCategoria(); });
 $('add-person').addEventListener('click', () => involucrado()); $('account-action').addEventListener('change', camposAutorizacion);
 $('incident-form').addEventListener('submit', async (e) => { e.preventDefault(); $('save-draft').disabled = true; try { const resultado = await json(borradorId ? `incidencias/${borradorId}/borrador` : 'incidencias', borradorId ? 'PUT' : 'POST', contenidoFormulario()); await abrir(borradorId || resultado.id); aviso('Borrador guardado. Revisa los datos antes de confirmar.'); } catch (error) { aviso(error.message, true); } finally { $('save-draft').disabled = false; } });
 $('authorization-fields').addEventListener('change', actualizarModoCuenta);
+$('authorization-form').addEventListener('input', limpiarAviso);
+$('authorization-form').addEventListener('change', limpiarAviso);
 $('create-account').addEventListener('click', () => prepararCuenta('crear_cuenta'));
 $('request-account-change').addEventListener('click', () => prepararCuenta('restablecer_clave'));
 $('cancel-account-change').addEventListener('click', () => { $('authorization-form').hidden = true; $('initial-password').value = ''; });
@@ -494,11 +507,17 @@ $('authorization-form').addEventListener('submit', async event => {
   for (const input of $('authorization-fields').querySelectorAll('[name]')) datos[input.name] = input.value;
   const directa = operacionDirecta();
   if (directa && datos.tipo === 'crear_cuenta') datos.contrasena = $('initial-password').value;
+  let confirmacion;
   try {
-    await json(directa ? 'cuentas/directas' : 'cuentas/autorizaciones', 'POST', datos);
+    const resultado = await json(directa ? 'cuentas/directas' : 'cuentas/autorizaciones', 'POST', datos);
+    confirmacion = directa ? 'Cambio guardado y registrado en el historial.'
+      : `${resultado.existente ? 'La solicitud ya estaba registrada' : 'Solicitud registrada'}: ${resultado.codigo}. Requiere una decisión independiente antes de ejecutarse.`;
     await cuentas();
-    aviso(directa ? 'Cambio guardado y registrado en el historial.' : 'Solicitud registrada. Requiere una decisión independiente antes de ejecutarse.');
-  } catch (error) { $('account-error').textContent = error.message; $('account-error').hidden = false; }
+    aviso(confirmacion);
+  } catch (error) {
+    if (confirmacion) aviso(`${confirmacion} No se pudo actualizar el panel: ${error.message}`, true);
+    else { $('account-error').textContent = `${directa ? 'Cambio no guardado' : 'Solicitud no registrada'}: ${error.message}`; $('account-error').hidden = false; }
+  }
   finally { $('initial-password').value = ''; boton.disabled = false; }
 });
 $('decision-form').addEventListener('submit', async event => {

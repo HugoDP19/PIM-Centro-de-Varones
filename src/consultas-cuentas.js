@@ -43,6 +43,14 @@ export async function solicitudes(db) {
 export async function autorizacion(db, id) {
   const [[fila]] = await db.execute('SELECT * FROM autorizaciones_cuentas WHERE id = ? FOR UPDATE', [id]); return fila;
 }
+export async function solicitudEquivalente(db, datos) {
+  const campos = ['tipo', 'id_solicitante', 'id_rol_solicitante', 'id_usuario_objetivo', 'id_persona',
+    'id_rol_objetivo', 'id_permiso', 'nombre_usuario', 'activo', 'huella_objetivo'];
+  const [[fila]] = await db.execute(`SELECT id FROM autorizaciones_cuentas
+    WHERE estado IN ('pendiente', 'aprobada') AND vence_en > UTC_TIMESTAMP(6)
+      AND ${campos.map(campo => `${campo} <=> ?`).join(' AND ')} ORDER BY id DESC LIMIT 1`, campos.map(campo => datos[campo] ?? null));
+  return fila;
+}
 export async function asignacion(db, idRol, idPermiso) {
   const [filas] = await db.execute('SELECT id_rol FROM roles_permisos WHERE id_rol = ? AND id_permiso = ?', [idRol, idPermiso]); return filas.length > 0;
 }

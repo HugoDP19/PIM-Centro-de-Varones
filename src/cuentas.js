@@ -18,6 +18,7 @@ const protegidos = [...autoridades, 'administrador'];
 const sensiblesDobles = ['cambiar_rol', 'asignar_permiso', 'retirar_permiso'];
 const misma = (primera, segunda) => primera != null && segunda != null && String(primera) === String(segunda);
 const huella = cuenta => resumir([cuenta.id_rol, cuenta.nombre_usuario, cuenta.activo, cuenta.persona_activa, cuenta.contrasena_hash].join('|'));
+const codigoSolicitud = id => `SOL-${String(id).padStart(6, '0')}`;
 
 function leerSolicitud(cuerpo, directa = false) {
   const campos = camposPorTipo[cuerpo.tipo];
@@ -63,7 +64,7 @@ async function validarObjetivo(db, actor, datos) {
     if (datos.tipo === 'editar_cuenta' && cuenta.nombre_usuario === datos.nombre_usuario) rechazar(409, 'El nombre de usuario no ha cambiado.');
     if (cuenta.activo && protegidos.includes(cuenta.rol)
         && (datos.tipo === 'desactivar_cuenta' || datos.tipo === 'cambiar_rol')
-        && await consultas.activosDelRol(db, cuenta.id_rol) <= 1) rechazar(409, 'Debe mantenerse al menos una cuenta activa de Director, Subdirector y Administrador.');
+        && await consultas.activosDelRol(db, cuenta.id_rol) <= 1) rechazar(409, `No se puede realizar este cambio: es la única cuenta activa de ${cuenta.rol}. Debe mantenerse al menos una cuenta activa de ese rol.`);
     return { marca: huella(cuenta), cuenta, rol };
   }
   const permiso = await consultas.permiso(db, datos.id_permiso);
@@ -127,13 +128,13 @@ export function rutasCuentas(pool) {
   });
   router.get('/autorizaciones', async (req, res) => {
     const solicitudes = await consultas.solicitudes(pool);
-    const autorizaciones = solicitudes.map(datos => ({ ...datos, estado: estadoVisible(datos),
+    const autorizaciones = solicitudes.map(datos => ({ ...datos, codigo: codigoSolicitud(datos.id), estado: estadoVisible(datos),
       puede_decidir: puedeDecidir(req.usuario, datos),
+      pendiente_para_usuario: puedeDecidir(req.usuario, datos) || estadoVisible(datos) === 'pendiente' && misma(datos.id_solicitante, req.usuario.id),
       puede_ejecutar: tienePermiso(req.usuario, 'cuentas.ejecutar') && estadoVisible(datos) === 'aprobada'
         && !misma(req.usuario.id, datos.id_usuario_objetivo) && !misma(req.usuario.id, datos.id_autorizante)
         && !misma(req.usuario.id, datos.id_decisor_director) && !misma(req.usuario.id, datos.id_decisor_subdirector) }));
-    res.json({ autorizaciones, pendientes: autorizaciones.filter(datos => datos.puede_decidir
-      || datos.estado === 'pendiente' && misma(datos.id_solicitante, req.usuario.id)).length });
+    res.json({ autorizaciones, pendientes: autorizaciones.filter(datos => datos.pendiente_para_usuario).length });
   });
 
   router.post('/directas', autorizar('cuentas.administrar'), async (req, res) => {
@@ -156,7 +157,7 @@ export function rutasCuentas(pool) {
 
   router.post('/autorizaciones', autorizar('cuentas.solicitar'), async (req, res) => {
     const datos = leerSolicitud(req.body || {});
-    const id = await transaccion(pool, async db => {
+    const resultado = await transaccion(pool, async db => {
       await consultas.bloquearGestion(db);
       const actor = await actorVigente(db, req.usuario, 'cuentas.solicitar', req.tokenSesion);
       const objetivo = await validarObjetivo(db, actor, datos);
@@ -164,11 +165,14 @@ export function rutasCuentas(pool) {
         solicitada_en: new Date(), vence_en: new Date(Date.now() + 86400000), estado: 'pendiente',
         revision_doble: Number(actor.rol === 'administrador' && (sensiblesDobles.includes(datos.tipo)
           || datos.tipo === 'crear_cuenta' && protegidos.includes(objetivo.rol?.codigo))) });
+      // El bloqueo común también serializa reintentos del mismo cambio.
+      const existente = await consultas.solicitudEquivalente(db, datos);
+      if (existente) return { id: existente.id, existente: true };
       const id = await insertar(db, 'autorizaciones_cuentas', datos);
       await registrar(db, actor, datos, 'gestion_cuenta_solicitada', id);
-      return id;
+      return { id, existente: false };
     });
-    res.status(201).json({ id });
+    res.status(resultado.existente ? 200 : 201).json({ ...resultado, codigo: codigoSolicitud(resultado.id) });
   });
 
   router.post('/autorizaciones/:id/decidir', autorizar('cuentas.autorizar'), async (req, res) => {

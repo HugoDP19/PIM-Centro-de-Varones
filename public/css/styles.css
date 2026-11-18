@@ -57,6 +57,7 @@ h2 { font-size: 1.85rem; font-weight: 700; letter-spacing: -.04em; margin-bottom
 .account-active { background: #e8f3ec; color: #215c38; }
 .account-inactive { background: #fbeaea; color: #922d32; }
 #accounts-view #authorization-list { display: grid; gap: 1rem; margin-top: 1rem; }
+#authorization-list > section { display: grid; gap: 1rem; }
 .account-actions { display: flex; flex-wrap: wrap; gap: .35rem; min-width: 14rem; }
 .account-actions .btn { min-height: 2rem; padding: .25rem .5rem; font-size: .75rem; }
 .authorization-decisions { border-top: 1px solid #e5e7eb; margin-top: .85rem; padding-top: .85rem; font-size: .85rem; }

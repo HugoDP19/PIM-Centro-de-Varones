@@ -5,7 +5,14 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
   const catalogo = await datos('cuentas/catalogos', 'administrador');
   const claveNueva = generarContrasena();
   let idCuenta;
-  const solicitar = (rol, cuerpo) => datos('cuentas/autorizaciones', rol, 'POST', { motivo: 'Revisión de acceso del personal en la copia temporal.', ...cuerpo }, 201);
+  const solicitar = async (rol, cuerpo) => {
+    const respuesta = await peticion('cuentas/autorizaciones', rol, 'POST', { motivo: 'Revisión de acceso del personal en la copia temporal.', ...cuerpo });
+    assert.ok([200, 201].includes(respuesta.status));
+    const solicitud = await respuesta.json();
+    assert.match(solicitud.codigo, /^SOL-\d+$/);
+    assert.equal(solicitud.existente, respuesta.status === 200);
+    return solicitud;
+  };
   const decidir = (id, rol, decision = 'aprobar', extra = {}, esperado = 200) => datos(`cuentas/autorizaciones/${id}/decidir`, rol, 'POST', {
     decision, fundamento: 'Decisión independiente sobre los valores solicitados.', sin_conflicto: true,
     contrasena: claves[`${rol.toUpperCase()}_PASSWORD`], ...extra
@@ -34,6 +41,10 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
 
   await t.test('cuentas: Administrador solicita, autoridad reautentica y ejecución única', async () => {
     const solicitud = await solicitar('administrador', { tipo: 'activar_cuenta', id_usuario_objetivo: idCuenta });
+    const reintentos = await Promise.all([1, 2].map(() => solicitar('administrador', { tipo: 'activar_cuenta', id_usuario_objetivo: idCuenta })));
+    for (const reintento of reintentos) { assert.equal(String(reintento.id), String(solicitud.id)); assert.equal(reintento.existente, true); }
+    const [[conteo]] = await pool.execute("SELECT COUNT(*) AS total FROM autorizaciones_cuentas WHERE id_usuario_objetivo = ? AND tipo = 'activar_cuenta'", [idCuenta]);
+    assert.equal(Number(conteo.total), 1);
     await ejecutar(solicitud.id, 'administrador', {}, 409);
     await decidir(solicitud.id, 'director', 'aprobar', { contrasena: generarContrasena() }, 403);
     await decidir(solicitud.id, 'director', 'aprobar', { sin_conflicto: false }, 400);
@@ -128,8 +139,11 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
 
   await t.test('cuentas: continuidad, valores obsoletos, vencimiento y límites institucionales', async () => {
     for (const [actor, objetivo] of [['director', 'director'], ['director', 'administrador'], ['administrador', 'subdirector']]) {
+      const [[antes]] = await pool.execute('SELECT COUNT(*) AS total FROM autorizaciones_cuentas');
       const respuesta = await peticion('cuentas/autorizaciones', actor, 'POST', { tipo: 'desactivar_cuenta', id_usuario_objetivo: usuarios[objetivo].id, motivo: 'Comprobar continuidad institucional.' });
       assert.ok([403, 409].includes(respuesta.status));
+      const [[despues]] = await pool.execute('SELECT COUNT(*) AS total FROM autorizaciones_cuentas');
+      assert.equal(despues.total, antes.total, 'Un rechazo no crea solicitudes ni pendientes');
     }
     const permiso = catalogo.permisos.find(p => p.codigo === 'incidencias.consultar');
     assert.equal((await peticion('cuentas/autorizaciones', 'director', 'POST', { tipo: 'asignar_permiso', id_rol_objetivo: usuarios.administrador.id_rol,
