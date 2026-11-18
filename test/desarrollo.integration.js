@@ -471,6 +471,27 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     assert.ok(textos.at(-1).includes('Firma del registrador') && textos.at(-1).includes('Sello del Director'));
     await pdf.cleanup?.();
   });
+  await t.test('PDF distingue al responsable del seguimiento sin repetir al autor dentro del bloque', async () => {
+    const nuevo = await datos('incidencias', 'subdirector', 'POST', cuerpo('seguridad'), 201);
+    await datos(`incidencias/${nuevo.id}/confirmar`, 'subdirector', 'POST', {});
+    const autor = `${usuarios.subdirector.nombres} ${usuarios.subdirector.apellidos}`;
+    const responsable = `${usuarios.director.nombres} ${usuarios.director.apellidos}`;
+    for (const [indice, idResponsable] of [usuarios.subdirector.id, usuarios.director.id].entries()) {
+      await datos(`incidencias/${nuevo.id}/actuaciones`, 'subdirector', 'POST', { tipo: 'actuacion',
+        detalle: 'Se verificó el ambiente escolar y se coordinó el acompañamiento para el seguimiento.',
+        id_responsable: idResponsable, fecha_limite: '2026-12-18', contenido_sensible: false }, 201);
+      const respuesta = await peticion(`incidencias/${nuevo.id}/pdf`, 'subdirector');
+      assert.equal(respuesta.status, 200);
+      const pdf = await getDocument({ data: new Uint8Array(await respuesta.arrayBuffer()), useSystemFonts: true }).promise;
+      let texto = '';
+      for (let pagina = 1; pagina <= pdf.numPages; pagina++) texto += (await (await pdf.getPage(pagina)).getTextContent()).items.map(item => item.str).join(' ') + ' ';
+      const bloque = texto.split('5. ACTUACIONES REALIZADAS')[1].split('6. SEGUIMIENTO Y ESTADO')[0];
+      assert.equal(bloque.split(autor).length - 1, indice + 1);
+      assert.match(bloque, /A cargo de quien registra/);
+      if (indice) assert.ok(bloque.includes(`Responsable del seguimiento: ${responsable}`));
+      await pdf.cleanup?.();
+    }
+  });
   await t.test('logout revoca las sesiones de los seis roles', async () => {
     for (const [rol] of personalEscolar) { assert.equal((await peticion('auth/logout', rol, 'POST', {})).status, 204); assert.equal((await peticion('auth/sesion', rol)).status, 401); }
   });

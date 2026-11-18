@@ -103,9 +103,10 @@ export function generarInforme(datos) {
           for (const linea of lineas(texto, ancho - 20, negrita ? 'Helvetica-Bold' : 'Helvetica', 10)) contenido.push({ linea, negrita });
         }
         agregar(fila.detalle);
-        if (fila.responsable || fila.fecha_limite) {
+        const mismoResponsable = fila.id_autor != null && fila.id_responsable != null && String(fila.id_autor) === String(fila.id_responsable);
+        if (fila.responsable && !mismoResponsable || fila.fecha_limite) {
           agregar('Seguimiento', true);
-          agregar([fila.responsable ? `Responsable: ${fila.responsable}` : null,
+          agregar([fila.responsable ? mismoResponsable ? 'A cargo de quien registra' : `Responsable del seguimiento: ${fila.responsable}` : null,
             fila.fecha_limite ? `Plazo: ${fechaCivil(fila.fecha_limite)}` : null].filter(Boolean).join(' · '));
         }
         const reservaFinal = indice === filas.length - 1 ? reserva : 0;
