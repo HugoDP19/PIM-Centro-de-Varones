@@ -12,6 +12,13 @@ node_modules/
 /respaldos/
 /tmp/
 /temp/
+/exports/
+/dumps/
+/respaldo-*.sql*
+/backup-*.sql*
+/dump-*.sql*
+/SICE.sql*
+/sice.sql*
 *.tmp
 *.bak
 *.swp
@@ -23,6 +30,14 @@ node_modules/
 logs/
 coverage/
 .nyc_output/
+/test-results/
+/playwright-report/
+/capturas/
+/screenshots/
+/informe-*.pdf
+/INC-*.pdf
+.cache/
+.node_repl_history
 
 # Configuración personal de editores
 .vscode/
