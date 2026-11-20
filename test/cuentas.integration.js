@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { generarContrasena, verificarHash } from '../src/seguridad.js';
 
+// Ejecuta el flujo de cuentas en la base temporal y contrasta sus efectos y rechazos con SQL.
 export async function verificarGestionCuentas({ t, pool, peticion, datos, usuarios, claves, cookies }) {
   const catalogo = await datos('cuentas/catalogos', 'administrador');
   const claveNueva = generarContrasena();
@@ -170,6 +171,7 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
     await decidir(baja.id, 'subdirector');
     await ejecutar(baja.id);
     assert.equal((await peticion('auth/sesion', null, 'GET', undefined, { Cookie: cookie })).status, 401);
+    assert.equal((await peticion('auth/login', null, 'POST', { usuario: 'lnavarro', contrasena: claveNueva })).status, 401);
     const permiso = catalogo.permisos.find(p => p.codigo === 'incidencias.exportar');
     for (const tipo of ['retirar_permiso', 'asignar_permiso']) {
       const cambio = await solicitar('administrador', { tipo, id_rol_objetivo: usuarios.docente.id_rol, id_permiso: permiso.id });

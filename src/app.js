@@ -3,13 +3,16 @@ import { fileURLToPath } from 'node:url';
 import { configurarAutenticacion, protegerSolicitudes } from './autenticacion.js';
 import { rutasIncidencias } from './incidencias.js';
 import { rutasCuentas } from './cuentas.js';
+import { rutasEstudiantes } from './estudiantes.js';
 
 const directory = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 
+// Configura la aplicación sin abrir un puerto; el servidor y las pruebas la inician por separado.
 export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion = false, proxyLocal = false } = {}) {
   const app = express();
   app.disable('x-powered-by');
   if (proxyLocal) app.set('trust proxy', 'loopback');
+  // Aplica cabeceras de seguridad antes de servir páginas o responder a las API.
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
@@ -33,21 +36,25 @@ export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion =
   app.use(express.json({ limit: '64kb' }));
   const auth = configurarAutenticacion({ pool, origin, produccion });
   app.use('/api/auth', auth.router);
+  // Las rutas de gestión exigen sesión y origen válido, y permanecen bloqueadas en producción.
   const soloDesarrollo = (_req, res, next) => produccion || process.env.NODE_ENV !== 'development'
     ? res.status(503).json({ error: 'Este módulo requiere validación institucional antes de habilitarse en producción.' }) : next();
   app.use('/api/incidencias', protegerSolicitudes({ origin, produccion }), auth.exigirSesion, soloDesarrollo, rutasIncidencias(pool));
   app.use('/api/cuentas', protegerSolicitudes({ origin, produccion }), auth.exigirSesion, soloDesarrollo, rutasCuentas(pool));
+  app.use('/api/estudiantes', protegerSolicitudes({ origin, produccion }), auth.exigirSesion, soloDesarrollo, rutasEstudiantes(pool));
 
   app.get('/api/health', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ status: 'ok', service: 'sice-local' });
   });
+  // Sirve únicamente los recursos públicos y el logo, sin exponer el código del servidor.
   app.use('/image', express.static(directory('../image/'), { index: false }));
   app.get('/vendor/bootstrap.min.css', (_req, res) => {
     res.sendFile(directory('../node_modules/bootstrap/dist/css/bootstrap.min.css'));
   });
   app.use(express.static(directory('../public/')));
   app.use((_req, res) => res.status(404).json({ error: 'Recurso no encontrado.' }));
+  // Traduce los errores a respuestas públicas sin filtrar detalles del controlador SQL.
   app.use((error, _req, res, next) => {
     if (res.headersSent) return next(error);
     const mensajes = { 400: 'La solicitud no es válida.', 401: 'Inicia sesión para continuar.', 403: 'Acceso no autorizado.',
@@ -59,4 +66,3 @@ export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion =
   });
   return app;
 }
-export default createApp();

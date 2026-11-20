@@ -6,6 +6,7 @@ const fecha = (valor) => valor ? new Intl.DateTimeFormat('es-PE', { timeZone: 'A
 const nombreEstado = (valor) => valor.replaceAll('_', ' ');
 const fechaCivil = (valor) => new Intl.DateTimeFormat('es-PE', { timeZone: 'UTC', dateStyle: 'short' }).format(new Date(valor));
 
+// Genera el PDF A4 desde los datos autorizados y lo devuelve en memoria, sin guardar archivos.
 export function generarInforme(datos) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true, compress: false,
@@ -30,6 +31,7 @@ export function generarInforme(datos) {
     function espacio(alto) {
       if (doc.y + alto > limite) doc.addPage();
     }
+    // Mide el texto con la fuente elegida y divide también palabras que exceden el ancho disponible.
     function lineas(texto, anchoTexto, fuente = 'Helvetica', tamano = 10) {
       doc.font(fuente).fontSize(tamano);
       const resultado = [];
@@ -70,6 +72,7 @@ export function generarInforme(datos) {
       doc.font('Helvetica-Bold').fontSize(10).fillColor('white').text(titulo, 56, y + 7, { width: ancho - 16, lineBreak: false });
       doc.y = y + 32;
     }
+    // Calcula la altura de las celdas y repite la cabecera al continuar la tabla en otra página.
     function tabla(encabezados, filas, proporciones) {
       const anchos = proporciones.map((p) => p * ancho);
       const fila = (valores, esCabecera = false) => {
@@ -91,6 +94,7 @@ export function generarInforme(datos) {
       filas.forEach((valores) => fila(valores));
       doc.y += 12;
     }
+    // Distribuye cada actuación con su autor y seguimiento, reservando espacio para las firmas.
     function actuaciones(filas, reserva = 0) {
       if (!filas.length) { parrafo('No hay registros en esta sección.', reserva); return; }
       for (const [indice, fila] of filas.entries()) {
@@ -152,6 +156,7 @@ export function generarInforme(datos) {
       cabecera();
       doc.font('Helvetica-Bold').fontSize(15).fillColor(guinda).text('INFORME DE INCIDENCIA ESCOLAR', { align: 'center', width: ancho });
       doc.moveDown();
+      // Organiza las siete secciones del informe usando la versión vigente y sus evidencias.
       const { incidencia: i, version: v } = datos;
       seccion('1. DATOS GENERALES');
       tabla(['Dato', 'Registro'], [
@@ -197,6 +202,7 @@ export function generarInforme(datos) {
       doc.roundedRect(48 + ancho / 2 + 14, y, ancho / 2 - 14, 105, 3).strokeColor('#b6a7ac').stroke();
       doc.font('Helvetica-Bold').fontSize(9).text('Sello del Director', 48 + ancho / 2 + 20, y + 77, { width: ancho / 2 - 26, align: 'center' });
       doc.font('Helvetica').fontSize(8).fillColor('#555555').text('Espacio reservado para sello físico', 48 + ancho / 2 + 20, y + 91, { width: ancho / 2 - 26, align: 'center' });
+      // Numera las páginas después de conocer la extensión completa del documento.
       const rango = doc.bufferedPageRange();
       for (let pagina = rango.start; pagina < rango.start + rango.count; pagina++) {
         doc.switchToPage(pagina);

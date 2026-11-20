@@ -18,6 +18,7 @@
     <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">
       <button id="nav-list" class="btn btn-outline-primary" hidden>Incidencias</button>
       <button id="nav-new" class="btn btn-primary" hidden>Registrar incidencia</button>
+      <button id="nav-student" class="btn btn-outline-primary" hidden>Registrar estudiante</button>
       <button id="nav-accounts" class="btn btn-outline-primary" hidden>Gestión de cuentas <span id="nav-pending" class="badge text-bg-light" aria-live="polite">Pendientes: …</span></button>
     </nav>
     <div id="message" role="status" class="alert" hidden></div>
@@ -65,6 +66,18 @@
         </div></fieldset>
         <fieldset class="mb-4"><legend class="section-legend">Personas involucradas</legend><p class="small text-secondary">El mínimo de estudiantes depende del tipo. Una persona adulta puede figurar como testigo sin matrícula. Las identidades reservadas no se ofrecen en catálogos de accesos sin permiso.</p><div id="involved-rows"></div><button id="add-person" class="btn btn-sm btn-outline-primary mt-2" type="button">Añadir persona</button></fieldset>
         <div class="d-flex flex-wrap gap-2"><button id="save-draft" class="btn btn-primary" type="submit">Guardar borrador y revisar</button><button id="cancel-form" class="btn btn-outline-primary" type="button">Volver al listado</button></div>
+      </form>
+    </section>
+    <section id="student-view" class="surface" hidden aria-labelledby="student-title">
+      <h2 id="student-title" class="h4">Registrar estudiante y matrícula</h2>
+      <form id="student-form" class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="student-names">Nombres</label><input id="student-names" name="nombres" class="form-control" maxlength="100" required></div>
+        <div class="col-md-6"><label class="form-label" for="student-surnames">Apellidos</label><input id="student-surnames" name="apellidos" class="form-control" maxlength="150" required></div>
+        <div class="col-md-4"><label class="form-label" for="student-code">Código de estudiante</label><input id="student-code" name="codigo_estudiante" class="form-control" maxlength="20" pattern="[A-Za-z0-9-]+" required></div>
+        <div class="col-md-4"><label class="form-label" for="student-classroom">Aula y año lectivo</label><select id="student-classroom" name="id_aula" class="form-select" required></select></div>
+        <div class="col-md-4"><label class="form-label" for="student-date">Inicio de matrícula</label><input id="student-date" name="fecha_inicio" type="date" class="form-control" required></div>
+        <div class="col-md-6"><label class="form-label" for="student-password">Confirma tu contraseña</label><input id="student-password" name="contrasena" type="password" autocomplete="current-password" class="form-control" required maxlength="256"></div>
+        <div class="col-12"><button class="btn btn-primary">Guardar estudiante y matrícula</button></div>
       </form>
     </section>
     <section id="detail-view" class="surface" hidden aria-labelledby="detail-title"><div id="detail-content"></div></section>

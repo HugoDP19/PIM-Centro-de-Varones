@@ -6,14 +6,15 @@ import { tmpdir } from 'node:os';
 import { join, resolve, basename, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
-import { personalEscolar } from '../database/cargar-escolar.js';
+import { personalEscolar } from './datos.js';
 
 const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function verificarInterfaz(base, credenciales, expirarSesion) {
   const chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   await access(chrome);
   const perfil = await mkdtemp(join(tmpdir(), 'sice-preview-'));
-  const proceso = spawn(chrome, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${perfil}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore', windowsHide: true });
+  const opciones = process.env.CHROME_NO_SANDBOX === '1' ? ['--no-sandbox'] : [];
+  const proceso = spawn(chrome, ['--headless=new', ...opciones, '--remote-debugging-port=0', `--user-data-dir=${perfil}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore', windowsHide: true });
   let socket;
   try {
     let puerto;
@@ -27,6 +28,7 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     socket = new WebSocket(navegador.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
     let secuencia = 0, navegaciones = 0, erroresJavaScript = 0, sesionPrincipal;
+    // Relaciona cada respuesta de DevTools con su petición y propaga los errores al caso correspondiente.
     const pendientes = new Map();
     socket.addEventListener('message', (evento) => {
       const mensaje = JSON.parse(evento.data);
@@ -296,6 +298,7 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     await esperar("document.querySelector('#detail-content > .eyebrow').textContent.includes('en seguimiento')");
     await verificarPanel('expediente-detalle');
     assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Descargar PDF')"), true);
+    // Aísla las cookies de AD, D y SD para comprobar decisiones entre sesiones independientes.
     async function verificarTresSesiones() {
       const sesiones = {};
       const contextos = [];
@@ -422,6 +425,56 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       console.log('Gestión de cuentas: tres sesiones independientes, solicitud, reautenticación, ejecución y desacuerdo bloqueado en navegador.');
     }
     await verificarTresSesiones();
+    // Comprueba desde los formularios los cambios de expediente, la matrícula y su autorización.
+    const codigoCambio = await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.match(/INC-\\d+/)[0]");
+    const abrirCambio = async () => {
+      await evaluar("document.querySelector('#nav-list').click()");
+      await esperar("document.querySelector('#list-view').hidden === false");
+      await evaluar(`document.querySelector('#search').value = ${JSON.stringify(codigoCambio)}; document.querySelector('#search-form').requestSubmit()`);
+      await esperar("document.querySelector('#incident-rows').children.length === 1");
+      await evaluar("document.querySelector('#incident-rows button').click()");
+      await esperar("document.querySelector('#detail-view').hidden === false");
+    };
+    const operacion = async (boton, contrasena, extra = '') => {
+      await evaluar(`[...document.querySelectorAll('#detail-content button')].find(b => b.textContent === ${JSON.stringify(boton)}).click()`);
+      await esperar("Boolean(document.querySelector('#sensitive-operation'))");
+      await evaluar(`(() => { const f = document.querySelector('#sensitive-operation'); f.elements.motivo.value = 'Fundamento independiente de la prueba de navegador.'; f.elements.contrasena.value = ${JSON.stringify(contrasena)}; f.elements.independencia.checked = true; ${extra} f.requestSubmit(); })()`);
+      await esperar("!document.querySelector('#sensitive-operation')");
+    };
+    await evaluar("[...document.querySelectorAll('#detail-content button')].find(b => b.textContent === 'Solicitar rectificación').click()");
+    await esperar("Boolean(document.querySelector('#correction-password'))");
+    await evaluar(`document.querySelector('#incident-title').value = 'Título rectificado conservando los hechos'; document.querySelector('#correction-reason').value = 'Corrección material del título.'; document.querySelector('#correction-password').value = ${JSON.stringify(credenciales.DIRECTOR_PASSWORD)}; document.querySelector('#incident-form').requestSubmit()`);
+    await esperar("document.querySelector('#detail-view').hidden === false && document.querySelector('#message').textContent.includes('Propuesta presentada')");
+    assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Evaluar revisión necesaria')"), false);
+    await evaluar("document.querySelector('#logout').click()");
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    await ingresar('mhuaman', credenciales.SUBDIRECTOR_PASSWORD);
+    await esperar("document.querySelector('#workspace')?.hidden === false");
+    await abrirCambio();
+    await operacion('Evaluar revisión necesaria', credenciales.SUBDIRECTOR_PASSWORD, "f.elements.revision.value = 'false';");
+    await operacion('Aprobar solicitud', credenciales.SUBDIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content h2').textContent"), 'Título rectificado conservando los hechos');
+    await operacion('Cerrar expediente', credenciales.SUBDIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.includes('cerrada')"), true);
+    await operacion('Reabrir expediente', credenciales.SUBDIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.includes('en seguimiento')"), true);
+    await evaluar("document.querySelector('#nav-student').click()");
+    await esperar("document.querySelector('#student-view').hidden === false");
+    await evaluar(`(() => { const f = document.querySelector('#student-form'); f.elements.nombres.value = 'Estudiante de navegador'; f.elements.apellidos.value = 'Prueba institucional'; f.elements.codigo_estudiante.value = 'BROW-ST01'; f.elements.id_aula.selectedIndex = 1; f.elements.fecha_inicio.value = '2026-03-02'; f.elements.contrasena.value = ${JSON.stringify(credenciales.SUBDIRECTOR_PASSWORD)}; f.requestSubmit(); })()`);
+    await esperar("document.querySelector('#message').textContent.includes('BROW-ST01')");
+    await abrirCambio();
+    const duplicada = await evaluar(`(async () => { const d = await (await fetch('/api/incidencias')).json(); return d.incidencias.find(i => Number(i.id) !== Number(${JSON.stringify(codigoCambio.slice(4))}) && i.estado !== 'borrador' && i.estado !== 'anulada').id; })()`);
+    await operacion('Solicitar anulación lógica', credenciales.SUBDIRECTOR_PASSWORD, `f.elements.duplicada.value = ${JSON.stringify(duplicada)};`);
+    await evaluar("document.querySelector('#logout').click()");
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    await ingresar('rsalazar', credenciales.DIRECTOR_PASSWORD);
+    await esperar("document.querySelector('#workspace')?.hidden === false");
+    await abrirCambio();
+    await operacion('Evaluar revisión necesaria', credenciales.DIRECTOR_PASSWORD, "f.elements.revision.value = 'false';");
+    await operacion('Aprobar solicitud', credenciales.DIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.includes('anulada')"), true);
+    assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Reabrir expediente')"), false);
+    console.log('Expedientes: rectificación independiente, cierre, reapertura, anulación lógica y estudiante guardados desde Chrome.');
     assert.equal(erroresJavaScript, 0, 'Sin excepciones JavaScript en las sesiones del navegador');
     await enviar('Browser.close');
   } finally {
@@ -433,6 +486,7 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         setTimeout(finalizar, 3000).unref();
       });
     }
+    // Solo elimina el perfil temporal creado por esta ejecución, después de cerrar Chrome.
     const rutaPerfil = resolve(perfil);
     if (!rutaPerfil.startsWith(resolve(tmpdir()) + sep) || !basename(rutaPerfil).startsWith('sice-preview-')) {
       throw new Error('Ruta temporal inesperada; no se elimina.');

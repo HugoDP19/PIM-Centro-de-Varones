@@ -5,6 +5,7 @@ const password = document.getElementById('password');
 const loginButton = document.getElementById('login-button');
 let redirigiendo = false;
 
+// Evita mezclar el resultado del acceso actual con avisos de una sesión anterior.
 function limpiarAvisos() {
   for (const mensaje of [feedback, status]) {
     mensaje.hidden = true;
@@ -26,6 +27,7 @@ function abrirPanel() {
   location.replace('/panel.html');
 }
 
+// Restablece el formulario y consume el motivo de cierre para no repetirlo al recargar.
 function mostrarAcceso() {
   limpiarAvisos();
   form.reset();
@@ -48,6 +50,7 @@ function mostrarAcceso() {
   password.value = '';
 }
 
+// Centraliza las peticiones de acceso con cookies del mismo origen y tiempo límite.
 async function solicitar(ruta, datos) {
   const response = await fetch(`/api/auth/${ruta}`, {
     method: datos ? 'POST' : 'GET', credentials: 'same-origin',
@@ -58,6 +61,7 @@ async function solicitar(ruta, datos) {
   return { response, resultado };
 }
 
+// Bloquea envíos repetidos mientras comprueba el acceso y limpia la contraseña al terminar.
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (loginButton.disabled || redirigiendo) return;
@@ -81,6 +85,7 @@ document.getElementById('show-password').addEventListener('click', (event) => {
   event.currentTarget.setAttribute('aria-pressed', String(mostrar));
 });
 
+// Consulta la sesión real antes de mostrar el acceso o redirigir al panel.
 async function recuperarSesion() {
   redirigiendo = false;
   form.hidden = true;

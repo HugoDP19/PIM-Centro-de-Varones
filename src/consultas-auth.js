@@ -12,6 +12,7 @@ export async function buscarUsuario(db, nombre, bloquear = false) {
   return filas[0];
 }
 
+// Obtiene las concesiones del rol actual; los límites institucionales se aplican además en el servidor.
 export async function cargarPermisos(db, usuario) {
   const [filas] = await db.execute(`
     SELECT p.codigo FROM permisos p JOIN roles_permisos rp ON rp.id_permiso = p.id
@@ -19,6 +20,7 @@ export async function cargarPermisos(db, usuario) {
   return { ...usuario, permisos: filas.map((fila) => fila.codigo) };
 }
 
+// Añade el evento de acceso al historial con el actor y rol que lo realizaron.
 export async function registrarAcceso(db, usuario, accion) {
   await db.execute(`
     INSERT INTO historial (id_actor, id_rol_actor, ocurrido_en, accion, id_usuario_afectado)
@@ -41,6 +43,7 @@ export async function limitarIntentos(db, ip, nombre) {
   return true;
 }
 
+// Persiste solo resúmenes del token y la credencial, con fechas de actividad y vencimiento.
 export async function guardarSesion(db, usuario, token, anterior) {
   if (anterior) await db.execute('DELETE FROM sesiones WHERE token_hash = ?', [resumir(anterior)]);
   await db.execute(`
@@ -51,12 +54,13 @@ export async function guardarSesion(db, usuario, token, anterior) {
   await registrarAcceso(db, usuario, 'sesion_iniciada');
 }
 
+// Comprueba vencimiento, inactividad y credencial vigente para invalidar sesiones antiguas.
 export async function buscarSesion(db, token) {
   const [filas] = await db.execute(`${seleccionUsuario}
     JOIN sesiones s ON s.id_usuario = u.id
     WHERE s.token_hash = ? AND s.vence_en > UTC_TIMESTAMP(6)
       AND s.ultima_actividad_en > DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE)
-      AND s.credencial_hash = SHA2(u.contrasena_hash, 256)
+      AND s.credencial_hash = CONVERT(SHA2(u.contrasena_hash, 256) USING ascii) COLLATE ascii_bin
       AND u.activo = 1 AND p.activo = 1 AND p.es_personal = 1`, [resumir(token)]);
   if (!filas[0]) {
     await db.execute('DELETE FROM sesiones WHERE token_hash = ?', [resumir(token)]);
@@ -66,6 +70,7 @@ export async function buscarSesion(db, token) {
   return cargarPermisos(db, filas[0]);
 }
 
+// Revoca el token concreto y deja evidencia del cierre de sesión.
 export async function borrarSesion(db, token, usuario) {
   await db.execute('DELETE FROM sesiones WHERE token_hash = ?', [resumir(token)]);
   await registrarAcceso(db, usuario, 'sesion_cerrada');

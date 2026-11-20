@@ -1,27 +1,32 @@
-import 'dotenv/config';
-import mysql from 'mysql2/promise';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { createDatabasePool } from '../src/database.js';
 
-export async function leerSentencias(archivo) {
-  const sql = await readFile(new URL(archivo, import.meta.url), 'utf8');
+const tablasTecnicas = ['sesiones', 'intentos_acceso', 'autorizaciones_cuentas'];
+
+// Lee el esquema y admite únicamente DDL de tablas; no permite instrucciones para cambiar de base.
+export async function leerSentencias() {
+  const sql = await readFile(new URL('schema.sql', import.meta.url), 'utf8');
   const sentencias = sql.replace(/--[^\n]*/g, '').split(';').map((s) => s.trim()).filter(Boolean);
-  if (['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql', 'solicitudes-cuentas.sql'].includes(archivo)
-      && sentencias.some((s) => !/^(CREATE TABLE|ALTER TABLE)\s/i.test(s))) {
-    throw new Error('DDL inesperado: no se permiten cambios de base, borrados ni instrucciones ajenas al esquema.');
+  if (sentencias.some((s) => !/^(CREATE TABLE|ALTER TABLE)\s/.test(s))) {
+    throw new Error('El esquema solo puede contener CREATE TABLE y ALTER TABLE.');
   }
   return sentencias;
 }
 
-export async function verificarEsquema(conexion) {
-  const sentencias = await leerSentencias('schema.sql');
+// Contrasta columnas, claves e índices con los metadatos y exige FK y CHECK habilitados.
+export async function verificarEsquema(conexion, soloEscolares = false) {
+  const [[opciones]] = await conexion.execute('SELECT @@check_constraint_checks AS checks, @@foreign_key_checks AS claves');
+  assert.equal(Number(opciones.checks), 1, 'Los CHECK deben estar activos.');
+  assert.equal(Number(opciones.claves), 1, 'Las claves foráneas deben estar activas.');
+  const sentencias = (await leerSentencias()).filter((s) => !soloEscolares || !tablasTecnicas.some((tabla) => s.startsWith(`CREATE TABLE ${tabla} (`)));
   const tablas = sentencias.filter((s) => s.startsWith('CREATE TABLE'));
   const [columnas] = await conexion.execute(`
     SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, ORDINAL_POSITION`);
   const [restricciones] = await conexion.execute(`
-    SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE, ENFORCED
+    SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE
     FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE()`);
   const [indices] = await conexion.execute(`
     SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX, NON_UNIQUE
@@ -42,14 +47,14 @@ export async function verificarEsquema(conexion) {
     for (const m of sql.matchAll(/(UNIQUE )?KEY (\w+) \(([^)]+)\)/g)) {
       const actual = indices.filter((i) => i.TABLE_NAME === tabla && i.INDEX_NAME === m[2]);
       assert.deepEqual(actual.map((i) => i.COLUMN_NAME), m[3].split(',').map((s) => s.trim()), `Índice ${m[2]}`);
-      assert.ok(actual.every((i) => i.NON_UNIQUE === (m[1] ? 0 : 1)));
+      assert.ok(actual.every((i) => Number(i.NON_UNIQUE) === (m[1] ? 0 : 1)));
     }
   }
   const completo = sentencias.join('\n');
   for (const m of completo.matchAll(/CONSTRAINT (\w+)\s+(?:CHECK|FOREIGN KEY)/g)) {
     const actual = restricciones.find((c) => c.CONSTRAINT_NAME === m[1]);
     assert.ok(actual, `Restricción ${m[1]}`);
-    if (actual.CONSTRAINT_TYPE === 'CHECK') assert.equal(actual.ENFORCED, 'YES');
+    assert.equal(actual.CONSTRAINT_TYPE, /CONSTRAINT \w+\s+CHECK/.test(m[0]) ? 'CHECK' : 'FOREIGN KEY');
   }
   for (const m of completo.matchAll(/CONSTRAINT (\w+)\s+FOREIGN KEY\s*\(([^)]+)\)\s+REFERENCES (\w+)\s*\(([^)]+)\)/g)) {
     const actual = relaciones.filter((r) => r.CONSTRAINT_NAME === m[1]);
@@ -64,64 +69,42 @@ export async function verificarEsquema(conexion) {
     }), `Índice de soporte ${m[1]}`);
   }
   return { tablas: tablas.length, columnas: columnas.filter((c) => tablas.some((s) => s.startsWith(`CREATE TABLE ${c.TABLE_NAME} (`))).length,
-    clavesForaneas: [...completo.matchAll(/FOREIGN KEY/g)].length, checks: [...completo.matchAll(/CONSTRAINT \w+ CHECK/g)].length };
+    clavesForaneas: [...completo.matchAll(/FOREIGN KEY/g)].length,
+    checks: new Set([...completo.matchAll(/CONSTRAINT (\w+) CHECK/g)].map((m) => m[1])).size };
 }
 
-export async function concederGestionCuentas(db) {
-  for (const [codigo, descripcion] of [['cuentas.solicitar', 'Solicitar cambios de cuentas'], ['cuentas.ejecutar', 'Ejecutar cambios aprobados de cuentas']]) {
-    await db.execute('INSERT INTO permisos (codigo, descripcion) VALUES (?, ?) ON DUPLICATE KEY UPDATE codigo = codigo', [codigo, descripcion]);
-    await db.execute(`INSERT INTO roles_permisos (id_rol, id_permiso)
-      SELECT r.id, p.id FROM roles r JOIN permisos p ON p.codigo = ?
-      WHERE r.codigo IN ('director', 'subdirector', 'administrador')
-      ON DUPLICATE KEY UPDATE id_rol = id_rol`, [codigo]);
+// Valida primero el modelo escolar y crea solo las tablas técnicas que todavía no existen.
+export async function prepararBase(conexion) {
+  const [[{ base, version }]] = await conexion.query('SELECT DATABASE() AS base, VERSION() AS version');
+  if (process.env.NODE_ENV !== 'development' || process.env.DB_HOST !== '127.0.0.1'
+      || !['sice', 'sice_local'].includes(base?.toLowerCase())) {
+    throw new Error('La preparación solo permite SICE o sice_local en desarrollo local.');
   }
-}
-
-export async function actualizarGestionCuentas(db) {
-  const [columnas] = await db.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'autorizaciones_cuentas' AND COLUMN_NAME = 'id_solicitante'`);
-  if (!columnas.length) for (const sentencia of await leerSentencias('solicitudes-cuentas.sql')) await db.query(sentencia);
-  await db.beginTransaction();
-  try { await concederGestionCuentas(db); await db.commit(); }
-  catch (error) { await db.rollback(); throw error; }
-}
-
-export async function prepararBase(nombre, actualizarCuentas = false) {
-  if (actualizarCuentas && process.env.NODE_ENV !== 'development') throw new Error('La actualización de cuentas solo está habilitada en desarrollo.');
-  if (process.env.NODE_ENV === 'production' || nombre.toUpperCase() !== 'SICE') {
-    throw new Error('La preparación solo permite SICE fuera de producción.');
+  if (!/MariaDB/i.test(version)) throw new Error('Se requiere MariaDB.');
+  await verificarEsquema(conexion, true);
+  const [tablas] = await conexion.query('SHOW TABLES');
+  const existentes = new Set(tablas.map((fila) => Object.values(fila)[0]));
+  const pendientes = (await leerSentencias()).filter((sql) => tablasTecnicas.some((tabla) =>
+    sql.startsWith(`CREATE TABLE ${tabla} (`) && !existentes.has(tabla)));
+  // MariaDB valida sintaxis y privilegios sin ejecutar el DDL.
+  for (const sql of pendientes) {
+    await conexion.query('PREPARE sice_tabla FROM ?', [sql]);
+    await conexion.query('DEALLOCATE PREPARE sice_tabla');
   }
-  for (const clave of ['DB_USER', 'DB_PASSWORD']) {
-    if (!process.env[clave]?.trim()) throw new Error(`Falta ${clave} en .env.`);
-  }
-  const conexion = await mysql.createConnection({ host: '127.0.0.1', port: 3306,
-    user: process.env.DB_USER, password: process.env.DB_PASSWORD, timezone: 'Z', multipleStatements: false });
-  try {
-    const [[{ version }]] = await conexion.execute('SELECT VERSION() AS version');
-    if (!/^8\./.test(version)) throw new Error('Se requiere MySQL 8.');
-    const [existentes] = await conexion.execute('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?', [nombre]);
-    const nueva = existentes.length === 0;
-    if (nueva) await conexion.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
-    await conexion.changeUser({ database: nombre });
-    if (nueva) {
-      for (const archivo of ['schema.sql', 'autenticacion.sql', 'gestion-cuentas.sql', 'solicitudes-cuentas.sql']) {
-        for (const sentencia of await leerSentencias(archivo)) await conexion.query(sentencia);
-      }
-    }
-    if (actualizarCuentas) await actualizarGestionCuentas(conexion);
-    // Nunca reejecutar DDL sobre una base existente, ni reparar parcialmente a ciegas.
-    const resultado = await verificarEsquema(conexion);
-    await conexion.execute('SELECT token_hash FROM sesiones LIMIT 0');
-    await conexion.execute('SELECT clave FROM intentos_acceso LIMIT 0');
-    await conexion.execute('SELECT id FROM autorizaciones_cuentas LIMIT 0');
-    return { base: nombre, nueva, version, ...resultado, tablasTecnicas: 3 };
-  } finally { await conexion.end(); }
+  for (const sql of pendientes) await conexion.query(sql);
+  return { base, creadas: pendientes.map((sql) => sql.match(/^CREATE TABLE (\w+)/)[1]),
+    ...await verificarEsquema(conexion) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { console.log(JSON.stringify(await prepararBase(process.argv[2] || 'SICE', process.argv.includes('--cuentas')))); }
-  catch (error) {
-    console.error(error.code ? `Preparación detenida (${error.code}); no se borraron datos.` : error.message);
+  const pool = createDatabasePool();
+  let conexion;
+  try {
+    if (process.argv.length > 2) throw new Error('db:prepare no acepta opciones; solo completa las tablas técnicas faltantes.');
+    conexion = await pool.getConnection();
+    console.log(JSON.stringify(await prepararBase(conexion)));
+  } catch (error) {
+    console.error(error.code ? `Preparación detenida (${error.code}); revisar esquema y permisos CREATE.` : error.message);
     process.exitCode = 1;
-  }
+  } finally { if (conexion) conexion.release(); await pool.end(); }
 }

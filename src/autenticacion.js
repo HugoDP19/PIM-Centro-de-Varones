@@ -1,12 +1,23 @@
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
-import { verificarHash, roles, tienePermiso, permisosEfectivos } from './seguridad.js';
+import { verificarHash, roles, tienePermiso, permisosEfectivos, resumir, rechazar } from './seguridad.js';
+import { limpiarIntentoReautenticacion } from './consultas-cuentas.js';
 import { buscarUsuario, cargarPermisos, limitarIntentos, guardarSesion, buscarSesion, borrarSesion, registrarAcceso } from './consultas-auth.js';
 
 export function opcionesCookie(produccion) {
   return { httpOnly: true, secure: produccion, sameSite: 'strict', path: '/' };
 }
 
+// Confirma otra vez la identidad y limita en SQL los intentos de operaciones sensibles.
+export async function reautenticar(pool, req) {
+  const contrasena = req.body?.contrasena;
+  if (typeof contrasena !== 'string' || Buffer.byteLength(contrasena) > 256) rechazar(400, 'Confirma tu contraseña actual.');
+  if (!await limitarIntentos(pool, `reauth:${req.ip}`, `reauth:${req.usuario.id}`)) rechazar(429, 'Demasiados intentos. Espera 15 minutos.');
+  if (!await verificarHash(contrasena, req.usuario.contrasena_hash)) rechazar(403, 'No se pudo confirmar tu identidad. Revisa tu contraseña.');
+  await limpiarIntentoReautenticacion(pool, resumir(`cuenta:reauth:${req.usuario.id}`));
+}
+
+// Exige JSON y un origen conocido para las escrituras; en producción también requiere HTTPS.
 export function protegerSolicitudes({ origin, produccion = false }) {
   return (req, res, next) => {
     if (produccion && !req.secure) return res.status(403).json({ error: 'Se requiere una conexión HTTPS.' });
@@ -18,6 +29,7 @@ export function protegerSolicitudes({ origin, produccion = false }) {
   };
 }
 
+// Acepta una sola cookie con el formato esperado para evitar tokens ambiguos.
 function leerToken(req, nombre) {
   const valores = (req.headers.cookie || '').split(';').map((s) => s.trim()).filter((s) => s.startsWith(`${nombre}=`));
   if (valores.length !== 1) return null;
@@ -25,6 +37,7 @@ function leerToken(req, nombre) {
   return /^[a-f0-9]{64}$/.test(token) ? token : null;
 }
 
+// Expone identidad y permisos efectivos, sin devolver hashes ni datos internos de la cuenta.
 function usuarioPublico(usuario) {
   return { id: usuario.id, nombre: usuario.nombre, nombre_usuario: usuario.nombre_usuario,
     rol: usuario.rol, permisos: permisosEfectivos(usuario) };
@@ -44,6 +57,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
   const opciones = opcionesCookie(produccion);
   const limpiar = (res) => res.clearCookie(cookie, opciones);
 
+  // Revalida la sesión en MariaDB en cada petición antes de entregar el usuario a las rutas.
   async function exigirSesion(req, res, next) {
     if (!pool) return res.status(503).json({ error: 'El servicio de acceso no está disponible.' });
     const token = leerToken(req, cookie);
@@ -63,6 +77,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
   });
   router.use(protegerSolicitudes({ origin, produccion }));
 
+  // Comprueba el acceso y guarda sesión y auditoría en una transacción; los rechazos no identifican cuentas.
   router.post('/login', async (req, res) => {
     const { usuario, contrasena } = req.body || {};
     if (typeof usuario !== 'string' || !/^[a-zA-Z0-9._-]{3,60}$/.test(usuario)
@@ -102,6 +117,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
     res.json({ usuario: usuarioPublico(req.usuario), entorno: produccion ? 'produccion' : 'desarrollo' });
   });
 
+  // Revoca la sesión persistida y elimina la cookie del navegador.
   router.post('/logout', exigirSesion, async (req, res) => {
     const conexion = await pool.getConnection();
     try {

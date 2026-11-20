@@ -6,6 +6,7 @@ const parametros = { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 };
 export const roles = ['director', 'subdirector', 'coordinador_tutoria', 'docente', 'auxiliar', 'administrador'];
 const hashInexistente = `scrypt$131072$8$1$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 
+// Resume tokens e identificadores técnicos con SHA-256.
 export function resumir(valor) {
   return createHash('sha256').update(valor).digest('hex');
 }
@@ -16,6 +17,7 @@ export function contrasenaValida(contrasena) {
     && /[^A-Za-z0-9\s]/.test(contrasena);
 }
 
+// Usa aleatoriedad criptográfica y repite hasta cumplir la política de contraseña.
 export function generarContrasena() {
   const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*?';
   let contrasena;
@@ -25,6 +27,7 @@ export function generarContrasena() {
   return contrasena;
 }
 
+// Deriva la credencial con scrypt y una sal nueva; guarda los parámetros junto con el resultado.
 export async function crearHash(contrasena) {
   if (!contrasenaValida(contrasena)) {
     rechazar(400, 'La contraseña debe tener entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo.');
@@ -34,6 +37,7 @@ export async function crearHash(contrasena) {
   return `scrypt$131072$8$1$${sal}$${clave.toString('hex')}`;
 }
 
+// Deriva incluso ante un formato inválido y compara los resultados en tiempo constante.
 export async function verificarHash(contrasena, guardado) {
   const valido = typeof guardado === 'string' && /^scrypt\$131072\$8\$1\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(guardado);
   const partes = (valido ? guardado : hashInexistente).split('$');
@@ -53,6 +57,10 @@ export const limitesPermisos = {
   'incidencias.registrar': operativos,
   'incidencias.consultar': operativos,
   'incidencias.seguimiento': operativos,
+  'incidencias.solicitar': operativos,
+  'incidencias.resolver': ['director', 'subdirector'],
+  'incidencias.cerrar': ['director', 'subdirector', 'coordinador_tutoria'],
+  'estudiantes.crear': ['director', 'subdirector', 'coordinador_tutoria'],
   'incidencias.exportar': operativos,
   'incidencias.restringidas': ['director', 'subdirector']
 };

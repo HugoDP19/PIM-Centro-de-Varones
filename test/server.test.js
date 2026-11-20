@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request } from 'node:http';
-import app, { createApp } from '../src/app.js';
+import { createApp } from '../src/app.js';
 import { createDatabasePool } from '../src/database.js';
 
 test('servidor, portada y recursos locales', async (t) => {
-  const server = app.listen(0, '127.0.0.1');
+  const server = createApp().listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
   const base = `http://127.0.0.1:${server.address().port}`;

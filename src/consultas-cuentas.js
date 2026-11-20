@@ -1,3 +1,4 @@
+// Reúne cuentas, personal y permisos necesarios para gestión, sin consultar expedientes escolares.
 export async function catalogosCuentas(db) {
   const [usuarios] = await db.execute(`SELECT u.id, u.id_persona, u.id_rol, u.nombre_usuario, u.activo,
     CONCAT(p.nombres, ' ', p.apellidos) AS nombre, r.codigo AS rol FROM usuarios u
@@ -43,6 +44,7 @@ export async function solicitudes(db) {
 export async function autorizacion(db, id) {
   const [[fila]] = await db.execute('SELECT * FROM autorizaciones_cuentas WHERE id = ? FOR UPDATE', [id]); return fila;
 }
+// Busca un cambio pendiente equivalente para reutilizarlo dentro del bloqueo de gestión.
 export async function solicitudEquivalente(db, datos) {
   const campos = ['tipo', 'id_solicitante', 'id_rol_solicitante', 'id_usuario_objetivo', 'id_persona',
     'id_rol_objetivo', 'id_permiso', 'nombre_usuario', 'activo', 'huella_objetivo'];
@@ -54,10 +56,12 @@ export async function solicitudEquivalente(db, datos) {
 export async function asignacion(db, idRol, idPermiso) {
   const [filas] = await db.execute('SELECT id_rol FROM roles_permisos WHERE id_rol = ? AND id_permiso = ?', [idRol, idPermiso]); return filas.length > 0;
 }
+// Actualiza únicamente campos definidos por el servidor y revoca las sesiones de la cuenta.
 export async function cambiarCuenta(db, id, datos) {
   await db.execute(`UPDATE usuarios SET ${Object.keys(datos).map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, [...Object.values(datos), id]);
   await db.execute('DELETE FROM sesiones WHERE id_usuario = ?', [id]);
 }
+// Modifica la relación rol-permiso y revoca las sesiones afectadas por esa concesión.
 export async function cambiarPermiso(db, idRol, idPermiso, conceder) {
   if (conceder) await db.execute('INSERT INTO roles_permisos (id_rol, id_permiso) VALUES (?, ?)', [idRol, idPermiso]);
   else await db.execute('DELETE FROM roles_permisos WHERE id_rol = ? AND id_permiso = ?', [idRol, idPermiso]);
@@ -72,11 +76,12 @@ export async function bloquearGestion(db) {
   await db.execute('SELECT id FROM roles ORDER BY id FOR UPDATE');
 }
 
+// Verifica el token y su credencial dentro de la transacción que ejecutará el cambio sensible.
 export async function sesionVigente(db, token, idUsuario) {
   const [filas] = await db.execute(`SELECT s.id_usuario FROM sesiones s JOIN usuarios u ON u.id = s.id_usuario
-    WHERE s.token_hash = SHA2(?, 256) AND s.id_usuario = ? AND s.vence_en > UTC_TIMESTAMP(6)
+    WHERE s.token_hash = CONVERT(SHA2(?, 256) USING ascii) COLLATE ascii_bin AND s.id_usuario = ? AND s.vence_en > UTC_TIMESTAMP(6)
       AND s.ultima_actividad_en > DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE)
-      AND s.credencial_hash = SHA2(u.contrasena_hash, 256)`, [token, idUsuario]);
+      AND s.credencial_hash = CONVERT(SHA2(u.contrasena_hash, 256) USING ascii) COLLATE ascii_bin`, [token, idUsuario]);
   return filas.length === 1;
 }
 
@@ -94,6 +99,7 @@ export async function activosDelRol(db, idRol) {
   return Number(fila.cantidad);
 }
 
+// Consulta la evidencia de cambios de una cuenta, con sus actores y fechas.
 export async function historialCuenta(db, id) {
   const [filas] = await db.execute(`SELECT h.accion, h.ocurrido_en, h.motivo, h.campo, h.valor_anterior, h.valor_nuevo,
     u.nombre_usuario AS actor FROM historial h LEFT JOIN usuarios u ON u.id = h.id_actor

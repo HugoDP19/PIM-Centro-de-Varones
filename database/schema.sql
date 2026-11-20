@@ -1,7 +1,7 @@
 -- SICE-Local / I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
--- Fase 2.5: borrador técnico de las 19 tablas propuestas, no modelo aprobado.
--- MySQL 8.0.16 o superior: versiones anteriores no aplican los CHECK.
--- Ejecutar completo solo en una base de pruebas vacía, elegida y autorizada
+-- Esquema completo: 19 tablas escolares y tres tablas técnicas.
+-- MariaDB 10.11 o superior; mantener activos CHECK y claves foráneas.
+-- Instalación completa solo en una base vacía, elegida y autorizada
 -- fuera del script. No crea bases, usuarios, permisos SQL ni datos iniciales.
 -- No es una migración ni es idempotente; no usar --force para ignorar errores.
 -- No se desactivan FK. Las dos referencias circulares se agregan al final.
@@ -59,7 +59,7 @@ CREATE TABLE personas (
         OR (pais_documento IS NOT NULL AND tipo_documento IS NOT NULL AND numero_documento IS NOT NULL)
     ),
     CONSTRAINT ck_personas_booleanos CHECK (es_personal IN (0, 1) AND activo IN (0, 1))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE roles (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -72,7 +72,7 @@ CREATE TABLE roles (
     CONSTRAINT ck_roles_codigo CHECK (codigo IN (
         'director', 'subdirector', 'coordinador_tutoria', 'docente', 'auxiliar', 'administrador'
     ))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE usuarios (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -88,7 +88,7 @@ CREATE TABLE usuarios (
     CONSTRAINT fk_usuarios_persona FOREIGN KEY (id_persona) REFERENCES personas (id),
     CONSTRAINT fk_usuarios_rol FOREIGN KEY (id_rol) REFERENCES roles (id),
     CONSTRAINT ck_usuarios_activo CHECK (activo IN (0, 1))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE permisos (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -96,7 +96,7 @@ CREATE TABLE permisos (
     descripcion VARCHAR(255) NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_permisos_codigo (codigo)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE roles_permisos (
     id_rol BIGINT UNSIGNED NOT NULL,
@@ -104,7 +104,7 @@ CREATE TABLE roles_permisos (
     PRIMARY KEY (id_rol, id_permiso),
     CONSTRAINT fk_roles_permisos_rol FOREIGN KEY (id_rol) REFERENCES roles (id),
     CONSTRAINT fk_roles_permisos_permiso FOREIGN KEY (id_permiso) REFERENCES permisos (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estudiantes (
     id_persona BIGINT UNSIGNED NOT NULL,
@@ -115,7 +115,7 @@ CREATE TABLE estudiantes (
     UNIQUE KEY uq_estudiantes_codigo (codigo_estudiante),
     CONSTRAINT fk_estudiantes_persona FOREIGN KEY (id_persona) REFERENCES personas (id),
     CONSTRAINT ck_estudiantes_activo CHECK (activo IN (0, 1))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estudiantes_apoderados (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -133,7 +133,7 @@ CREATE TABLE estudiantes_apoderados (
     CONSTRAINT ck_apoderados_personas CHECK (id_estudiante <> id_apoderado),
     CONSTRAINT ck_apoderados_principal CHECK (es_principal IN (0, 1)),
     CONSTRAINT ck_apoderados_periodo CHECK (vigente_hasta IS NULL OR vigente_hasta >= vigente_desde)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE aulas (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -145,7 +145,7 @@ CREATE TABLE aulas (
     PRIMARY KEY (id),
     UNIQUE KEY uq_aulas_grupo (anio_lectivo, nivel, grado, seccion),
     CONSTRAINT ck_aulas_activo CHECK (activo IN (0, 1))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE matriculas (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -159,7 +159,7 @@ CREATE TABLE matriculas (
     CONSTRAINT fk_matriculas_estudiante FOREIGN KEY (id_estudiante) REFERENCES estudiantes (id_persona),
     CONSTRAINT fk_matriculas_aula FOREIGN KEY (id_aula) REFERENCES aulas (id),
     CONSTRAINT ck_matriculas_periodo CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE tipos_incidencia (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -173,7 +173,7 @@ CREATE TABLE tipos_incidencia (
         'convivencia', 'disciplina', 'salud', 'seguridad', 'bienes', 'proteccion_estudiantil'
     )),
     CONSTRAINT ck_tipos_activo CHECK (activo IN (0, 1))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE incidencias (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -199,7 +199,7 @@ CREATE TABLE incidencias (
         (estado = 'borrador' AND confirmada_en IS NULL)
         OR (estado <> 'borrador' AND confirmada_en IS NOT NULL AND id_version_vigente IS NOT NULL)
     )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE versiones_incidencia (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -259,7 +259,7 @@ CREATE TABLE versiones_incidencia (
         (monto_estimado IS NULL AND moneda IS NULL)
         OR (monto_estimado IS NOT NULL AND monto_estimado >= 0 AND moneda IS NOT NULL)
     )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE involucrados (
     id_version BIGINT UNSIGNED NOT NULL,
@@ -273,7 +273,7 @@ CREATE TABLE involucrados (
     CONSTRAINT fk_involucrados_persona_matricula FOREIGN KEY (id_persona, id_matricula)
         REFERENCES matriculas (id_estudiante, id),
     CONSTRAINT ck_involucrados_participacion CHECK (participacion IN ('afectado', 'testigo', 'involucrado'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE actuaciones (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -297,7 +297,7 @@ CREATE TABLE actuaciones (
     CONSTRAINT fk_actuaciones_correccion FOREIGN KEY (id_incidencia, id_actuacion_corregida)
         REFERENCES actuaciones (id_incidencia, id),
     CONSTRAINT ck_actuaciones_tipo CHECK (tipo IN ('actuacion', 'observacion'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE solicitudes_cambio (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -369,7 +369,7 @@ CREATE TABLE solicitudes_cambio (
     CONSTRAINT ck_solicitudes_revision_aprobada CHECK (
         estado <> 'aprobada' OR requiere_revision = 0 OR id_revision_resolutiva IS NOT NULL
     )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE revisiones (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -418,7 +418,7 @@ CREATE TABLE revisiones (
             AND (requiere_acta = 0 OR acta_emitida_en IS NOT NULL))
     ),
     CONSTRAINT ck_revisiones_periodo CHECK (cerrada_en IS NULL OR cerrada_en >= abierta_en)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE participantes_revision (
     id_revision BIGINT UNSIGNED NOT NULL,
@@ -431,7 +431,7 @@ CREATE TABLE participantes_revision (
     CONSTRAINT fk_participantes_revision FOREIGN KEY (id_revision) REFERENCES revisiones (id),
     CONSTRAINT fk_participantes_persona FOREIGN KEY (id_persona) REFERENCES personas (id),
     CONSTRAINT ck_participantes_asistencia CHECK (asistencia IN ('pendiente', 'asistio', 'ausente'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Antes de historial porque sus eventos pueden referenciar un conflicto.
 CREATE TABLE conflictos_interes (
@@ -458,7 +458,7 @@ CREATE TABLE conflictos_interes (
         OR (id_resolutor IS NOT NULL AND resuelto_en IS NOT NULL AND fundamento_resolucion IS NOT NULL
             AND id_resolutor <> id_usuario_afectado AND estado <> 'pendiente')
     )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE historial (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -508,7 +508,7 @@ CREATE TABLE historial (
     CONSTRAINT fk_historial_conflicto FOREIGN KEY (id_conflicto) REFERENCES conflictos_interes (id),
     CONSTRAINT fk_historial_rol_anterior FOREIGN KEY (id_rol_anterior) REFERENCES roles (id),
     CONSTRAINT fk_historial_rol_nuevo FOREIGN KEY (id_rol_nuevo) REFERENCES roles (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Cerrar ciclos del DDL sin desactivar integridad referencial.
 -- Para registrar: crear incidencia borrador con puntero NULL, crear versión,
@@ -524,3 +524,91 @@ ALTER TABLE solicitudes_cambio
     ADD CONSTRAINT fk_solicitudes_revision_resolutiva
     FOREIGN KEY (id_incidencia, id_revision_resolutiva)
     REFERENCES revisiones (id_incidencia, id);
+
+-- Tablas técnicas necesarias para autenticación; no modifican las 19 del modelo.
+CREATE TABLE sesiones (
+    token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_usuario BIGINT UNSIGNED NOT NULL,
+    credencial_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    creada_en DATETIME(6) NOT NULL,
+    ultima_actividad_en DATETIME(6) NOT NULL,
+    vence_en DATETIME(6) NOT NULL,
+    PRIMARY KEY (token_hash),
+    KEY ix_sesiones_vencimiento (vence_en),
+    CONSTRAINT fk_sesiones_usuario FOREIGN KEY (id_usuario) REFERENCES usuarios (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Claves SHA-256 de IP o nombre de cuenta; nunca contraseñas ni cookies.
+CREATE TABLE intentos_acceso (
+    clave CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    cantidad INT UNSIGNED NOT NULL,
+    vence_en DATETIME(6) NOT NULL,
+    PRIMARY KEY (clave),
+    KEY ix_intentos_vencimiento (vence_en)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Flujo concreto autorizado para desarrollo. No guarda contraseñas ni JSON.
+CREATE TABLE autorizaciones_cuentas (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    tipo VARCHAR(30) NOT NULL,
+    id_usuario_objetivo BIGINT UNSIGNED NULL,
+    id_persona BIGINT UNSIGNED NULL,
+    id_rol_objetivo BIGINT UNSIGNED NULL,
+    id_permiso BIGINT UNSIGNED NULL,
+    nombre_usuario VARCHAR(60) NULL,
+    activo BOOLEAN NULL,
+    huella_objetivo CHAR(64) NULL,
+    id_autorizante BIGINT UNSIGNED NULL,
+    id_rol_autorizante BIGINT UNSIGNED NULL,
+    motivo VARCHAR(500) NOT NULL,
+    autorizada_en DATETIME(6) NULL,
+    vence_en DATETIME(6) NOT NULL,
+    id_ejecutor BIGINT UNSIGNED NULL,
+    ejecutada_en DATETIME(6) NULL,
+    id_solicitante BIGINT UNSIGNED NULL,
+    id_rol_solicitante BIGINT UNSIGNED NULL,
+    solicitada_en DATETIME(6) NULL,
+    estado VARCHAR(30) NOT NULL DEFAULT 'legado',
+    revision_doble BOOLEAN NOT NULL DEFAULT 0,
+    id_decisor_director BIGINT UNSIGNED NULL,
+    decision_director VARCHAR(10) NULL,
+    fundamento_director VARCHAR(500) NULL,
+    decidida_director_en DATETIME(6) NULL,
+    id_decisor_subdirector BIGINT UNSIGNED NULL,
+    decision_subdirector VARCHAR(10) NULL,
+    fundamento_subdirector VARCHAR(500) NULL,
+    decidida_subdirector_en DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_autcuenta_usuario FOREIGN KEY (id_usuario_objetivo) REFERENCES usuarios (id),
+    CONSTRAINT fk_autcuenta_persona FOREIGN KEY (id_persona) REFERENCES personas (id),
+    CONSTRAINT fk_autcuenta_rol FOREIGN KEY (id_rol_objetivo) REFERENCES roles (id),
+    CONSTRAINT fk_autcuenta_permiso FOREIGN KEY (id_permiso) REFERENCES permisos (id),
+    CONSTRAINT fk_autcuenta_autor FOREIGN KEY (id_autorizante) REFERENCES usuarios (id),
+    CONSTRAINT fk_autcuenta_rol_autor FOREIGN KEY (id_rol_autorizante) REFERENCES roles (id),
+    CONSTRAINT fk_autcuenta_ejecutor FOREIGN KEY (id_ejecutor) REFERENCES usuarios (id),
+    CONSTRAINT fk_autcuenta_solicitante FOREIGN KEY (id_solicitante) REFERENCES usuarios (id),
+    CONSTRAINT fk_autcuenta_rol_solicitante FOREIGN KEY (id_rol_solicitante) REFERENCES roles (id),
+    CONSTRAINT fk_autcuenta_decisor_d FOREIGN KEY (id_decisor_director) REFERENCES usuarios (id),
+    CONSTRAINT fk_autcuenta_decisor_sd FOREIGN KEY (id_decisor_subdirector) REFERENCES usuarios (id),
+    CONSTRAINT ck_autcuenta_tipo CHECK (tipo IN (
+        'crear_cuenta', 'actualizar_cuenta', 'editar_cuenta', 'activar_cuenta', 'desactivar_cuenta',
+        'restablecer_clave', 'cambiar_rol', 'asignar_permiso', 'retirar_permiso')),
+    CONSTRAINT ck_autcuenta_activo CHECK (activo IS NULL OR activo IN (0, 1)),
+    CONSTRAINT ck_autcuenta_ejecucion CHECK (
+        (id_ejecutor IS NULL AND ejecutada_en IS NULL)
+        OR (id_ejecutor IS NOT NULL AND ejecutada_en IS NOT NULL AND id_ejecutor <> id_autorizante)
+    ),
+    CONSTRAINT ck_autcuenta_estado CHECK (estado IN ('legado', 'pendiente', 'aprobada', 'rechazada', 'desacuerdo', 'ejecutada')),
+    CONSTRAINT ck_autcuenta_solicitud CHECK (estado = 'legado' OR (id_solicitante IS NOT NULL AND id_rol_solicitante IS NOT NULL AND solicitada_en IS NOT NULL)),
+    CONSTRAINT ck_autcuenta_doble CHECK (revision_doble IN (0, 1)),
+    CONSTRAINT ck_autcuenta_decision_d CHECK (
+        (id_decisor_director IS NULL AND decision_director IS NULL AND fundamento_director IS NULL AND decidida_director_en IS NULL)
+        OR (id_decisor_director IS NOT NULL AND decision_director IS NOT NULL AND decision_director IN ('aprobar', 'rechazar')
+            AND fundamento_director IS NOT NULL AND decidida_director_en IS NOT NULL AND id_decisor_director <> id_solicitante)),
+    CONSTRAINT ck_autcuenta_decision_sd CHECK (
+        (id_decisor_subdirector IS NULL AND decision_subdirector IS NULL AND fundamento_subdirector IS NULL AND decidida_subdirector_en IS NULL)
+        OR (id_decisor_subdirector IS NOT NULL AND decision_subdirector IS NOT NULL AND decision_subdirector IN ('aprobar', 'rechazar')
+            AND fundamento_subdirector IS NOT NULL AND decidida_subdirector_en IS NOT NULL AND id_decisor_subdirector <> id_solicitante)),
+    CONSTRAINT ck_autcuenta_aprobada CHECK (estado NOT IN ('aprobada', 'ejecutada') OR (id_autorizante IS NOT NULL AND autorizada_en IS NOT NULL)),
+    CONSTRAINT ck_autcuenta_ejecutada CHECK (estado <> 'ejecutada' OR (id_ejecutor IS NOT NULL AND ejecutada_en IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

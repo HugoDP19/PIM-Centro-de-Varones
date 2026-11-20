@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { autorizar } from './autenticacion.js';
-import { crearHash, verificarHash, resumir, rechazar, limitesPermisos, tienePermiso, validarIdentificador, validarTexto } from './seguridad.js';
-import { cargarPermisos, limitarIntentos } from './consultas-auth.js';
+import { autorizar, reautenticar } from './autenticacion.js';
+import { crearHash, resumir, rechazar, limitesPermisos, tienePermiso, validarIdentificador, validarTexto } from './seguridad.js';
+import { cargarPermisos } from './consultas-auth.js';
 import { transaccion } from './database.js';
 import { insertar, auditar } from './consultas-incidencias.js';
 import * as consultas from './consultas-cuentas.js';
@@ -20,6 +20,7 @@ const misma = (primera, segunda) => primera != null && segunda != null && String
 const huella = cuenta => resumir([cuenta.id_rol, cuenta.nombre_usuario, cuenta.activo, cuenta.persona_activa, cuenta.contrasena_hash].join('|'));
 const codigoSolicitud = id => `SOL-${String(id).padStart(6, '0')}`;
 
+// Valida los campos según el cambio solicitado; el cliente no decide autorías ni estados.
 function leerSolicitud(cuerpo, directa = false) {
   const campos = camposPorTipo[cuerpo.tipo];
   const permitidos = ['tipo', 'motivo', ...(campos || []), ...(directa ? ['contrasena'] : [])];
@@ -37,7 +38,8 @@ function leerSolicitud(cuerpo, directa = false) {
   return datos;
 }
 
-async function actorVigente(db, usuario, permiso, token) {
+// Bloquea la cuenta y revalida sesión, credencial, rol y permiso antes de escribir.
+export async function actorVigente(db, usuario, permiso, token) {
   const actual = await consultas.cuenta(db, usuario.id, true);
   if (!actual?.activo || !actual.persona_activa || !actual.es_personal
       || actual.contrasena_hash !== usuario.contrasena_hash || !misma(actual.id_rol, usuario.id_rol)
@@ -47,6 +49,7 @@ async function actorVigente(db, usuario, permiso, token) {
   return actor;
 }
 
+// Rechaza cambios propios, objetivos obsoletos y operaciones que rompan la continuidad de autoridades.
 async function validarObjetivo(db, actor, datos) {
   const rol = datos.id_rol_objetivo ? await consultas.rol(db, datos.id_rol_objetivo) : null;
   if (datos.id_rol_objetivo && !rol) rechazar(400, 'Rol no válido.');
@@ -92,6 +95,7 @@ function puedeDecidir(actor, datos) {
   return datos.rol_solicitante === 'administrador' || (autoridades.includes(datos.rol_solicitante) && datos.rol_solicitante !== actor.rol);
 }
 
+// Combina las decisiones de ambas autoridades sin resolver unilateralmente un desacuerdo.
 function resolverEstado(datos) {
   if (!datos.revision_doble) return [datos.decision_director, datos.decision_subdirector].includes('aprobar') ? 'aprobada' : 'rechazada';
   if (!datos.decision_director || !datos.decision_subdirector) return 'pendiente';
@@ -137,6 +141,7 @@ export function rutasCuentas(pool) {
     res.json({ autorizaciones, pendientes: autorizaciones.filter(datos => datos.pendiente_para_usuario).length });
   });
 
+  // Limita la gestión directa del Administrador a las operaciones institucionales permitidas.
   router.post('/directas', autorizar('cuentas.administrar'), async (req, res) => {
     const datos = leerSolicitud(req.body || {}, true);
     if (!['crear_cuenta', 'editar_cuenta'].includes(datos.tipo)) rechazar(403, 'Este cambio requiere una solicitud aprobada.');
@@ -175,15 +180,13 @@ export function rutasCuentas(pool) {
     res.status(resultado.existente ? 200 : 201).json({ ...resultado, codigo: codigoSolicitud(resultado.id) });
   });
 
+  // Reautentica a la autoridad y conserva su decisión independiente sobre el cambio exacto.
   router.post('/autorizaciones/:id/decidir', autorizar('cuentas.autorizar'), async (req, res) => {
     const cuerpo = req.body || {};
     if (Object.keys(cuerpo).some(campo => !['decision', 'fundamento', 'contrasena', 'sin_conflicto'].includes(campo))
         || !['aprobar', 'rechazar'].includes(cuerpo.decision) || cuerpo.sin_conflicto !== true) rechazar(400, 'Indica la decisión y confirma que no tienes conflicto de interés.');
     const fundamento = validarTexto(cuerpo.fundamento, 'fundamento', 500);
-    if (typeof cuerpo.contrasena !== 'string' || Buffer.byteLength(cuerpo.contrasena) > 256) rechazar(400, 'Confirma tu contraseña actual.');
-    if (!await limitarIntentos(pool, `reauth:${req.ip}`, `reauth:${req.usuario.id}`)) rechazar(429, 'Demasiados intentos. Espera 15 minutos.');
-    if (!await verificarHash(cuerpo.contrasena, req.usuario.contrasena_hash)) rechazar(403, 'No se pudo confirmar tu identidad. Revisa tu contraseña.');
-    await consultas.limpiarIntentoReautenticacion(pool, resumir(`cuenta:reauth:${req.usuario.id}`));
+    await reautenticar(pool, req);
     await transaccion(pool, async db => {
       await consultas.bloquearGestion(db);
       const actor = await actorVigente(db, req.usuario, 'cuentas.autorizar', req.tokenSesion);
@@ -206,6 +209,7 @@ export function rutasCuentas(pool) {
     res.json({ decidida: true });
   });
 
+  // Revalida aprobaciones y objetivos y ejecuta el cambio una sola vez, separado de sus decisores.
   router.post('/autorizaciones/:id/ejecutar', autorizar('cuentas.ejecutar'), async (req, res) => {
     if (Object.keys(req.body || {}).some(campo => campo !== 'contrasena')) rechazar(400, 'La ejecución no puede cambiar los valores aprobados.');
     const hash = req.body?.contrasena !== undefined ? await crearHash(req.body.contrasena) : null;

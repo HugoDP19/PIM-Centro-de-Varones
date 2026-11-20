@@ -4,7 +4,9 @@ import { rechazar, tienePermiso, validarIdentificador, validarTexto } from './se
 import { transaccion } from './database.js';
 import * as consultas from './consultas-incidencias.js';
 import { generarInforme } from './informes.js';
+import { rutasCambios } from './cambios-incidencias.js';
 
+// Define los campos de cada categoría; las exigencias de confirmación se comprueban por separado.
 export const camposCategoria = {
   convivencia: ['ambito_convivencia', 'requiere_mediacion'],
   disciplina: ['gravedad_disciplinaria', 'norma_referida'],
@@ -21,6 +23,7 @@ const obligatoriosAlConfirmar = {
   bienes: ['descripcion_dano'], proteccion_estudiantil: ['riesgo_inmediato', 'requiere_derivacion']
 };
 
+// Convierte instantes con zona explícita y rechaza fechas inválidas o futuras.
 function fechaHecho(valor) {
   if (valor === null || valor === '' || valor === undefined) return null;
   if (typeof valor !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:\.\d{1,3})?(Z|[+-]\d\d:\d\d)$/.test(valor)
@@ -61,6 +64,7 @@ async function personaPermitida(conexion, identificador, personasPermitidas) {
   return consultas.persona(conexion, idPersona);
 }
 
+// Contrasta la condición declarada con la identidad permitida y sus perfiles reales.
 async function validarReportante(conexion, cuerpo, personasPermitidas) {
   const reportante = await personaPermitida(conexion, cuerpo.id_reportante, personasPermitidas);
   const condicion = cuerpo.condicion_reportante;
@@ -72,6 +76,7 @@ async function validarReportante(conexion, cuerpo, personasPermitidas) {
   return { id_reportante: reportante.id, condicion_reportante: condicion, nombre_reportante: `${reportante.nombres} ${reportante.apellidos}` };
 }
 
+// Rechaza datos ajenos a la categoría y valida dominios, booleanos e importes.
 function validarCamposCategoria(cuerpo, categoria) {
   const valores = {};
   for (const campo of camposEspecificos) {
@@ -92,6 +97,7 @@ function validarCamposCategoria(cuerpo, categoria) {
   return valores;
 }
 
+// Comprueba que la matrícula pertenezca al estudiante y cubra la fecha declarada del hecho.
 async function validarMatricula(conexion, idMatricula, persona, ocurridaEn) {
   if (!idMatricula) return;
   const matricula = await consultas.matricula(conexion, idMatricula);
@@ -116,6 +122,7 @@ async function validarInvolucrados(conexion, filas, personasPermitidas, ocurrida
   return involucrados;
 }
 
+// Centraliza las validaciones del registro y toma el ámbito de personas desde la sesión.
 export async function validarRegistro(conexion, usuario, cuerpo) {
   const permitidos = ['id_tipo', 'titulo', 'descripcion', 'ocurrida_en', 'lugar', 'id_reportante', 'condicion_reportante',
     'prioridad', 'confidencialidad', 'contenido_sensible', 'involucrados', ...camposEspecificos];
@@ -137,10 +144,24 @@ export async function validarRegistro(conexion, usuario, cuerpo) {
     confidencialidad: cuerpo.contenido_sensible || ['salud', 'proteccion_estudiantil'].includes(tipo.categoria) ? 'restringida' : cuerpo.confidencialidad };
 }
 
+// Devuelve el mismo rechazo para un expediente inexistente o fuera del alcance del usuario.
 async function obtener(db, usuario, id, bloquear = false) {
   const incidencia = await consultas.buscarIncidencia(db, usuario, validarIdentificador(id), bloquear);
   if (!incidencia) rechazar(404, 'Expediente no disponible para este acceso.');
   return incidencia;
+}
+
+// Exige reportante y tipo activos, campos mínimos y la cantidad de estudiantes requerida.
+async function validarConfirmacion(db, datos) {
+  if (!await consultas.tipoIncidencia(db, datos.version.id_tipo)) rechazar(400, 'El tipo de incidencia ya no está activo.');
+  const reportante = await consultas.persona(db, datos.version.id_reportante);
+  if (!reportante?.activo) rechazar(400, 'Revisa la identidad del reportante antes de confirmar.');
+  for (const campo of obligatoriosAlConfirmar[datos.version.categoria]) {
+    if (datos.version[campo] === null || datos.version[campo] === '') rechazar(400, `Completa el campo ${campo} antes de confirmar.`);
+  }
+  if (datos.involucrados.filter(p => p.es_estudiante).length < Number(datos.version.minimo_estudiantes)) {
+    rechazar(400, `Este tipo exige al menos ${datos.version.minimo_estudiantes} estudiante(s).`);
+  }
 }
 
 async function auditarInvolucrados(db, usuario, incidencia, version, filas, accion) {
@@ -163,6 +184,7 @@ export function rutasIncidencias(pool) {
     // Contar y leer con la misma instantánea y el mismo alcance de autorización.
     res.json(await transaccion(pool, db => consultas.listarIncidencias(db, req.usuario, { ...filtros, pagina: Number(pagina) })));
   });
+  // Registra borrador, versión, participantes y auditoría dentro de la misma transacción.
   router.post('/', autorizar('incidencias.registrar'), async (req, res) => {
     const id = await transaccion(pool, async (db) => {
       const datos = await validarRegistro(db, req.usuario, req.body);
@@ -170,7 +192,7 @@ export function rutasIncidencias(pool) {
         nombre_registrador: req.usuario.nombre, registrada_en: new Date(), estado: 'borrador', prioridad: datos.prioridad, confidencialidad: datos.confidencialidad });
       const version = await consultas.insertar(db, 'versiones_incidencia', { ...datos.version, id_incidencia: id,
         numero_version: 1, estado_version: 'borrador', id_autor: req.usuario.id, creada_en: new Date() });
-      await consultas.reemplazarInvolucrados(db, version, datos.involucrados);
+      await consultas.insertarInvolucrados(db, version, datos.involucrados);
       await consultas.fijarEstado(db, id, { id_version_vigente: version });
       await consultas.auditar(db, req.usuario, id, 'incidencia_creada', { id_version: version });
       await auditarInvolucrados(db, req.usuario, id, version, datos.involucrados, 'involucrado_agregado');
@@ -200,6 +222,7 @@ export function rutasIncidencias(pool) {
     });
     res.json(datos);
   });
+  // Cada edición propia añade una versión y conserva los hechos y participantes anteriores.
   router.put('/:id/borrador', autorizar('incidencias.registrar'), async (req, res) => {
     await transaccion(pool, async (db) => {
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
@@ -212,11 +235,12 @@ export function rutasIncidencias(pool) {
           id_version: anterior.version.id, campo, valor_anterior: previo === null ? null : String(previo), valor_nuevo: valor === null ? null : String(valor)
         });
       }
-      await auditarInvolucrados(db, req.usuario, incidencia.id, anterior.version.id, anterior.involucrados, 'involucrado_retirado');
-      await consultas.editarVersion(db, anterior.version.id, datos.version);
-      await consultas.reemplazarInvolucrados(db, anterior.version.id, datos.involucrados);
-      await auditarInvolucrados(db, req.usuario, incidencia.id, anterior.version.id, datos.involucrados, 'involucrado_agregado');
-      const operativos = { prioridad: datos.prioridad, confidencialidad: incidencia.confidencialidad === 'restringida' ? 'restringida' : datos.confidencialidad };
+      const version = await consultas.insertar(db, 'versiones_incidencia', { ...datos.version,
+        id_incidencia: incidencia.id, numero_version: await consultas.numeroVersion(db, incidencia.id),
+        estado_version: 'borrador', id_autor: req.usuario.id, creada_en: new Date() });
+      await consultas.insertarInvolucrados(db, version, datos.involucrados);
+      await auditarInvolucrados(db, req.usuario, incidencia.id, version, datos.involucrados, 'involucrado_agregado');
+      const operativos = { id_version_vigente: version, prioridad: datos.prioridad, confidencialidad: incidencia.confidencialidad === 'restringida' ? 'restringida' : datos.confidencialidad };
       for (const [campo, valor] of Object.entries(operativos)) if (incidencia[campo] !== valor) await consultas.auditar(db, req.usuario, incidencia.id, 'borrador_editado', {
         campo, valor_anterior: incidencia[campo], valor_nuevo: valor
       });
@@ -224,19 +248,13 @@ export function rutasIncidencias(pool) {
     });
     res.json({ estado: 'borrador' });
   });
+  // Solo confirma un borrador propio válido y devuelve constancia si el autor pierde acceso por reserva.
   router.post('/:id/confirmar', autorizar('incidencias.registrar'), async (req, res) => {
     const resultado = await transaccion(pool, async (db) => {
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
       if (incidencia.estado !== 'borrador' || String(incidencia.id_registrador) !== String(req.usuario.id)) rechazar(409, 'La confirmación solo admite un borrador propio.');
       const datos = await consultas.detalleIncidencia(db, incidencia);
-      if (!await consultas.tipoIncidencia(db, datos.version.id_tipo)) rechazar(400, 'El tipo de incidencia ya no está activo.');
-      const reportante = await consultas.persona(db, datos.version.id_reportante);
-      if (!reportante?.activo) rechazar(400, 'Revisa la identidad del reportante antes de confirmar.');
-      for (const campo of obligatoriosAlConfirmar[datos.version.categoria]) {
-        if (datos.version[campo] === null || datos.version[campo] === '') rechazar(400, `Completa el campo ${campo} antes de confirmar.`);
-      }
-      const estudiantes = datos.involucrados.filter((p) => p.es_estudiante).length;
-      if (estudiantes < datos.version.minimo_estudiantes) rechazar(400, `Este tipo exige al menos ${datos.version.minimo_estudiantes} estudiante(s).`);
+      await validarConfirmacion(db, datos);
       await consultas.editarVersion(db, datos.version.id, { estado_version: 'confirmada' });
       await consultas.fijarEstado(db, incidencia.id, { estado: 'confirmada', confirmada_en: new Date() });
       await consultas.auditar(db, req.usuario, incidencia.id, 'incidencia_confirmada', { id_version: datos.version.id });
@@ -244,6 +262,7 @@ export function rutasIncidencias(pool) {
     });
     res.json(resultado);
   });
+  // Añade seguimiento autorizado y eleva la reserva del expediente si incorpora contenido sensible.
   router.post('/:id/actuaciones', autorizar('incidencias.seguimiento'), async (req, res) => {
     if (!tienePermiso(req.usuario, 'incidencias.consultar')) rechazar(403, 'No tienes permiso de consulta para este seguimiento.');
     const resultado = await transaccion(pool, async (db) => {
@@ -276,6 +295,7 @@ export function rutasIncidencias(pool) {
     });
     res.status(201).json(resultado);
   });
+  router.use(rutasCambios(pool, { obtener, validarRegistro, validarConfirmacion }));
   router.use((_req, _res) => rechazar(405, 'Esta operación no está habilitada. Los hechos confirmados se conservan.'));
   return router;
 }

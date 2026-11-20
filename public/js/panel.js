@@ -12,10 +12,12 @@ const campos = {
   bienes: [['descripcion_dano', 'Descripción de la afectación o pérdida', 'area'], ['monto_estimado', 'Importe estimado, si se conoce', 'numero'], ['moneda', 'Moneda del importe (por ejemplo, PEN)', 'texto']],
   proteccion_estudiantil: [['riesgo_inmediato', '¿Existe riesgo inmediato?', 'booleano'], ['requiere_derivacion', '¿Requiere derivación?', 'booleano']]
 };
+// Mantiene solo el estado de la pantalla; los registros persistentes se obtienen desde las API.
 let usuario, catalogo, detalleActual, borradorId = null, cuentaCatalogo, autorizaciones, ejecucion;
 let paginaActual = 1, filtrosActuales = {}, revisionLista = 0;
 let redirigiendo = false;
 let decisionActual;
+let rectificacionId = null;
 let actualizandoSolicitudes = false;
 const lugares = ['Aula', 'Patio de formación', 'Patio de primaria', 'Patio de secundaria', 'Pasillo', 'Pasillo de primaria',
   'Servicios higiénicos', 'Biblioteca', 'Sala de cómputo', 'Losa deportiva', 'Escaleras', 'Ingreso', 'Ingreso de secundaria',
@@ -35,7 +37,7 @@ function aviso(mensaje, error = false) { if (redirigiendo) return; $('message').
 function limpiarAviso() {
   for (const id of ['message', 'account-error']) { $(id).hidden = true; $(id).textContent = ''; }
 }
-function mostrar(vista) { for (const id of ['list-view', 'form-view', 'detail-view', 'accounts-view']) $(id).hidden = id !== vista; limpiarAviso(); }
+function mostrar(vista) { for (const id of ['list-view', 'form-view', 'detail-view', 'accounts-view', 'student-view']) $(id).hidden = id !== vista; limpiarAviso(); }
 function volverAlAcceso(motivo) {
   if (redirigiendo) return;
   redirigiendo = true;
@@ -45,6 +47,7 @@ function volverAlAcceso(motivo) {
   usuario = null;
   location.replace(`/?sesion=${motivo}`);
 }
+// Centraliza HTTP, cookies y errores de sesión; los permisos siguen verificándose en el backend.
 async function api(ruta, method = 'GET', datos) {
   let response;
   try {
@@ -68,6 +71,7 @@ function opciones(select, filas, valor, etiqueta, seleccionado = '') {
   select.value = String(seleccionado ?? '');
 }
 
+// Descarta respuestas antiguas para que una búsqueda lenta no sustituya el listado más reciente.
 async function listar(pagina = paginaActual) {
   const revision = ++revisionLista;
   mostrar('list-view');
@@ -105,6 +109,7 @@ function mostrarPaginacion({ pagina, paginas, total, desde, hasta }) {
   });
 }
 
+// Construye los controles de la categoría y su validación visual; el servidor vuelve a validar los datos.
 function camposCategoria(valores = {}) {
   $('specific-fields').replaceChildren();
   for (const [nombre, etiqueta, tipo] of campos[$('category').value] || []) {
@@ -136,6 +141,7 @@ function condicion(valor = '') {
   if (p && !lista.length) lista.push('externo');
   opciones($('reporter-condition'), lista, (v) => v, estado, valor);
 }
+// Vincula cada persona con sus matrículas disponibles y su participación en el expediente.
 function involucrado(valores = {}) {
   const fila = elemento('div', undefined, 'row g-2 involved-row align-items-end');
   function selector(etiqueta, clase) {
@@ -151,7 +157,12 @@ function involucrado(valores = {}) {
   persona.required = true; participacion.required = true;
   const quitar = elemento('div', undefined, 'col-md-1'); quitar.append(accion('Quitar', () => fila.remove())); fila.append(quitar); $('involved-rows').append(fila);
 }
+// Carga catálogos reales y prepara los datos para crear, editar o proponer una rectificación.
 async function formulario(datos) {
+  rectificacionId = null;
+  $('correction-fields')?.remove();
+  $('save-draft').textContent = 'Guardar borrador y revisar';
+  $('priority').disabled = false;
   catalogo = await json('incidencias/catalogos');
   $('incident-form').reset(); $('involved-rows').replaceChildren();
   borradorId = datos?.incidencia.id || null;
@@ -190,6 +201,7 @@ function actualizarLugar() {
   $('place-other-group').hidden = !otro; $('place-other').required = otro; $('place-other').disabled = !otro;
   $('place-other').setCustomValidity(otro && !$('place-other').value.trim() ? 'Especifica el otro lugar.' : '');
 }
+// Convierte los controles a los tipos y referencias que espera la API, sin incluir autorías del cliente.
 function contenidoFormulario() {
   const cuerpo = { id_tipo: $('incident-type').value, titulo: $('incident-title').value.trim(), descripcion: $('description').value.trim(),
     lugar: $('place').value === 'Aula' ? $('place-classroom').value : $('place').value === 'otro' ? $('place-other').value.trim() : $('place').value,
@@ -203,6 +215,7 @@ function contenidoFormulario() {
 
 function bloque(titulo, contenedor) { const section = elemento('section', undefined, 'record-block'); section.append(elemento('h3', titulo)); contenedor.append(section); return section; }
 function metadatos(destino, pares) { const dl = elemento('dl', undefined, 'record-meta'); for (const [titulo, valor] of pares) { const div = elemento('div'); div.append(elemento('dt', titulo), elemento('dd', valor || 'No precisado')); dl.append(div); } destino.append(dl); }
+// Ofrece acciones según permisos y estado; las operaciones sensibles conservan su validación en el servidor.
 function mostrarEncabezado(datos, destino) {
   const { incidencia, version } = datos;
   destino.append(elemento('p', `${codigo(incidencia.id)} · ${estado(incidencia.estado)} · ${incidencia.confidencialidad}`, 'eyebrow'), elemento('h2', version.titulo, 'h3'));
@@ -218,6 +231,30 @@ function mostrarEncabezado(datos, destino) {
     const blob = await (await api(`incidencias/${incidencia.id}/pdf`)).blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${codigo(incidencia.id)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, 'btn btn-primary'));
   destino.append(botones);
+  if (['confirmada', 'en_seguimiento'].includes(incidencia.estado) && puede('incidencias.solicitar')) {
+    botones.append(accion('Solicitar rectificación', async () => {
+      await formulario(datos); rectificacionId = incidencia.id;
+      $('form-title').textContent = `Proponer rectificación de ${codigo(incidencia.id)}`;
+      $('save-draft').textContent = 'Enviar propuesta de rectificación';
+      $('priority').disabled = true;
+      const campos = elemento('fieldset', undefined, 'mb-4'); campos.id = 'correction-fields';
+      campos.innerHTML = '<legend class="section-legend">Justificación de la propuesta</legend><label class="form-label" for="correction-reason">Motivo</label><textarea id="correction-reason" class="form-control mb-3" required maxlength="5000"></textarea><label class="form-label" for="correction-password">Confirma tu contraseña actual</label><input id="correction-password" type="password" autocomplete="current-password" class="form-control" required maxlength="256"><p class="form-text">Los hechos originales se conservan. Una autoridad independiente evalúa la propuesta; cambiar hechos o participantes exige revisión formal.</p>';
+      $('incident-form').insertBefore(campos, $('save-draft').parentElement);
+    }));
+    botones.append(accion('Solicitar anulación lógica', () => operacionSensible('Solicitar anulación lógica', async (datos, form) => {
+      await json(`incidencias/${incidencia.id}/solicitudes`, 'POST', { tipo: 'anulacion', justificacion: datos.motivo,
+        motivo_anulacion: form.elements.motivo_anulacion.value, id_incidencia_duplicada: form.elements.duplicada.value || undefined, contrasena: datos.contrasena });
+      await abrir(incidencia.id); aviso('Solicitud registrada. El expediente no se elimina.');
+    }, '<label class="form-label">Motivo de anulación<select name="motivo_anulacion" class="form-select"><option value="duplicado">Duplicado comprobable</option><option value="otro">Otro: exige revisión formal</option></select></label><label class="form-label">Número del expediente que se conserva, si es duplicado<input name="duplicada" type="number" min="1" class="form-control"></label>')));
+  }
+  if (puede('incidencias.cerrar') && ['confirmada', 'en_seguimiento', 'cerrada'].includes(incidencia.estado)) {
+    const accionEstado = incidencia.estado === 'cerrada' ? 'reabrir' : 'cerrar';
+    botones.append(accion(accionEstado === 'cerrar' ? 'Cerrar expediente' : 'Reabrir expediente', () => operacionSensible(
+      accionEstado === 'cerrar' ? 'Conclusión y cierre del expediente' : 'Motivo de reapertura', async datos => {
+        await json(`incidencias/${incidencia.id}/estado`, 'POST', { accion: accionEstado, motivo: datos.motivo,
+          contrasena: datos.contrasena, seguimiento_revisado: datos.seguimiento_revisado }); await abrir(incidencia.id);
+      })));
+  }
   metadatos(destino, [['Categoría', categorias[version.categoria]], ['Tipo', version.tipo], ['Fecha del hecho', fecha(version.ocurrida_en)], ['Lugar', version.lugar], ['Prioridad', incidencia.prioridad], ['Registrador', `${incidencia.nombre_registrador} · ${incidencia.cargo_registrador}`], ['Reportante', `${version.nombre_reportante} · ${version.condicion_reportante}`], ['Registro', fecha(incidencia.registrada_en)]]);
 }
 
@@ -231,6 +268,7 @@ function mostrarHechos(datos, destino) {
   for (const [campo, etiqueta, tipo] of campos[version.categoria]) if (version[campo] !== null) especificos.append(elemento('p', `${etiqueta}: ${tipo === 'booleano' ? (version[campo] ? 'Sí' : 'No') : version[campo]}`));
 }
 
+// Presenta las actuaciones y permite añadir seguimiento con responsable, plazo y declaración de sensibilidad.
 function mostrarSeguimiento(datos, destino) {
   const { incidencia, actuaciones, responsables } = datos;
   const seguimiento = bloque('Actuaciones y seguimiento', destino);
@@ -268,14 +306,30 @@ function mostrarSeguimiento(datos, destino) {
   }
 }
 
+// Muestra propuestas y versiones conservadas, con las acciones independientes disponibles para cada usuario.
 function mostrarDocumentos(datos, destino) {
   if (datos.solicitudes.length) {
     const seccion = bloque('Solicitudes conservadas', destino);
     for (const solicitud of datos.solicitudes) {
       seccion.append(elemento('p', `${estado(solicitud.tipo)} · ${estado(solicitud.estado)} · ${solicitud.justificacion}`));
       seccion.append(elemento('p', solicitud.fundamento_decision || 'Decisión pendiente.'));
+      if (solicitud.id_version_propuesta) seccion.append(elemento('p', `Propuesta: ${solicitud.titulo_propuesto} · ${solicitud.lugar_propuesto || 'Lugar no precisado'} · ${solicitud.descripcion_propuesta}`, 'record-text'));
+      if (solicitud.estado === 'pendiente') {
+        const ruta = `incidencias/${datos.incidencia.id}/solicitudes/${solicitud.id}`;
+        if (String(solicitud.id_solicitante) === String(usuario.id)) seccion.append(accion('Retirar solicitud', () => operacionSensible('Retirar solicitud conservando su evidencia', async dato => {
+          await json(`${ruta}/retirar`, 'POST', { motivo: dato.motivo, contrasena: dato.contrasena }); await abrir(datos.incidencia.id);
+        })));
+        if (puede('incidencias.resolver') && String(solicitud.id_solicitante) !== String(usuario.id)) {
+          seccion.append(accion('Evaluar revisión necesaria', () => operacionSensible('Evaluación independiente', async (dato, form) => {
+            await json(`${ruta}/evaluar`, 'POST', { requiere_revision: form.elements.revision.value === 'true', fundamento: dato.motivo, sin_conflicto: dato.sin_conflicto, contrasena: dato.contrasena }); await abrir(datos.incidencia.id);
+          }, '<label class="form-label">Revisión necesaria<select name="revision" class="form-select"><option value="true">Formal con acta</option><option value="false">Documental: error material o duplicado comprobado</option></select></label>')));
+          if (solicitud.id_evaluador) for (const decision of ['aprobar', 'rechazar']) seccion.append(accion(decision === 'aprobar' ? 'Aprobar solicitud' : 'Rechazar solicitud', () => operacionSensible('Decisión independiente: ' + decision, async dato => {
+            await json(`${ruta}/decidir`, 'POST', { decision, fundamento: dato.motivo, sin_conflicto: dato.sin_conflicto, contrasena: dato.contrasena }); await abrir(datos.incidencia.id);
+          })));
+        }
+      }
     }
-    seccion.append(elemento('small', 'Los flujos para presentar y resolver nuevas solicitudes requieren los criterios institucionales pendientes.', 'text-secondary'));
+    seccion.append(elemento('small', 'Las propuestas y decisiones se conservan. La aprobación de cambios que exigen acta sigue bloqueada mientras no se definan composición y quórum institucional.', 'text-secondary'));
   }
   if (datos.versiones.length > 1) {
     const seccion = bloque('Versiones conservadas', destino);
@@ -286,6 +340,24 @@ function mostrarDocumentos(datos, destino) {
       seccion.append(contenido);
     }
   }
+}
+
+// Recoge motivo, contraseña y declaración para una operación concreta, y limpia la clave al finalizar.
+function operacionSensible(titulo, tarea, extras = '') {
+  $('sensitive-operation')?.remove();
+  const form = elemento('form', undefined, 'record-block'); form.id = 'sensitive-operation';
+  form.append(elemento('h3', titulo));
+  const campos = elemento('div');
+  campos.innerHTML = `${extras}<label class="form-label d-block">Motivo o fundamento<textarea name="motivo" class="form-control" maxlength="500" required></textarea></label><label class="form-label d-block">Contraseña actual<input name="contrasena" type="password" autocomplete="current-password" class="form-control" maxlength="256" required></label><label class="form-check-label d-block my-3"><input name="independencia" type="checkbox" required> Declaro no tener conflicto y haber revisado el expediente, actuaciones y plazos pendientes.</label><button class="btn btn-primary">Confirmar operación</button>`;
+  form.append(campos);
+  form.addEventListener('submit', async e => {
+    e.preventDefault(); const boton = form.querySelector('button'); boton.disabled = true;
+    const datos = { motivo: form.elements.motivo.value, contrasena: form.elements.contrasena.value,
+      sin_conflicto: form.elements.independencia.checked, seguimiento_revisado: form.elements.independencia.checked };
+    try { await tarea(datos, form); } catch (error) { aviso(error.message, true); }
+    finally { form.elements.contrasena.value = ''; boton.disabled = false; }
+  });
+  $('detail-content').append(form); form.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function mostrarHistorial(historial, destino) {
@@ -318,6 +390,7 @@ function campoCuenta(nombre, etiqueta, filas, valor, mostrar) {
   if (filas) opciones(input, filas, valor || ((f) => f.id), mostrar || ((f) => f.nombre));
   label.append(input); grupo.append(label); $('authorization-fields').append(grupo); return input;
 }
+// Adapta los datos solicitados al tipo de cambio de cuenta o permiso elegido.
 function camposAutorizacion() {
   limpiarAviso();
   $('authorization-fields').replaceChildren(); const tipo = $('account-action').value;
@@ -329,6 +402,7 @@ function camposAutorizacion() {
   actualizarModoCuenta();
 }
 
+// Distingue las operaciones administrativas directas de las que requieren solicitud y aprobación.
 function operacionDirecta() {
   if (!puede('cuentas.administrar')) return false;
   const formulario = $('authorization-form');
@@ -456,6 +530,7 @@ function mostrarPendientes(cantidad) {
   $('nav-pending').textContent = `Pendientes: ${cantidad}`;
 }
 
+// Separa solicitudes pendientes y conservadas y muestra solo las decisiones o ejecuciones habilitadas.
 function mostrarAutorizaciones() {
   $('authorization-list').replaceChildren();
   const pendientes = elemento('section'); pendientes.id = 'pending-authorization-list';
@@ -508,7 +583,39 @@ $('place').addEventListener('change', actualizarLugar);
 $('place-other').addEventListener('input', actualizarLugar);
 $('category').addEventListener('change', () => { tipos(); camposCategoria(); }); $('incident-type').addEventListener('change', minimo); $('reporter').addEventListener('change', () => condicion());
 $('add-person').addEventListener('click', () => involucrado()); $('account-action').addEventListener('change', camposAutorizacion);
-$('incident-form').addEventListener('submit', async (e) => { e.preventDefault(); $('save-draft').disabled = true; try { const resultado = await json(borradorId ? `incidencias/${borradorId}/borrador` : 'incidencias', borradorId ? 'PUT' : 'POST', contenidoFormulario()); await abrir(borradorId || resultado.id); aviso('Borrador guardado. Revisa los datos antes de confirmar.'); } catch (error) { aviso(error.message, true); } finally { $('save-draft').disabled = false; } });
+// Envía el formulario al flujo de borrador o de propuesta y respeta la pérdida de acceso por reserva.
+$('incident-form').addEventListener('submit', async e => {
+  e.preventDefault(); $('save-draft').disabled = true;
+  try {
+    if (rectificacionId) {
+      const resultado = await json(`incidencias/${rectificacionId}/solicitudes`, 'POST', { tipo: 'rectificacion', justificacion: $('correction-reason').value,
+        contrasena: $('correction-password').value, propuesta: contenidoFormulario() });
+      if (resultado.acceso) { await abrir(rectificacionId); aviso('Propuesta presentada; los hechos originales permanecen vigentes hasta una decisión independiente.'); }
+      else { await listar(); aviso(`Propuesta recibida en ${codigo(rectificacionId)}. El expediente quedó reservado; tu rol no tiene acceso posterior.`); }
+    } else {
+      const resultado = await json(borradorId ? `incidencias/${borradorId}/borrador` : 'incidencias', borradorId ? 'PUT' : 'POST', contenidoFormulario());
+      await abrir(borradorId || resultado.id); aviso('Borrador guardado. Revisa los datos antes de confirmar.');
+    }
+  } catch (error) { aviso(error.message, true); }
+  finally { if ($('correction-password')) $('correction-password').value = ''; $('save-draft').disabled = false; }
+});
+
+$('nav-student').addEventListener('click', async () => {
+  try {
+    $('student-form').reset();
+    opciones($('student-classroom'), await json('estudiantes/aulas'), a => a.id, a => `${a.anio_lectivo} · ${a.nivel} · ${a.grado}.º ${a.seccion}`);
+    mostrar('student-view');
+  } catch (error) { aviso(error.message, true); }
+});
+// Guarda estudiante y matrícula mediante la API y borra la contraseña introducida.
+$('student-form').addEventListener('submit', async e => {
+  e.preventDefault(); const form = e.currentTarget; const boton = form.querySelector('button'); boton.disabled = true;
+  try {
+    const resultado = await json('estudiantes', 'POST', Object.fromEntries(new FormData(form)));
+    form.reset(); aviso(`Estudiante ${resultado.codigo_estudiante} y matrícula registrados.`);
+  } catch (error) { aviso(error.message, true); }
+  finally { $('student-password').value = ''; boton.disabled = false; }
+});
 $('authorization-fields').addEventListener('change', actualizarModoCuenta);
 $('authorization-form').addEventListener('input', limpiarAviso);
 $('authorization-form').addEventListener('change', limpiarAviso);
@@ -586,6 +693,7 @@ for (const [id, tarea] of [['nav-list', listar], ['nav-new', () => formulario()]
   try { await tarea(); } catch (error) { aviso(error.message, true); } finally { $(id).disabled = false; }
 });
 
+// Recupera la sesión y configura navegación y vista inicial a partir de los permisos efectivos.
 async function iniciar() {
   redirigiendo = false;
   $('workspace').hidden = true;
@@ -599,6 +707,7 @@ async function iniciar() {
     $('user-label').textContent = `${usuario.nombre} · ${cargos[usuario.rol]}`;
     $('session-header').hidden = false;
     const operativo = usuario.rol !== 'administrador';
+    $('nav-student').hidden = !puede('estudiantes.crear');
     $('nav-list').hidden = !operativo || !puede('incidencias.consultar'); $('nav-new').hidden = !operativo || !puede('incidencias.registrar'); $('nav-accounts').hidden = !puede('cuentas.consultar');
     if (!$('nav-list').hidden) await listar();
     else if (!$('nav-accounts').hidden) await cuentas();

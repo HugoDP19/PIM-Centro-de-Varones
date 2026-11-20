@@ -2,6 +2,12 @@ import 'dotenv/config';
 import mysql from 'mysql2/promise';
 import { pathToFileURL } from 'node:url';
 
+// Desarrollo local por defecto; respetar siempre el modo configurado explícitamente.
+if (!process.env.NODE_ENV && process.env.DB_HOST === '127.0.0.1') {
+  process.env.NODE_ENV = 'development';
+}
+
+// Confirma la operación completa o la revierte; siempre devuelve la conexión al pool.
 export async function transaccion(pool, operacion) {
   const db = await pool.getConnection();
   try {
@@ -13,6 +19,7 @@ export async function transaccion(pool, operacion) {
   finally { db.release(); }
 }
 
+// Valida la configuración real y conserva fechas UTC e identificadores grandes sin pérdida de precisión.
 export function createDatabasePool(env = process.env) {
   const required = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
   const missing = required.filter((key) => !env[key]?.trim());
@@ -38,15 +45,16 @@ export function createDatabasePool(env = process.env) {
   });
 }
 
+// La ejecución directa comprueba la conexión con una consulta de lectura.
 async function checkDatabase() {
   let pool;
   try {
     pool = createDatabasePool();
     await pool.execute('SELECT 1');
-    console.log('Conexión MySQL verificada.');
+    console.log('Conexión MariaDB verificada.');
   } catch (error) {
     // No imprimir detalles del controlador que puedan contener credenciales.
-    console.error(error.code ? `No se pudo conectar a MySQL (${error.code}).` : error.message);
+    console.error(error.code ? `No se pudo conectar a MariaDB (${error.code}).` : error.message);
     process.exitCode = 1;
   } finally {
     if (pool) await pool.end();

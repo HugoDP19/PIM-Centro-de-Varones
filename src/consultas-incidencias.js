@@ -1,5 +1,6 @@
 import { tienePermiso } from './seguridad.js';
 
+// Construye el filtro común de ámbito, confidencialidad y conflictos para las consultas del expediente.
 export function alcance(usuario) {
   const autoridad = ['director', 'subdirector'].includes(usuario.rol);
   const internos = ['director', 'subdirector', 'coordinador_tutoria'].includes(usuario.rol);
@@ -14,6 +15,7 @@ export function alcance(usuario) {
   };
 }
 
+// Aplica el mismo filtro al conteo y a la página de resultados, con parámetros separados del SQL.
 export async function listarIncidencias(db, usuario, { buscar = '', pagina = 1, codigo, desde, hasta, categoria = '', estado = '' } = {}) {
   const filtro = alcance(usuario);
   const condiciones = [filtro.sql], parametros = [...filtro.valores];
@@ -59,6 +61,7 @@ export async function versionActual(db, incidencia) {
   return version;
 }
 
+// Oculta identidades reservadas al usuario sin acceso y limita las matrículas a personas visibles.
 export async function catalogos(db, usuario) {
   const reserva = tienePermiso(usuario, 'incidencias.restringidas');
   const [tipos] = await db.execute('SELECT id, categoria, nombre, minimo_estudiantes FROM tipos_incidencia WHERE activo = 1 ORDER BY categoria, nombre');
@@ -86,6 +89,7 @@ export async function persona(db, id) {
   return fila;
 }
 
+// Reúne versión, participantes y evidencias del expediente cuya lectura ya fue autorizada.
 export async function detalleIncidencia(db, incidencia) {
   const version = await versionActual(db, incidencia);
   const [involucrados] = await db.execute(`SELECT inv.*, CONCAT(p.nombres, ' ', p.apellidos) AS nombre,
@@ -104,10 +108,12 @@ export async function detalleIncidencia(db, incidencia) {
     FROM historial h JOIN usuarios u ON u.id = h.id_actor JOIN personas p ON p.id = u.id_persona
     JOIN roles r ON r.id = h.id_rol_actor WHERE h.id_incidencia = ? ORDER BY h.ocurrido_en, h.id`, [incidencia.id]);
   const [versiones] = await db.execute('SELECT id, numero_version, estado_version, creada_en, titulo, descripcion, lugar, nombre_reportante FROM versiones_incidencia WHERE id_incidencia = ? ORDER BY numero_version', [incidencia.id]);
-  const [solicitudes] = await db.execute(`SELECT s.id, s.tipo, s.estado, s.justificacion, s.fundamento_decision,
-    s.creada_en, s.decidida_en, ps.nombres AS solicitante, pd.nombres AS decisor FROM solicitudes_cambio s
+  const [solicitudes] = await db.execute(`SELECT s.*, ps.nombres AS solicitante, pd.nombres AS decisor,
+    us.id_persona AS id_persona_solicitante, vp.titulo AS titulo_propuesto, vp.descripcion AS descripcion_propuesta,
+    vp.lugar AS lugar_propuesto FROM solicitudes_cambio s
     JOIN usuarios us ON us.id = s.id_solicitante JOIN personas ps ON ps.id = us.id_persona
-    LEFT JOIN usuarios ud ON ud.id = s.id_decisor LEFT JOIN personas pd ON pd.id = ud.id_persona WHERE s.id_incidencia = ?`, [incidencia.id]);
+    LEFT JOIN usuarios ud ON ud.id = s.id_decisor LEFT JOIN personas pd ON pd.id = ud.id_persona
+    LEFT JOIN versiones_incidencia vp ON vp.id = s.id_version_propuesta WHERE s.id_incidencia = ? ORDER BY s.id`, [incidencia.id]);
   const [responsables] = await db.execute(`SELECT u.id, r.codigo AS rol, CONCAT(p.nombres, ' ', p.apellidos) AS nombre
     FROM usuarios u JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol
     WHERE u.activo = 1 AND p.activo = 1
@@ -119,6 +125,7 @@ export async function detalleIncidencia(db, incidencia) {
   return { incidencia, version, involucrados, actuaciones, historial, versiones, solicitudes, responsables };
 }
 
+// Añade una evidencia con actor, rol y referencias; no reemplaza eventos anteriores.
 export async function auditar(db, usuario, incidencia, accion, datos = {}) {
   const campos = { id_actor: usuario.id, id_rol_actor: usuario.id_rol, id_incidencia: incidencia,
     ocurrido_en: new Date(), accion, ...datos };
@@ -136,13 +143,45 @@ export async function editarVersion(db, id, datos) {
   await db.execute(`UPDATE versiones_incidencia SET ${Object.keys(datos).map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, [...Object.values(datos), id]);
 }
 
-export async function reemplazarInvolucrados(db, version, involucrados) {
-  await db.execute('DELETE FROM involucrados WHERE id_version = ?', [version]);
+// Añade participantes a una versión nueva sin borrar los de versiones anteriores.
+export async function insertarInvolucrados(db, version, involucrados) {
   for (const fila of involucrados) await insertar(db, 'involucrados', { id_version: version, ...fila });
 }
 
 export async function fijarEstado(db, id, datos) {
   await db.execute(`UPDATE incidencias SET ${Object.keys(datos).map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, [...Object.values(datos), id]);
+}
+
+export async function solicitudesPendientes(db, incidencia) {
+  return (await db.execute("SELECT id FROM solicitudes_cambio WHERE id_incidencia = ? AND estado = 'pendiente'", [incidencia]))[0];
+}
+
+// Bloquea la solicitud del expediente para serializar su evaluación o resolución.
+export async function solicitudCambio(db, id, incidencia) {
+  return (await db.execute(`SELECT s.*, u.id_persona AS id_persona_solicitante FROM solicitudes_cambio s
+    JOIN usuarios u ON u.id = s.id_solicitante WHERE s.id = ? AND s.id_incidencia = ? FOR UPDATE`, [id, incidencia]))[0][0];
+}
+
+export async function actualizarSolicitud(db, id, datos) {
+  await db.execute(`UPDATE solicitudes_cambio SET ${Object.keys(datos).map(c => `${c} = ?`).join(', ')} WHERE id = ?`, [...Object.values(datos), id]);
+}
+
+// El llamador mantiene bloqueado el expediente para asignar un número de versión sin colisiones.
+export async function numeroVersion(db, incidencia) {
+  const [[fila]] = await db.execute('SELECT MAX(numero_version) AS numero FROM versiones_incidencia WHERE id_incidencia = ?', [incidencia]);
+  return Number(fila.numero) + 1;
+}
+
+export async function versionPorId(db, id) {
+  return (await db.execute('SELECT * FROM versiones_incidencia WHERE id = ?', [id]))[0][0];
+}
+
+export async function participantesVersion(db, id) {
+  return (await db.execute('SELECT id_persona, id_matricula, participacion FROM involucrados WHERE id_version = ? ORDER BY id_persona', [id]))[0];
+}
+
+export async function aulasActivas(db) {
+  return (await db.execute('SELECT id, anio_lectivo, nivel, grado, seccion FROM aulas WHERE activo = 1 ORDER BY anio_lectivo DESC, nivel, grado, seccion'))[0];
 }
 
 export async function tipoIncidencia(db, id) {
@@ -160,6 +199,7 @@ export async function actuacionDelCaso(db, id, incidencia) {
   return fila;
 }
 
+// Valida cuenta, permisos, ámbito y conflictos antes de asignar responsabilidad de seguimiento.
 export async function responsableDelCaso(db, id, incidencia) {
   const [[fila]] = await db.execute(`SELECT u.id, r.codigo AS rol FROM usuarios u JOIN personas p ON p.id = u.id_persona
     JOIN roles r ON r.id = u.id_rol WHERE u.id = ? AND u.activo = 1 AND p.activo = 1
