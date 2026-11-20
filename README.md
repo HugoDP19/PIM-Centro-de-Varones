@@ -1,101 +1,94 @@
-﻿# SICE-Local
+# SICE-Local
 
-Sistema de registro y seguimiento de incidencias escolares de la I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete.
+Sistema local de registro, seguimiento e informes de incidencias escolares para la **I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete**, que atiende a estudiantes varones de primaria y secundaria.
 
-Disponible en desarrollo: autenticación, cuentas y permisos con autorización independiente, registro de seis categorías, borradores, confirmación, consulta, seguimiento, historial e informes PDF institucionales. La matriz y los formularios fueron autorizados para desarrollo; los módulos de gestión permanecen bloqueados en producción hasta su validación institucional.
+Proyecto para revisión del instructor. Las reglas y formularios están implementados para desarrollo; requieren validación institucional antes de su uso en producción. Los módulos de gestión permanecen bloqueados fuera de desarrollo.
 
-## Preparación local
+## Tecnologías y requisitos
 
-Requiere Node.js 24 o superior y MySQL 8. Validado con MySQL 8.0.46 en `127.0.0.1:3306`.
+- Node.js **24 o superior**, Express, mysql2 y MySQL Server **8** (verificado con 8.0.46).
+- HTML5, CSS3, Bootstrap 5 y JavaScript vanilla. Bootstrap se sirve localmente.
+- PDFKit para informes; `node:test`, Chrome y PDF.js para verificaciones.
+- MySQL local en `127.0.0.1:3306` para los comandos de preparación. Chrome solo es necesario para las pruebas de interfaz.
 
-1. Ejecutar `npm ci`.
-2. Configurar `.env` desde `.env.example`: `NODE_ENV=development`, `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_NAME=SICE` y las credenciales SQL locales. No compartirlas ni versionarlas.
-3. Ejecutar `npm run db:prepare`. Crea únicamente `SICE` si no existe; si existe, comprueba el esquema sin sobrescribir datos. No es una herramienta de migración de instalaciones anteriores.
-4. En una instalación nueva, ejecutar `npm run db:escolar`. Prepara los 24 expedientes originales y seis cuentas con nombres sintéticos naturales. Repetirlo no crea duplicados ni restablece contraseñas. La ampliación autorizada se ejecuta explícitamente con `npm run db:escolar -- --completar-26`: añade solo dos casos cuando existen exactamente los 24 originales; repetirla conserva los 26. Ambos comandos están limitados a SICE local en desarrollo. La instalación actual ya tiene 26 expedientes y no necesita recargarse.
-5. En una instalación anterior al flujo de solicitudes, ejecutar `npm run db:cuentas` antes de iniciar el servidor. Amplía la tabla existente de autorizaciones y concede los dos permisos nuevos a los tres roles de gestión; conserva los expedientes y el historial. Requiere `NODE_ENV=development`.
-6. Ejecutar `npm start`, abrir http://127.0.0.1:3000 e ingresar directamente al panel. Para desarrollo con reinicio: `npm run dev`.
+## Funcionalidades implementadas
 
-En PowerShell con scripts deshabilitados, usar `npm.cmd`. `APP_ORIGIN` debe coincidir exactamente con el origen del navegador, incluido el puerto. El servidor verifica conexión y columnas necesarias antes de escuchar; si falta configuración o esquema, termina con un mensaje comprensible. `db:prepare` solo ejecuta DDL en bases nuevas; sobre una base existente verifica, sin borrar ni reparar a ciegas. El lector de DDL rechaza instrucciones `USE`, `CREATE DATABASE` o sentencias ajenas a CREATE/ALTER TABLE.
+- Login, acceso directo al panel, sesiones revocables, expiración y cambio consecutivo de usuario.
+- Seis roles, permisos verificados en el backend y restricciones por confidencialidad y conflicto de interés. El Administrador no accede a expedientes.
+- Gestión de cuentas, solicitudes, decisiones independientes con contraseña y ejecución autorizada; historial de cambios.
+- Seis categorías de incidencias, borradores, revisión y confirmación. Los hechos confirmados no se editan directamente ni se eliminan físicamente.
+- Consulta con páginas de 20 registros y búsqueda por código, estudiante autorizado, fecha `dd/mm/aaaa` o título; filtros de categoría y estado.
+- Actuaciones, observaciones, versiones, historial y PDF institucional con el logo original y espacios para firma y sello físicos.
 
-La base actual tiene **22 tablas**: las 19 del modelo escolar, dos técnicas de autenticación y una de autorizaciones concretas de cuentas. `involucrados` relaciona personas; los adultos no reciben matrículas ficticias. Se mantienen 187 columnas, 64 FK y 41 CHECK en las 19 tablas del esquema escolar.
+Pendientes: solicitudes nuevas de rectificación/anulación de expedientes, revisión con acta, cierre/reapertura, administración de catálogos y procedimiento institucional ante desacuerdo, ausencia o conflicto de autoridades. También faltan definir acceso parcial, conservación y respaldos, y preparar HTTPS y privilegios SQL mínimos para producción. Los ejemplos precargados de estos procedimientos son datos, no flujos implementados.
 
-El 2 de noviembre de 2026 se migraron a `SICE` los **24 expedientes escolares seleccionados**, con sus 28 versiones, 30 participaciones, 51 actuaciones, cinco solicitudes, una revisión, cuatro participantes y un conflicto. Se conservaron las siete cuentas vigentes, sus permisos y la auditoría relacionada (300 eventos). No se incluyeron sesiones ni límites de acceso antiguos. `sice_desarrollo` permanece intacta con sus 58 incidencias, incluidos los prototipos y registros de verificación. El respaldo completo y las configuraciones originales están fuera del repositorio, en `%LOCALAPPDATA%\SICE\respaldos\respaldo-2026-11-02-ac716c\`. MySQL en Windows normaliza físicamente el nombre a `sice` (`lower_case_table_names=1`); la configuración usa `SICE`.
+## Instalación local
 
-## Cuentas de la colección escolar
+1. Clonar el [repositorio oficial](https://github.com/HugoDP19/PIM-Centro-de-Varones) y seleccionar la rama que se revisará (`develop` reúne los avances integrados).
+2. Ejecutar `npm ci`.
+3. Copiar `.env.example` a `.env`. Completar `DB_USER` y `DB_PASSWORD` con las credenciales de esa computadora y establecer `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_NAME=SICE` y `NODE_ENV=development`. Mantener `APP_ORIGIN=http://127.0.0.1:3000` si se usa el puerto predeterminado.
+4. En una instalación nueva, ejecutar:
 
-Las contraseñas de acceso se consultan localmente en `.env.escolar.local`, ignorado por Git, como `<ROL>_PASSWORD`. No compartir ni versionar ese archivo. Para crear o restablecer una clave se exigen entre **8 y 12 caracteres**, con al menos una mayúscula, una minúscula, un número y un signo; el backend valida la regla y conserva el hash scrypt con sal individual. La carga nueva genera claves aleatorias que cumplen estas condiciones.
+   ```text
+   npm run db:prepare
+   npm run db:escolar
+   ```
 
-La configuración se limita a `.env` (servidor/MySQL) y `.env.escolar.local` (las seis variables institucionales `<ROL>_PASSWORD`). En esta instalación, las seis cuentas institucionales comparten la contraseña inicial indicada en ese archivo; MySQL conserva un hash scrypt con sal independiente para cada una. Se retiraron las doce variables históricas `DEMO_*_PASSWORD` y `PRUEBAS_*_PASSWORD`, sin uso actual, y `CUENTA_PASSWORD`, cuyo valor era redundante. La cuenta adicional `rvega` se conserva sin cambios y su clave vigente coincide con la inicial institucional; no requiere otra variable local.
+   `db:prepare` crea las 22 tablas únicamente si `SICE` no existe. Sobre una base existente verifica el esquema, sin sobrescribir datos ni reparar incompatibilidades automáticamente. `db:escolar` carga explícitamente 24 expedientes sintéticos y seis cuentas; genera contraseñas aleatorias en `.env.escolar.local`. Repetir la carga no duplica expedientes ni restablece claves. En una instalación ya preparada, conservar sus cuentas y datos locales.
 
-| Usuario | Rol |
-| --- | --- |
-| `rsalazar` | Director |
-| `mhuaman` | Subdirector |
-| `jparedes` | Coordinador de Tutoría |
-| `lramos` | Docente |
-| `ctorres` | Auxiliar |
-| `hugodp19` | Administrador — Hugo Vargas |
-| `rvega` | Docente (cuenta adicional de esta instalación) |
+5. Ejecutar `npm start` y abrir **http://127.0.0.1:3000**. Para reiniciar automáticamente al editar código: `npm run dev`. En PowerShell con scripts deshabilitados, usar `npm.cmd`.
 
-Para ingresar, abrir http://127.0.0.1:3000 y escribir el usuario de la tabla y su clave local. El acceso correcto lleva directamente al panel; si ya existe una sesión válida, se entra automáticamente. La cabecera muestra nombre, rol y «Cerrar sesión» para cambiar de cuenta. Al salir, el formulario queda limpio y muestra «Sesión cerrada correctamente»; el aviso desaparece al iniciar otro acceso y no se repite al recargar. Las páginas de desarrollo unifican `localhost` y `127.0.0.1` en el origen configurado, conservando las comprobaciones CSRF. Si el servidor detecta una sesión caducada al cargar o utilizar el panel, se vuelve al login con un mensaje claro. El Administrador solo ve cuentas y permisos autorizados.
+`APP_ORIGIN` debe coincidir con el origen y puerto del navegador. En desarrollo, la navegación entre `localhost` y `127.0.0.1` se normaliza al origen configurado. El servidor comprueba MySQL y el esquema antes de escuchar; no ejecuta cargas de datos al arrancar.
 
-El 12 de noviembre de 2026 se verificó la contraseña inicial común y se regeneraron los hashes de las seis cuentas institucionales mediante el mecanismo existente, revocando sus sesiones anteriores. Fue un mantenimiento local solicitado por el usuario: conserva roles, permisos, autores históricos y los 24 expedientes, sin cambiar el flujo de autorización de cuentas de la aplicación ni otras bases existentes.
+### Datos y cuentas de cada computadora
 
-## Gestión de cuentas
+Cada instalación tiene su propia base `SICE`, contraseñas y expedientes sintéticos. Git no sincroniza MySQL: casa e instituto pueden tener datos distintos. No copiar `.env`, claves ni respaldos al repositorio y no recargar bases existentes para igualarlas.
 
-Administrador, Director y Subdirector comparten la sección «Gestión de cuentas»: tabla con acciones, historial, formularios y solicitudes pendientes. El Administrador puede crear directamente cuentas operativas inactivas para personal existente y editar su nombre de usuario. La identidad personal se conserva; activar/desactivar, restablecer claves y cambiar roles/permisos requieren solicitud. Las cuentas de autoridad o Administrador necesitan autorización independiente también para creación y edición básica.
+Las cuentas de la carga escolar son:
 
-Las solicitudes del Director las decide el Subdirector, y viceversa. Para solicitudes del Administrador, activar/desactivar o restablecer se resuelve con la primera decisión válida de una autoridad. Cambios de rol o permisos requieren ambas decisiones: dos aprobaciones autorizan; rechazo del Director implica rechazo cuando ambas decisiones están registradas; aprobación del Director y rechazo del Subdirector deja «Revisión por desacuerdo», sin ejecución. La creación solicitada de una cuenta de autoridad o Administrador también exige ambas revisiones cuando la pide el Administrador.
+| Usuario | Rol | Variable local de contraseña |
+| --- | --- | --- |
+| `rsalazar` | Director | `DIRECTOR_PASSWORD` |
+| `mhuaman` | Subdirector | `SUBDIRECTOR_PASSWORD` |
+| `jparedes` | Coordinador de Tutoría | `COORDINADOR_TUTORIA_PASSWORD` |
+| `lramos` | Docente | `DOCENTE_PASSWORD` |
+| `ctorres` | Auxiliar | `AUXILIAR_PASSWORD` |
+| `hugodp19` | Administrador | `ADMINISTRADOR_PASSWORD` |
 
-Para aprobar o rechazar se exige contraseña actual, fundamento y declaración de ausencia de conflicto. Quien decide no ejecuta; el solicitante u otro gestor habilitado puede ejecutar una aprobación vigente, con los valores exactos. Las solicitudes vencen 24 horas después de crearse. Se bloquean cambios propios, permisos del propio rol, escalamiento incompatible, valores obsoletos y operaciones que dejen sin Director, Subdirector o último Administrador activo. Crear cuentas no las activa automáticamente.
+Consultar las claves solo en el archivo local `.env.escolar.local`. Si posteriormente se cambian usuarios, estados o claves, prevalecen los datos vigentes en MySQL. Las contraseñas nuevas requieren entre 8 y 12 caracteres, mayúscula, minúscula, número y signo; se almacenan con scrypt y sal individual.
 
-Se auditan solicitante, decisiones, ejecutor y valores; las contraseñas solo se procesan para crear/restablecer o reautenticar y no se guardan en solicitudes ni historial. Cambios de cuenta o permisos revocan las sesiones afectadas. Las autorizaciones antiguas conservan su evidencia, pero no habilitan nuevas ejecuciones con el procedimiento anterior.
+Opcionalmente, `npm run db:escolar -- --completar-26` añade dos casos completos únicamente a la colección original de 24. Es una operación explícita, limitada al desarrollo local; si ya están los 26, no añade más. No usarla para normalizar datos entre computadoras.
 
-Pendiente institucional: procedimiento documentado para resolver desacuerdos, ausencia o conflicto de la autoridad requerida. No hay aprobación excepcional ni resolución unilateral. Estas funciones siguen habilitadas únicamente en desarrollo.
+Para una instalación anterior al flujo de solicitudes de cuentas, revisar el esquema y ejecutar `npm run db:cuentas` cuando corresponda. Actualiza la tabla de autorizaciones y permisos de gestión sin reemplazar expedientes. No es necesario en instalaciones nuevas preparadas con los scripts actuales.
 
-## Incidencias e informes
-
-La matriz aplicada en desarrollo exige permiso específico por acción: D/SD pueden consultar internos y restringidos; Coordinador, internos; Docente/Auxiliar, internos registrados por ellos; Administrador, ningún expediente. Conflictos pendientes o inhibiciones bloquean al afectado. Los filtros se aplican también a búsquedas, detalle, versiones, seguimiento, historial y PDF. Los catálogos ofrecen identificación mínima y excluyen identidades de casos reservados a accesos sin permiso; no habilitan administrar personas ni catálogos escolares.
-
-El registrador, su nombre histórico, rol y fechas de registro se obtienen de la sesión/servidor. El reportante se selecciona separadamente. Se guarda un borrador explícito, se revisa y se confirma. Al confirmar se validan los campos por categoría y el mínimo estudiantil configurado en el tipo; una incidencia admite cero, uno o varios estudiantes y también testigos adultos. Los hechos confirmados no se editan ni se eliminan físicamente. El seguimiento se agrega como actuación u observación; una corrección referencia la actuación anterior y conserva ambas.
-
-Salud y Protección estudiantil se restringen automáticamente. En las demás categorías el registrador debe declarar la sensibilidad del contenido; no hay un clasificador automático de narrativas. Testigos confidenciales, presunta violencia u otra información sensible exigen marcar la reserva. Añadir seguimiento sensible eleva la protección en la misma transacción; quien pierda acceso recibe solo constancia. Esta interfaz no reduce confidencialidad.
-
-El PDF requiere permiso de consulta y exportación y un expediente confirmado dentro del ámbito del usuario. Usa PDFKit, A4, blanco/guinda, logo original, tablas, siete secciones, código, emisión en hora de Lima y numeración de páginas. Firma y cargo corresponden a la identidad histórica del registrador, aunque descargue otro usuario. Solo se reservan espacios para firma y sello del Director físicos; no se insertan firmas ni sellos falsos. Se genera al descargar desde el detalle del expediente, sin guardar ejemplos en el proyecto. La interfaz prioriza computadoras y laptops, con adaptación básica para ventanas pequeñas.
-
-Los escenarios cargados de rectificación, rechazo, anulación, reunión/acta e inhibición son datos para revisión. Presentar y resolver nuevas solicitudes, cerrar/reabrir casos y administrar catálogos siguen pendientes de los criterios institucionales correspondientes. No se simulan esos flujos.
-
-## Seguridad y API
-
-Sesiones revocables en MySQL: tokens aleatorios de 256 bits guardados como SHA-256, expiración de 8 horas e inactividad de 30 minutos; rotación al ingresar. Hash de contraseñas scrypt con sal individual (`N=131072`, `r=8`, `p=1`). Cookies `HttpOnly`, `SameSite=Strict` y `Secure`/prefijo `__Host-` en producción. Se revalidan cuenta/persona, contraseña, rol y permisos en cada solicitud. Límites de intentos persistidos: 10 por cuenta y 100 por IP en 15 minutos. Se auditan accesos/cierres sin secretos.
-
-| Ruta | Uso |
-| --- | --- |
-| `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/sesion` | Autenticación y sesión |
-| `GET /api/incidencias`, `GET /api/incidencias/catalogos`, `GET /api/incidencias/:id` | Listado paginado, catálogos mínimos y detalle autorizado |
-| `POST /api/incidencias`, `PUT /api/incidencias/:id/borrador`, `POST /api/incidencias/:id/confirmar` | Registro y confirmación |
-| `POST /api/incidencias/:id/actuaciones`, `GET /api/incidencias/:id/pdf` | Seguimiento e informe |
-| `GET /api/cuentas/catalogos`, `GET /api/cuentas/autorizaciones`, `POST /api/cuentas/autorizaciones`, `POST /api/cuentas/autorizaciones/:id/ejecutar` | Gestión independiente de cuentas |
-| `POST /api/cuentas/directas`, `GET /api/cuentas/:id/historial`, `POST /api/cuentas/autorizaciones/:id/decidir` | Edición básica, historial y decisión con reautenticación |
-
-Las escrituras requieren JSON, `Origin` igual a `APP_ORIGIN` y `X-SICE-Request: 1`, enviados por la interfaz. Sin CORS ni tokens en localStorage. No se exponen errores SQL al cliente. Producción requiere HTTPS; `TRUST_PROXY_LOCAL=1` solo detrás de un proxy HTTPS local de confianza. Faltan certificados/proxy y una cuenta SQL de privilegios mínimos para despliegue. `/api/health` indica disponibilidad HTTP; `npm run db:check` comprueba MySQL.
-
-## Pruebas y datos
+## Verificación
 
 ```text
 npm test
 npm run db:check
 npm run test:mysql
+node test/interfaz-browser.js
 ```
 
-`test:mysql` lee `SICE` en una transacción de solo lectura y crea una copia temporal `sice_test_<identificador aleatorio>`. Comprueba la carga inicial y la ampliación a 26 con rollback, y ejecuta las pruebas de escritura, sesiones, permisos y PDF únicamente en esa copia. Las cuentas institucionales de la copia se habilitan para probar los seis roles; no cambia su estado real. Antes de eliminarla exige creación propia, nombre exacto, misma conexión y mismo servidor. Al finalizar compara las cantidades y huellas de estructura/datos de las 22 tablas de `SICE`, incluidos sus 26 expedientes. Para esta comparación, el servidor principal debe estar detenido: la actividad normal de sus sesiones también modifica su huella. Requiere permisos SQL para crear/eliminar esa base temporal. No modifica expedientes, cuentas, sesiones ni auditoría de `SICE` ni de bases existentes. Las contraseñas de prueba nuevas son aleatorias y permanecen en memoria.
+- `npm test`: pruebas básicas de seguridad, configuración, HTTP y recursos de la interfaz.
+- `db:check`: conexión real con las variables de `.env`.
+- `test:mysql`: pruebas funcionales en una copia temporal propia `sice_test_<identificador>`, eliminada al terminar. Compara las 22 tablas de origen antes y después; no escribe en `SICE`.
+- `interfaz-browser.js`: ejecuta la misma suite funcional y añade Chrome a 1280/1024/768 px. No es necesario ejecutar ambas variantes seguidas. `CHROME_PATH` permite indicar el ejecutable. Perfiles en el directorio temporal del sistema; PDF en memoria, sin capturas ni informes guardados en el proyecto.
 
-`node test/interfaz-browser.js` ejecuta la misma suite aislada y abre un servidor temporal para Chrome a 1280/1024/768 px; no requiere `npm start`. Comprueba acceso, registro, seguimiento y autorización/ejecución de cuentas. `CHROME_PATH` permite indicar la ruta del navegador local. El perfil de Chrome se crea en el directorio temporal del sistema y se elimina al finalizar. No se guardan capturas ni PDF de prueba. PDF.js inspecciona páginas y contenido en memoria; PDFKit genera los informes del servidor.
+La suite funcional requiere la colección escolar original de 24 o su ampliación a 26, las credenciales vigentes en `.env.escolar.local` y permisos MySQL para crear/eliminar su copia temporal. No es una prueba genérica para cualquier colección modificada. Detener el servidor principal durante esa verificación: la actividad normal de sesiones alteraría la comparación de integridad. Las cuentas se habilitan solo en la copia para comprobar los seis roles; su estado original se conserva.
 
-La colección cubre las seis categorías y estados confirmada/en seguimiento/cerrada/anulada. Los expedientes escolares contienen datos sintéticos; la cuenta administrativa usa el nombre configurado expresamente por el usuario. Los resultados y límites de cada etapa se registran en [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md).
+## Organización y seguridad
 
-## Organización
+| Ruta | Contenido |
+| --- | --- |
+| `public/` | HTML, CSS y JavaScript de la interfaz |
+| `src/` | Servidor, autenticación, reglas y consultas parametrizadas |
+| `database/` | Esquema, preparación, actualización y carga sintética explícita |
+| `test/` | Pruebas automatizadas |
+| `image/` | Logo institucional original |
 
-`public/` contiene interfaz y JavaScript vanilla; `src/`, servidor, reglas, rutas y consultas SQL separadas; `database/`, esquemas SQL, actualización de solicitudes de cuentas, preparador y carga escolar; `test/`, pruebas. Se conservan `image/` y el logo original. Sin ORM, React, Angular, TypeScript ni Docker; sin nuevas dependencias.
+Las sesiones se guardan revocables en MySQL; cookies `HttpOnly` y `SameSite`, protección de origen para escrituras y revalidación de permisos en cada petición. Caducan a las 8 horas o tras 30 minutos de inactividad. Ningún permiso configurable permite al Administrador acceder a expedientes.
 
-Referencias técnicas: [PDFKit](https://pdfkit.org/docs/getting_started.html), [contraseñas de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) y [sesiones de OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html). Las decisiones institucionales pendientes se mantienen en `PROJECT_CONTEXT.md` y los documentos de diseño/reglas de `database/`.
+`.gitignore` excluye configuraciones privadas, dependencias instaladas, respaldos y resultados temporales. Conservar `.env.example` sin credenciales. Los scripts SQL de instalación, pruebas, documentos técnicos e imágenes necesarias sí se versionan.
+
+Consultar [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) para avances y verificaciones, y [diseño](database/DISENO.md) y [reglas funcionales](database/REGLAS_FUNCIONALES.md) para las decisiones institucionales y sus límites. El historial distingue las propuestas iniciales de lo implementado posteriormente.
