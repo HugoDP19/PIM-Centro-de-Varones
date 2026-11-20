@@ -1,5 +1,16 @@
 # Contexto de SICE-Local
 
+## Organización y entrega en GitHub — 20 de noviembre de 2026
+
+- El usuario autoriza publicar los avances, integrar mediante PR hacia `develop` y preparar la revisión de `develop` hacia `main`. Esta instrucción sustituye las restricciones de publicación de las etapas anteriores; no autoriza alterar datos locales ni reescribir el historial.
+- Inicio limpio en `feature/incidencias-informes`; `origin` verificado contra el repositorio oficial. Conservados los 38 archivos necesarios, incluido el logo original. No había temporales rastreados ni archivos redundantes que retirar; las copias locales privadas se conservan fuera de Git.
+- `.gitignore` amplía las exclusiones de exportaciones/respaldos locales, resultados de pruebas, capturas, PDF de verificación y caché, sin excluir globalmente SQL, PDF ni imágenes. Verificadas 29 rutas de exclusión/conservación y cero archivos rastreados ignorados. `.env.example` conserva variables sin credenciales.
+- README orientado al instructor: tecnologías, instalación nueva, cuentas de la carga, funciones y pendientes, pruebas y datos independientes por computadora. No se modifican código funcional, dependencias, esquema ni configuración privada; las cargas siguen siendo explícitas. La suite funcional requiere la colección de prueba de 24/26 y no presupone que cualquier instalación tenga esos datos.
+- Verificación: 7 pruebas básicas y 29 de MySQL/Chrome aprobadas, conexión real correcta y comparación íntegra de las 22 tablas de SICE. Conservados los 26 expedientes con versión vigente; cero bases temporales restantes. Sin capturas ni PDF guardados. El servidor principal estaba detenido; las pruebas usaron su servidor temporal.
+- Revisados los 203 contenidos históricos originales y los cambios de esta entrega: no se identificaron secretos publicados. Las coincidencias de la comprobación automática correspondían al alfabeto del generador y a entradas inválidas de pruebas. No se versionan archivos privados, respaldos ni resultados de ejecución.
+- Commits de preparación: `ecf518d` (`chore(git): excluir resultados locales`) y `f6293ed` (`docs(readme): preparar guía de revisión`), más el cierre de contexto. Se conservan los mensajes y commits anteriores.
+- Rama de entrega publicada: `feature/incidencias-informes`. [PR #2 hacia develop](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/2) para la integración conservando commits; [PR #3 de develop hacia main](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/3) para revisión del instructor. Sin push forzado ni eliminación de ramas; `main` permanece pendiente de revisión, sin merge automático.
+
 ## Páginas de 20, búsqueda y ampliación a 26 — 17 de noviembre de 2026
 
 - Diagnóstico de solo lectura: existían 24 expedientes con versión vigente, códigos 24–47. No existen los códigos 1–23; los identificadores no representan posiciones consecutivas del listado. Con 25 filas por página todos cabían en una página. El Director tenía 23 autorizados (el 47 está excluido por su conflicto de interés), el Subdirector 24; no se reprodujo pérdida por LIMIT/OFFSET. Se conserva el orden por fecha de registro e ID descendentes.
