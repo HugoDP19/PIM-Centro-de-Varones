@@ -19,11 +19,13 @@ let redirigiendo = false;
 let decisionActual;
 let rectificacionId = null;
 let actualizandoSolicitudes = false;
+let registroEnviado = null;
 const lugares = ['Aula', 'Patio de formación', 'Patio de primaria', 'Patio de secundaria', 'Pasillo', 'Pasillo de primaria',
   'Servicios higiénicos', 'Biblioteca', 'Sala de cómputo', 'Losa deportiva', 'Escaleras', 'Ingreso', 'Ingreso de secundaria',
   'Acceso al patio', 'Acceso de secundaria', 'Portería', 'Dirección', 'Atención a familias', 'Espacio de orientación', 'Espacio de atención reservada'];
 const puede = (permiso) => usuario.permisos.includes(permiso);
 const fecha = (valor) => valor ? new Date(valor).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : 'No precisada';
+const fechaCivil = valor => new Date(valor).toLocaleDateString('es-PE', { timeZone: 'UTC' });
 const estado = (valor) => String(valor).replaceAll('_', ' ');
 const codigo = (id) => `INC-${String(id).padStart(6, '0')}`;
 
@@ -48,18 +50,18 @@ function volverAlAcceso(motivo) {
   location.replace(`/?sesion=${motivo}`);
 }
 // Centraliza HTTP, cookies y errores de sesión; los permisos siguen verificándose en el backend.
-async function api(ruta, method = 'GET', datos) {
+async function api(ruta, method = 'GET', datos, cabeceras = {}) {
   let response;
   try {
     response = await fetch(`/api/${ruta}`, { method, credentials: 'same-origin',
-      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-SICE-Request': '1' },
+      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-SICE-Request': '1', ...cabeceras },
       body: method === 'GET' ? undefined : JSON.stringify(datos || {}), signal: AbortSignal.timeout(20000) });
   } catch { throw new Error('No se pudo contactar al servidor. Comprueba tu conexión e inténtalo de nuevo.'); }
   if (response.status === 401) { volverAlAcceso(ruta === 'auth/logout' ? 'cerrada' : 'expirada'); throw new Error('La sesión ha finalizado.'); }
   if (!response.ok) { const resultado = await response.json(); throw new Error(resultado.error || 'No se pudo completar la solicitud.'); }
   return response;
 }
-const json = async (ruta, method, datos) => (await api(ruta, method, datos)).json();
+const json = async (ruta, method, datos, cabeceras) => (await api(ruta, method, datos, cabeceras)).json();
 function accion(etiqueta, tarea, clase = 'btn btn-sm btn-outline-primary') {
   const boton = elemento('button', etiqueta, clase); boton.type = 'button';
   boton.addEventListener('click', async () => { boton.disabled = true; try { await tarea(); } catch (error) { aviso(error.message, true); } finally { boton.disabled = false; } });
@@ -69,6 +71,57 @@ function opciones(select, filas, valor, etiqueta, seleccionado = '') {
   select.replaceChildren(new Option('Seleccionar', ''));
   for (const fila of filas) select.add(new Option(etiqueta(fila), String(valor(fila))));
   select.value = String(seleccionado ?? '');
+}
+
+function incorporarPersonas(resultado) {
+  for (const campo of ['personas', 'matriculas']) {
+    catalogo[campo] = [...new Map([...catalogo[campo], ...resultado[campo]].map(fila => [String(fila.id), fila])).values()];
+  }
+}
+
+function selectorPersonas(select) {
+  const grupo = select.closest('label')?.parentElement || select.parentElement;
+  grupo.querySelector('[data-person-search]')?.remove();
+  const controles = elemento('div', undefined, 'mt-2'); controles.dataset.personSearch = '';
+  const busqueda = elemento('input', undefined, 'form-control form-control-sm');
+  busqueda.type = 'search'; busqueda.maxLength = 100; busqueda.placeholder = 'Buscar por nombre o código';
+  busqueda.setAttribute('aria-label', 'Buscar personas por nombre o código');
+  const pagina = elemento('span', undefined, 'small text-secondary'); pagina.setAttribute('aria-live', 'polite');
+  let actual = 1, termino = '', revision = 0, paginacion = catalogo.paginacion;
+  async function cargar(numero, buscar = termino) {
+    const turno = ++revision;
+    const resultado = await json('incidencias/personas?' + new URLSearchParams({ buscar, pagina: numero }));
+    if (turno !== revision || !select.isConnected) return;
+    const seleccionado = select.value;
+    incorporarPersonas(resultado);
+    const filas = [...resultado.personas];
+    const anterior = catalogo.personas.find(p => String(p.id) === seleccionado);
+    if (anterior && !filas.some(p => String(p.id) === seleccionado)) filas.unshift(anterior);
+    opciones(select, filas, p => p.id, p => `${p.nombres} ${p.apellidos}`, seleccionado);
+    termino = buscar; actualizar(resultado.paginacion);
+  }
+  function botonSelector(texto, tarea) {
+    const boton = elemento('button', texto, 'btn btn-sm btn-outline-primary'); boton.type = 'button';
+    boton.addEventListener('click', async () => {
+      boton.disabled = true;
+      try { await tarea(); } catch (error) { aviso(error.message, true); }
+      finally { boton.disabled = false; actualizar(paginacion); }
+    });
+    return boton;
+  }
+  const buscar = botonSelector('Buscar', () => cargar(1, busqueda.value.trim()));
+  const anterior = botonSelector('Anterior', () => cargar(actual - 1));
+  const siguiente = botonSelector('Siguiente', () => cargar(actual + 1));
+  function actualizar(datos) {
+    paginacion = datos;
+    actual = datos.pagina;
+    pagina.textContent = `Página ${actual} de ${datos.paginas} · ${datos.total} personas`;
+    anterior.disabled = actual <= 1; siguiente.disabled = actual >= datos.paginas;
+  }
+  busqueda.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); buscar.click(); } });
+  const botones = elemento('div', undefined, 'd-flex gap-2 flex-wrap my-2'); botones.append(buscar, anterior, siguiente);
+  controles.append(busqueda, botones, pagina); grupo.append(controles);
+  actualizar(catalogo.paginacion);
 }
 
 // Descarta respuestas antiguas para que una búsqueda lenta no sustituya el listado más reciente.
@@ -154,6 +207,7 @@ function involucrado(valores = {}) {
   opciones(participacion, ['afectado', 'testigo', 'involucrado'], (v) => v, estado, valores.participacion);
   function cargarMatricula(id) { opciones(matricula, catalogo.matriculas.filter((m) => String(m.id_persona) === persona.value), (m) => m.id, (m) => `${m.nivel} · ${m.grado}.º ${m.seccion} · ${m.anio_lectivo}`, id); }
   cargarMatricula(valores.id_matricula); persona.addEventListener('change', () => cargarMatricula());
+  selectorPersonas(persona);
   persona.required = true; participacion.required = true;
   const quitar = elemento('div', undefined, 'col-md-1'); quitar.append(accion('Quitar', () => fila.remove())); fila.append(quitar); $('involved-rows').append(fila);
 }
@@ -164,11 +218,17 @@ async function formulario(datos) {
   $('save-draft').textContent = 'Guardar borrador y revisar';
   $('priority').disabled = false;
   catalogo = await json('incidencias/catalogos');
+  if (datos) {
+    const ids = new Set([datos.version.id_reportante, ...datos.involucrados.map(p => p.id_persona)].map(String));
+    for (const id of ids) if (!catalogo.personas.some(p => String(p.id) === id)) incorporarPersonas(await json('incidencias/personas?' + new URLSearchParams({ id })));
+  }
+  registroEnviado = null;
   $('incident-form').reset(); $('involved-rows').replaceChildren();
   borradorId = datos?.incidencia.id || null;
   $('form-title').textContent = borradorId ? `Editar borrador ${codigo(borradorId)}` : 'Registrar incidencia';
   opciones($('category'), Object.keys(categorias), (v) => v, (v) => categorias[v], datos?.version.categoria);
   opciones($('reporter'), catalogo.personas, (p) => p.id, (p) => `${p.nombres} ${p.apellidos}`, datos?.version.id_reportante);
+  selectorPersonas($('reporter'));
   condicion(datos?.version.condicion_reportante); $('registrar').value = `${usuario.nombre} · ${cargos[usuario.rol]}`;
   tipos(datos?.version.id_tipo); camposCategoria(datos?.version);
   prepararLugar(datos?.version.lugar);
@@ -221,12 +281,14 @@ function mostrarEncabezado(datos, destino) {
   destino.append(elemento('p', `${codigo(incidencia.id)} · ${estado(incidencia.estado)} · ${incidencia.confidencialidad}`, 'eyebrow'), elemento('h2', version.titulo, 'h3'));
   const botones = elemento('div', undefined, 'd-flex flex-wrap gap-2 my-3');
   botones.append(accion('Volver', listar));
-  if (incidencia.estado === 'borrador' && String(incidencia.id_registrador) === String(usuario.id)) {
-    botones.append(accion('Editar borrador', () => formulario(datos)));
-    botones.append(accion('Confirmar incidencia', async () => {
-      const respuesta = await json(`incidencias/${incidencia.id}/confirmar`, 'POST', {});
-      if (respuesta.acceso) await abrir(incidencia.id); else { await listar(); aviso(`${codigo(incidencia.id)} recibido y confirmado. Tu rol no tiene acceso posterior al contenido restringido.`); }
-    }, 'btn btn-primary'));
+  if (incidencia.estado === 'borrador') {
+    if (puede('incidencias.registrar') && String(incidencia.id_registrador) === String(usuario.id)) {
+      botones.append(accion('Editar borrador', () => formulario(datos)));
+      botones.append(accion('Confirmar incidencia', async () => {
+        const respuesta = await json(`incidencias/${incidencia.id}/confirmar`, 'POST', {});
+        if (respuesta.acceso) await abrir(incidencia.id); else { await listar(); aviso(`${codigo(incidencia.id)} recibido y confirmado. Tu rol no tiene acceso posterior al contenido restringido.`); }
+      }, 'btn btn-primary'));
+    }
   } else if (puede('incidencias.exportar')) botones.append(accion('Descargar PDF', async () => {
     const blob = await (await api(`incidencias/${incidencia.id}/pdf`)).blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${codigo(incidencia.id)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, 'btn btn-primary'));
@@ -272,7 +334,7 @@ function mostrarHechos(datos, destino) {
 function mostrarSeguimiento(datos, destino) {
   const { incidencia, actuaciones, responsables } = datos;
   const seguimiento = bloque('Actuaciones y seguimiento', destino);
-  actuaciones.forEach((actuacion) => { const entry = elemento('article', undefined, 'history-entry'); entry.append(elemento('strong', `${estado(actuacion.tipo)} · ${fecha(actuacion.realizada_en)}`), elemento('p', actuacion.detalle, 'record-text'), elemento('small', `${actuacion.autor} · ${actuacion.cargo_autor} · Responsable: ${actuacion.responsable || 'No asignado'}${actuacion.id_actuacion_corregida ? ' · Corrige una actuación anterior' : ''}`, 'text-secondary')); seguimiento.append(entry); });
+  actuaciones.forEach((actuacion) => { const entry = elemento('article', undefined, 'history-entry'); entry.append(elemento('strong', `${estado(actuacion.tipo)} · ${fecha(actuacion.realizada_en)}`), elemento('p', actuacion.detalle, 'record-text'), elemento('small', `${actuacion.autor} · ${actuacion.cargo_autor} · Responsable: ${actuacion.responsable || 'No asignado'}${actuacion.fecha_limite ? ' · Plazo: ' + fechaCivil(actuacion.fecha_limite) : ''}${actuacion.id_actuacion_corregida ? ' · Corrige una actuación anterior' : ''}`, 'text-secondary')); seguimiento.append(entry); });
   if (puede('incidencias.seguimiento') && ['confirmada', 'en_seguimiento'].includes(incidencia.estado)) {
     const form = elemento('form', undefined, 'row g-3 mt-2');
     form.innerHTML = `
@@ -316,7 +378,7 @@ function mostrarDocumentos(datos, destino) {
       if (solicitud.id_version_propuesta) seccion.append(elemento('p', `Propuesta: ${solicitud.titulo_propuesto} · ${solicitud.lugar_propuesto || 'Lugar no precisado'} · ${solicitud.descripcion_propuesta}`, 'record-text'));
       if (solicitud.estado === 'pendiente') {
         const ruta = `incidencias/${datos.incidencia.id}/solicitudes/${solicitud.id}`;
-        if (String(solicitud.id_solicitante) === String(usuario.id)) seccion.append(accion('Retirar solicitud', () => operacionSensible('Retirar solicitud conservando su evidencia', async dato => {
+        if (puede('incidencias.solicitar') && String(solicitud.id_solicitante) === String(usuario.id)) seccion.append(accion('Retirar solicitud', () => operacionSensible('Retirar solicitud conservando su evidencia', async dato => {
           await json(`${ruta}/retirar`, 'POST', { motivo: dato.motivo, contrasena: dato.contrasena }); await abrir(datos.incidencia.id);
         })));
         if (puede('incidencias.resolver') && String(solicitud.id_solicitante) !== String(usuario.id)) {
@@ -585,7 +647,9 @@ $('category').addEventListener('change', () => { tipos(); camposCategoria(); });
 $('add-person').addEventListener('click', () => involucrado()); $('account-action').addEventListener('change', camposAutorizacion);
 // Envía el formulario al flujo de borrador o de propuesta y respeta la pérdida de acceso por reserva.
 $('incident-form').addEventListener('submit', async e => {
-  e.preventDefault(); $('save-draft').disabled = true;
+  e.preventDefault();
+  if ($('save-draft').disabled) return;
+  $('save-draft').disabled = true;
   try {
     if (rectificacionId) {
       const resultado = await json(`incidencias/${rectificacionId}/solicitudes`, 'POST', { tipo: 'rectificacion', justificacion: $('correction-reason').value,
@@ -593,7 +657,10 @@ $('incident-form').addEventListener('submit', async e => {
       if (resultado.acceso) { await abrir(rectificacionId); aviso('Propuesta presentada; los hechos originales permanecen vigentes hasta una decisión independiente.'); }
       else { await listar(); aviso(`Propuesta recibida en ${codigo(rectificacionId)}. El expediente quedó reservado; tu rol no tiene acceso posterior.`); }
     } else {
-      const resultado = await json(borradorId ? `incidencias/${borradorId}/borrador` : 'incidencias', borradorId ? 'PUT' : 'POST', contenidoFormulario());
+      const cuerpo = contenidoFormulario(), contenido = JSON.stringify(cuerpo);
+      if (!registroEnviado || registroEnviado.contenido !== contenido) registroEnviado = { contenido, clave: crypto.randomUUID() };
+      const resultado = await json(borradorId ? `incidencias/${borradorId}/borrador` : 'incidencias', borradorId ? 'PUT' : 'POST', cuerpo,
+        borradorId ? {} : { 'X-SICE-Operation': registroEnviado.clave });
       await abrir(borradorId || resultado.id); aviso('Borrador guardado. Revisa los datos antes de confirmar.');
     }
   } catch (error) { aviso(error.message, true); }
@@ -609,13 +676,27 @@ $('nav-student').addEventListener('click', async () => {
 });
 // Guarda estudiante y matrícula mediante la API y borra la contraseña introducida.
 $('student-form').addEventListener('submit', async e => {
-  e.preventDefault(); const form = e.currentTarget; const boton = form.querySelector('button'); boton.disabled = true;
+  e.preventDefault(); const form = e.currentTarget; const boton = form.querySelector('button');
+  if (boton.disabled) return;
+  validarNombresEstudiante();
+  if (!form.reportValidity()) return;
+  boton.disabled = true;
   try {
     const resultado = await json('estudiantes', 'POST', Object.fromEntries(new FormData(form)));
     form.reset(); aviso(`Estudiante ${resultado.codigo_estudiante} y matrícula registrados.`);
   } catch (error) { aviso(error.message, true); }
   finally { $('student-password').value = ''; boton.disabled = false; }
 });
+
+function validarNombresEstudiante() {
+  return ['student-names', 'student-surnames'].map(id => {
+    const input = $(id), nombre = input.value.trim().normalize('NFC').replace(/\s+/g, ' ');
+    const valido = /^\p{L}[\p{L}\p{M}]*(?:[ '’ʼ-]\p{L}[\p{L}\p{M}]*)*$/u.test(nombre);
+    input.setCustomValidity(valido ? '' : 'Usa letras, espacios, apóstrofes o guiones entre nombres.');
+    return valido;
+  }).every(Boolean);
+}
+for (const id of ['student-names', 'student-surnames']) $(id).addEventListener('input', validarNombresEstudiante);
 $('authorization-fields').addEventListener('change', actualizarModoCuenta);
 $('authorization-form').addEventListener('input', limpiarAviso);
 $('authorization-form').addEventListener('change', limpiarAviso);
