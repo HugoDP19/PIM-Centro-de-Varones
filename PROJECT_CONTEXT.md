@@ -4,7 +4,7 @@
 
 Proyecto de la I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; personal y reportantes pueden ser hombres o mujeres. Conservar el logo original de image/, el diseño blanco y guinda y la interfaz responsive.
 
-Rama: `feature/incidencias-informes`. Repositorio: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Alcance actual: limpieza, estabilidad, pruebas finales y commits locales separados; sin push ni Pull Request. No ampliar funcionalidades ni modificar registros de SICE durante esta revisión.
+Rama: `feature/incidencias-informes`. Repositorio: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Alcance actual: correcciones de auditoría, estabilidad, pruebas finales y commits locales separados; sin push ni Pull Request. No ampliar funcionalidades ni modificar registros de SICE durante esta revisión.
 
 ## Motor y datos
 
@@ -55,15 +55,31 @@ PDF con autorización separada, sin borradores ni contenido fuera del ámbito; f
 - README y reglas de trabajo actualizados; contexto consolidado para eliminar instrucciones técnicas caducadas. Los detalles de etapas anteriores ya versionados permanecen consultables en Git.
 - Correcciones documentales: tipos DATETIME2, verificador sin creación de tablas, 22 tablas y flujo de autorizaciones realmente implementado.
 
+## Correcciones de auditoría — 24 de noviembre de 2026
+
+1. Operaciones sensibles revalidan cuenta, sesión, credencial, rol y permisos dentro de la transacción. Usan el bloqueo de gestión existente antes de bloquear cuenta y expediente, también en acceso/cierre de sesión. Una escritura termina antes de la desactivación efectiva o se rechaza tras ella; nunca continúa después. La serialización común prioriza consistencia sobre concurrencia de escrituras.
+2. Personas: búsqueda y páginas de 50, identidad seleccionada validada individualmente y reserva compartida entre selector y backend. Edición conserva selecciones fuera de la primera página.
+3. Registro: formulario bloqueado durante el envío y referencia UUID por operación en `X-SICE-Operation`. Reintentos del mismo usuario/contenido devuelven el registro existente, incluso tras reiniciar; referencia reutilizada con otro contenido devuelve 409. Dos referencias distintas admiten hechos legítimos iguales.
+4. Búsqueda parametrizada trata literalmente corchetes, porcentajes, guiones bajos y el escape; conserva código, estudiante, fecha, título, categoría, estado y páginas de 20.
+5. Nombres y apellidos validados coherentemente en navegador y servidor: letras Unicode, tildes, espacios, apóstrofes y guiones; rechazo de números y símbolos ajenos al nombre.
+6. Límite de reautenticación devuelve 429, mensaje de espera y Retry-After de 900 segundos.
+7. Responsables usan la misma consulta para selector y guardado: cuenta/personal activos, consulta y seguimiento, ámbito, reserva y ausencia de conflicto.
+8. Detalle muestra el plazo civil junto a la actuación y su responsable, sin desplazar el día por zona horaria.
+9. Editar/confirmar borrador y retirar solicitud requieren permiso efectivo también para mostrarse. El servidor conserva sus comprobaciones obligatorias.
+
+No se añadieron tablas, dependencias ni archivos. El recibo de registro reutiliza el evento existente de creación en historial: referencia y huella del contenido, ocultas en el detalle escolar. No contiene credenciales ni se usa para ejecutar instrucciones.
+
 ## Verificación y límites
 
-- `npm test`: **7 aprobadas, 0 fallidas**. `node test/interfaz-browser.js`: **36 aprobadas, 0 fallidas**, incluida la integración SQL Server completa y Chrome a 1280/1024/768 px.
-- Verificados seis roles, login/logout/caducidad, permisos y reserva, autoaprobación rechazada, decisiones independientes/recíprocas/dobles, revocación por desactivación, seis categorías, seguimiento, rectificaciones, anulaciones lógicas, cierre/reapertura, estudiantes y PDF. Los registros y la sesión sobreviven al arranque de otro proceso del servidor en la base temporal.
-- La suite comparó todas las filas y columnas de SICE antes/después: sin cambios. Retiró exclusivamente su base y login temporales tras verificar servidor, nombre, ID y fecha de creación. Comprobación posterior: cero bases/cuentas temporales y DBCC CHECKCONSTRAINTS sin infracciones.
-- Conexión y estructura principal correctas: 22 tablas/225 columnas/76 FK/148 CHECK. Las seis cuentas locales conservan sus claves vigentes, verificadas contra scrypt solo mediante lectura, sin generar sesiones ni auditoría en SICE.
-- Revisados los 39 archivos publicables y la sintaxis de 24 JavaScript; cero coincidencias con las credenciales privadas locales. Dependencias instaladas coherentes con el lockfile, sin el conector retirado. Logo original intacto y archivos privados excluidos de Git.
-- Servidor principal conservado sin reiniciarlo; salud HTTP 200 en http://127.0.0.1:3000. No se guardaron capturas, PDF ni auxiliares permanentes. Los cambios se organizan en commits locales de migración y documentación/limpieza, sin push ni PR.
-- Sin fallos funcionales detectados en los flujos ejecutados. Se corrigieron instrucciones caducadas sobre creación de tablas, tipos SQL y módulos ya implementados; la documentación ya distingue pruebas locales de instalación institucional.
+- `npm test`: **7 aprobadas, 0 fallidas**. `node test/interfaz-browser.js`: **59 aprobadas, 0 fallidas**. Total: **66**, las 43 originales y 23 regresiones incorporadas a archivos de pruebas existentes.
+- Seis roles en Chrome, login/logout/caducidad, permisos, reserva, cuentas y decisiones independientes, seguimiento, estudiantes, rectificación documental, anulación lógica, cierre y reapertura. Chrome a 1280/1024/768 px; diez PDF de cinco roles operativos y seis categorías verificados en memoria, sin descargas a disco.
+- Escenarios reproducidos: ambas secuencias de revocación concurrente, doble confirmación, doble envío, respuesta perdida y reintento, UUID repetido/alterado, búsqueda literal y paginación, nombres inválidos/Unicode, 429, responsable sin permiso de reserva, plazos y botones sin permiso. Catálogo con 260 estudiantes y 260 integrantes del personal adicionales, exclusivamente temporales.
+- Registros, versiones, sesiones y referencia de reintento sobreviven al reinicio de Node contra la base temporal. Pérdida de conexión SQL y recuperación comprobadas mediante un puente temporal; no se reinició el servicio SQL Server ni se interrumpieron otras bases.
+- La suite comparó todas las filas y columnas de SICE antes/después: sin cambios. Eliminó únicamente su base y login temporales tras verificar servidor, nombre, ID y fecha de creación. Perfil temporal de Chrome retirado; sin capturas, PDF ni auxiliares permanentes.
+- Esquema principal verificado: 22 tablas/225 columnas/76 FK/148 CHECK. DBCC CHECKCONSTRAINTS sin infracciones, restricciones activas y confiables, cero bases/cuentas temporales restantes. SQL Server 2022 conservado; sin cambios de esquema, claves locales ni permisos SQL.
+- Sintaxis de los 24 JavaScript revisada. Archivos privados excluidos de Git y sin credenciales incorporadas a los cambios. Logo y dependencias conservados.
+- El proceso principal responde HTTP 200 en http://127.0.0.1:3000 y se conservó sin reiniciar: el arranque normal purga datos técnicos caducados y esta revisión exige mantener SICE intacta. **Hay que reiniciar ese proceso para cargar las correcciones del backend.** La validación de reinicio se hizo solo en la base aislada.
+- No quedaron fallos en los escenarios ejecutados. Las correcciones y pruebas se entregan mediante commits locales separados, sin push ni PR. Esto no habilita las funciones institucionales pendientes.
 
 Pendientes institucionales y de instalación:
 1. Composición y quórum de revisión formal con acta; aprobación bloqueada hasta definirlos.

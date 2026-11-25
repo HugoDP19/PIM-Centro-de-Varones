@@ -36,7 +36,7 @@ El esquema vacío no crea personal, cuentas ni catálogos. Su provisión inicial
 - Inicio/cierre de sesión, caducidad, revocación y permisos comprobados en el servidor.
 - Cuentas y permisos con autorización independiente, recíproca o doble según el cambio; sin autoaprobación.
 - Estudiantes y matrícula por Director, Subdirector y Coordinador de Tutoría.
-- Seis categorías de incidencias, borradores, confirmación, búsqueda, seguimiento y versiones.
+- Seis categorías de incidencias, borradores sin duplicar reintentos, confirmación, búsqueda, seguimiento con plazos y versiones. Selectores de personas con búsqueda y paginación.
 - Rectificación documental, anulación lógica por duplicado, cierre y reapertura motivados.
 - PDF autorizado con logo, autoría histórica, firma y sello. Administrador sin expedientes ni PDF escolares.
 
@@ -54,7 +54,7 @@ La última orden incluye la integración y añade Chrome a 1280/1024/768 px. Req
 
 La colección de `test/datos.js` solo admite bases temporales. La suite comprueba los seis roles, decisiones, privacidad, integridad, PDF y persistencia tras reiniciar el servidor; compara SICE antes/después y elimina únicamente sus recursos tras verificar su identidad. No utilizar simultáneamente SICE durante esa comparación. No guarda capturas ni PDF.
 
-Revisión del 24 de noviembre de 2026: **7 pruebas básicas y 36 de integración/Chrome aprobadas, cero fallidas**; SICE conservada sin cambios.
+Revisión del 24 de noviembre de 2026: **7 pruebas básicas y 59 de integración/Chrome aprobadas, cero fallidas**; incluye las 23 regresiones de auditoría y conserva SICE sin cambios. Tras actualizar el código, reiniciar Node para cargar el backend corregido.
 
 Resultados y pendientes de la revisión: [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md). Modelo: [database/DISENO.md](database/DISENO.md). Reglas: [database/REGLAS_FUNCIONALES.md](database/REGLAS_FUNCIONALES.md).
 

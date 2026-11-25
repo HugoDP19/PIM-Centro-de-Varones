@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { administrar } from '../database/administrar.js';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createDatabasePool } from '../src/database.js';
@@ -16,7 +16,7 @@ import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-i
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
 import { verificarGestionCuentas } from './cuentas.integration.js';
-import { verificarCambios } from './cambios.integration.js';
+import { verificarCambios, verificarRegresiones } from './cambios.integration.js';
 
 async function leerEstadoOrigen(pool) {
   const [tablas] = await pool.execute('SELECT name FROM sys.tables ORDER BY name');
@@ -80,7 +80,7 @@ async function crearCopiaTemporal(claves) {
   }
 }
 
-test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento y PDF', { timeout: 180000 }, async (t) => {
+test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento y PDF', { timeout: 300000 }, async (t) => {
   assert.equal(process.env.DB_NAME?.toLowerCase(), 'sice');
   assert.equal(process.env.NODE_ENV, 'development');
   // Las credenciales de los datos sintéticos existen solo en el proceso de prueba.
@@ -109,7 +109,8 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
   const peticion = (ruta, rol, method = 'GET', body, headers = {}) => fetch(`${base}/api/${ruta}`, {
-    method, headers: { ...(cookies[rol] ? { Cookie: cookies[rol] } : {}), ...(method !== 'GET' ? { 'Content-Type': 'application/json', Origin: origin, 'X-SICE-Request': '1' } : {}), ...headers },
+    method, headers: { ...(cookies[rol] ? { Cookie: cookies[rol] } : {}), ...(method !== 'GET' ? { 'Content-Type': 'application/json', Origin: origin, 'X-SICE-Request': '1' } : {}),
+      ...(ruta === 'incidencias' && method === 'POST' ? { 'X-SICE-Operation': randomUUID() } : {}), ...headers },
     body: method !== 'GET' ? JSON.stringify(body || {}) : undefined
   });
   const cookies = {};
@@ -156,7 +157,11 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
 
   // Compara HTTP con SELECT y arranca otro proceso para detectar dependencias de estado en memoria.
   await t.test('los registros HTTP coinciden con SQL y sobreviven a otro proceso del servidor', async () => {
-    const creado = await datos('incidencias', 'director', 'POST', cuerpo('seguridad'), 201);
+    const clave = randomUUID();
+    const contenido = cuerpo('seguridad');
+    const respuesta = await peticion('incidencias', 'director', 'POST', contenido, { 'X-SICE-Operation': clave });
+    assert.equal(respuesta.status, 201);
+    const creado = await respuesta.json();
     const titulo = 'Ubicación revisada y conservada en SQL Server';
     await datos(`incidencias/${creado.id}/borrador`, 'director', 'PUT', { ...cuerpo('seguridad'), titulo });
     const [[registro]] = await pool.execute(`SELECT i.id, i.estado, v.titulo, v.descripcion, v.lugar
@@ -183,6 +188,9 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       assert.equal(detalle.incidencia.id, registro.id);
       assert.equal(detalle.incidencia.estado, registro.estado);
       for (const campo of ['titulo', 'descripcion', 'lugar']) assert.equal(detalle.version[campo], registro[campo]);
+      const repetida = await peticion('incidencias', 'director', 'POST', contenido, { 'X-SICE-Operation': clave });
+      assert.equal(repetida.status, 200);
+      assert.equal((await repetida.json()).id, creado.id);
     } finally {
       if (proceso.exitCode === null && proceso.signalCode === null) {
         const salida = once(proceso, 'exit'); proceso.kill(); await salida;
@@ -538,9 +546,17 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       for (const ruta of ['incidencias', 'cuentas/catalogos']) assert.equal((await fetch(`http://127.0.0.1:${servidor.address().port}/api/${ruta}`, { headers: { Cookie: cookie, 'X-Forwarded-Proto': 'https' } })).status, 503);
     } finally { await new Promise((resolve) => servidor.close(resolve)); }
   });
+  const renovarSesiones = async () => {
+    for (const [rol, , , usuario] of personalEscolar) {
+      const acceso = await peticion('auth/login', null, 'POST', { usuario, contrasena: claves[rol.toUpperCase() + '_PASSWORD'] });
+      assert.equal(acceso.status, 200);
+      cookies[rol] = acceso.headers.get('set-cookie').split(';')[0];
+    }
+  };
+  const regresiones = contexto => verificarRegresiones({ t: contexto, pool, datos, peticion, claves, cuerpo, usuarios, alumnos, copia, cookies, renovarSesiones });
   // La variante de Chrome reutiliza la misma base temporal y los controles de integridad de la suite.
   if (process.env.TEST_BROWSER === '1') {
-    await t.test('interfaz de escritorio y adaptación básica, sin guardar archivos', async () => {
+    await t.test('interfaz de escritorio y adaptación básica, sin guardar archivos', async navegador => {
       await new Promise(resolve => server.close(resolve));
       const direccion = new URL(base);
       origin = direccion.origin;
@@ -551,7 +567,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
         // Solo modifica sesiones de la copia temporal creada por esta suite.
         await pool.execute(`UPDATE s SET s.vence_en = DATEADD(SECOND, -1, SYSUTCDATETIME())
           FROM sesiones s JOIN usuarios u ON u.id = s.id_usuario WHERE u.nombre_usuario = ?`, [nombreUsuario]);
-      });
+      }, () => regresiones(navegador));
     });
-  }
+  } else await regresiones(t);
 });

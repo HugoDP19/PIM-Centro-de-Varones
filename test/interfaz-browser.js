@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { personalEscolar } from './datos.js';
 
 const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-export async function verificarInterfaz(base, credenciales, expirarSesion) {
+export async function verificarInterfaz(base, credenciales, expirarSesion, prepararRegresiones) {
   const chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   await access(chrome);
   const perfil = await mkdtemp(join(tmpdir(), 'sice-preview-'));
@@ -476,6 +476,10 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Reabrir expediente')"), false);
     console.log('Expedientes: rectificación independiente, cierre, reapertura, anulación lógica y estudiante guardados desde Chrome.');
     assert.equal(erroresJavaScript, 0, 'Sin excepciones JavaScript en las sesiones del navegador');
+    if (prepararRegresiones) {
+      const escenarios = await prepararRegresiones();
+      await verificarRegresionesInterfaz({ base, credenciales, enviar, evaluar, esperar, escenarios, erroresJavaScript: () => erroresJavaScript });
+    }
     await enviar('Browser.close');
   } finally {
     socket?.close();
@@ -504,4 +508,140 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     ejecucion.once('error', rechazar);
     ejecucion.once('close', codigo => finalizar(codigo ?? 1));
   });
+}
+
+async function verificarRegresionesInterfaz({ base, credenciales, enviar, evaluar, esperar, escenarios, erroresJavaScript }) {
+
+    const auditarCaso = (nombre, prueba) => escenarios.t.test('Regresión: ' + nombre, prueba);
+    const credencial=rol=>credenciales[rol.toUpperCase()+'_PASSWORD'];
+    async function entrar(rol) {
+      await enviar('Network.clearBrowserCookies');
+      await enviar('Page.navigate',{url:base});
+      await esperar("document.querySelector('#login-form')?.hidden === false");
+      const acceso=personalEscolar.find(([r])=>r===rol)[3];
+      await evaluar("document.querySelector('#username').value="+JSON.stringify(acceso)+"; document.querySelector('#password').value="+JSON.stringify(credencial(rol))+"; document.querySelector('#login-form').requestSubmit();");
+      await esperar("location.pathname==='/panel.html' && document.querySelector('#workspace')?.hidden===false");
+    }
+    async function salir(){
+      await evaluar("document.querySelector('#logout').click()");
+      await esperar("document.querySelector('#login-form')?.hidden===false");
+    }
+    async function abrirId(id) {
+      await evaluar("document.querySelector('#nav-list').click()");
+      await esperar("document.querySelector('#list-view')?.hidden===false");
+      await evaluar("document.querySelector('#search').value="+JSON.stringify('INC-'+id)+";document.querySelector('#search-form').requestSubmit();");
+      await esperar("document.querySelectorAll('#incident-rows tr').length===1 && document.querySelector('#incident-rows').textContent.includes("+JSON.stringify(String(id).padStart(6,'0'))+")");
+      await evaluar("document.querySelector('#incident-rows button').click()");
+      await esperar("document.querySelector('#detail-view')?.hidden===false");
+    }
+    await enviar('Browser.setDownloadBehavior',{behavior:'deny',eventsEnabled:true});
+    await enviar('Page.addScriptToEvaluateOnNewDocument',{source:"const crear=URL.createObjectURL;URL.createObjectURL=function(blob){window.__auditBlob=blob;return crear.call(this,blob)};"});
+    await auditarCaso('Chrome: descarga PDF real desde botones, cinco roles y seis categorias', async()=>{
+      let rolActual=null, cantidad=0;
+      for(const caso of escenarios.pdfs){
+        if(rolActual!==caso.rol){if(rolActual)await salir();await entrar(caso.rol);rolActual=caso.rol;}
+        await abrirId(caso.id);
+        await evaluar("window.__auditBlob=null;[...document.querySelectorAll('#detail-view button')].find(b=>b.textContent==='Descargar PDF').click()");
+        await esperar("window.__auditBlob?.size>0");
+        const base64=await evaluar("(async()=>{const b=new Uint8Array(await window.__auditBlob.arrayBuffer());let s='';for(const n of b)s+=String.fromCharCode(n);return btoa(s)})()");
+        const {getDocument,OPS}=await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const pdf=await getDocument({data:new Uint8Array(Buffer.from(base64,'base64')),useSystemFonts:true}).promise;
+        const pagina=await pdf.getPage(1);const texto=(await pagina.getTextContent()).items.map(x=>x.str).join(' ');
+        assert.ok(texto.includes('20874')&&texto.includes(caso.titulo));
+        const operaciones=await pagina.getOperatorList();
+        assert.ok(operaciones.fnArray.includes(OPS.paintImageXObject),'Logo como imagen en el PDF');
+        let completo=texto;for(let p=2;p<=pdf.numPages;p++)completo+=(await (await pdf.getPage(p)).getTextContent()).items.map(x=>x.str).join(' ');
+        assert.ok(completo.includes('Firma del registrador')&&completo.includes('Sello del Director'));
+        await pdf.cleanup?.();cantidad++;
+      }
+      console.log('PDF_INTERFAZ '+cantidad+' documentos verificados en memoria; descargas a disco bloqueadas.');
+      if(rolActual)await salir();
+    });
+    await entrar('director');
+    await auditarCaso('Chrome: plazo guardado visible en detalle de seguimiento',async()=>{
+      await abrirId(escenarios.plazo);
+      const texto=await evaluar("document.querySelector('#detail-view').innerText");
+      assert.ok(/18.12.(2026|26)/.test(texto),'El plazo 18/12/2026 guardado no aparece en el detalle');
+    });
+    await auditarCaso('Chrome: XSS almacenado se presenta como texto sin ejecutarse',async()=>{
+      await abrirId(escenarios.xss);
+      assert.equal(await evaluar("window.__auditXss===1"),false);
+      assert.equal(await evaluar("document.querySelector('#detail-view').innerText.includes('<script>')"),true);
+      assert.equal(await evaluar("document.querySelectorAll('#detail-view img[src=x],#detail-view script').length"),0);
+    });
+    await auditarCaso('Chrome: Anterior, Siguiente, numeros y resultados vacios',async()=>{
+      await evaluar("document.querySelector('#nav-list').click();document.querySelector('#search').value='';document.querySelector('#search-form').requestSubmit();");
+      await esperar("document.querySelectorAll('#incident-rows tr').length===20");
+      const primero=await evaluar("document.querySelector('#incident-rows tr').innerText");
+      await evaluar("document.querySelector('#next-page').click()");
+      await esperar("document.querySelector('#previous-page').disabled===false");
+      assert.notEqual(await evaluar("document.querySelector('#incident-rows tr').innerText"),primero);
+      await evaluar("document.querySelector('#previous-page').click()");
+      await esperar("document.querySelector('#previous-page').disabled===true");
+      assert.equal(await evaluar("document.querySelector('#incident-rows tr').innerText"),primero);
+      await evaluar("document.querySelector('#search').value='NO_EXISTE_AUDITORIA';document.querySelector('#search-form').requestSubmit()");
+      await esperar("document.querySelector('#list-empty').hidden===false");
+      assert.equal(await evaluar("document.querySelectorAll('#incident-rows tr').length"),0);
+    });
+    await auditarCaso('Chrome: dos envios seguidos de borrador no duplican',async()=>{
+      await evaluar("document.querySelector('#nav-new').click()");
+      await esperar("document.querySelector('#form-view').hidden===false && document.querySelector('#reporter').options.length>1");
+      await evaluar("document.querySelector('#category').value='seguridad';document.querySelector('#category').dispatchEvent(new Event('change'));");
+      await evaluar("document.querySelector('#reporter').parentElement.querySelector('[data-person-search] input').value='Salazar';document.querySelector('#reporter').parentElement.querySelector('[data-person-search] button').click()");
+      await esperar("[...document.querySelector('#reporter').options].some(o=>o.value==="+JSON.stringify(String(escenarios.personaDirector))+")");
+      await evaluar("document.querySelector('#incident-type').selectedIndex=1;document.querySelector('#incident-type').dispatchEvent(new Event('change'));document.querySelector('#incident-title').value='AUDITORIA_DOBLE_ENTER';document.querySelector('#description').value='Se verifica el ingreso durante el recreo.';document.querySelector('#reporter').value="+JSON.stringify(String(escenarios.personaDirector))+";document.querySelector('#reporter').dispatchEvent(new Event('change'));document.querySelector('#reporter-condition').value='personal';document.querySelector('#sensitive').value='false';");
+      await evaluar("document.querySelector('#add-person').click();const controles=document.querySelector('#involved-rows [data-person-search]');controles.querySelector('input').value='AUD-CAT-260';controles.querySelector('button').click()");
+      await esperar("[...document.querySelector('#involved-rows [data-persona]').options].some(o=>o.value==="+JSON.stringify(String(escenarios.personaPagina))+")");
+      await evaluar("document.querySelector('#involved-rows [data-persona]').value="+JSON.stringify(String(escenarios.personaPagina))+";document.querySelector('#involved-rows [data-participacion]').value='testigo';");
+      await evaluar("window.__fetchOriginal=window.fetch;let perderRespuesta=true;window.fetch=async(...args)=>{const r=await window.__fetchOriginal(...args);if(perderRespuesta&&args[0]==='/api/incidencias'&&args[1]?.method==='POST'){perderRespuesta=false;throw Error('Respuesta perdida en prueba');}return r;};");
+      const resultado=await evaluar("(async()=>{const f=document.querySelector('#incident-form');f.dispatchEvent(new Event('submit',{cancelable:true}));f.dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,1000));return (await (await fetch('/api/incidencias?buscar=AUDITORIA_DOBLE_ENTER')).json()).paginacion.total})()");
+      assert.equal(resultado,1,'Dos eventos submit consecutivos guardan '+resultado+' borradores');
+      await esperar("document.querySelector('#message').textContent.includes('No se pudo contactar') && !document.querySelector('#save-draft').disabled");
+      await evaluar("document.querySelector('#incident-form').dispatchEvent(new Event('submit',{cancelable:true}))");
+      await esperar("document.querySelector('#detail-view').hidden===false && document.querySelector('#message').textContent.includes('Borrador guardado')");
+      assert.equal(await evaluar("(async()=> (await (await fetch('/api/incidencias?buscar=AUDITORIA_DOBLE_ENTER')).json()).paginacion.total)()"),1);
+      await evaluar("window.fetch=window.__fetchOriginal;[...document.querySelectorAll('#detail-view button')].find(b=>b.textContent==='Editar borrador').click()");
+      await esperar("document.querySelector('#form-view').hidden===false && document.querySelector('#involved-rows [data-persona]')?.value==="+JSON.stringify(String(escenarios.personaPagina)));
+      const control = "document.querySelector('#reporter').parentElement.querySelector('[data-person-search]')";
+      await evaluar("[..."+control+".querySelectorAll('button')].find(b=>b.textContent==='Siguiente').click()");
+      await esperar(control+".textContent.includes('Página 2')");
+      assert.equal(await evaluar("document.querySelector('#reporter').value"),String(escenarios.personaDirector));
+    });
+    await auditarCaso('Chrome: escritorio y laptop sin errores de consola',async()=>{
+      for(const ancho of [1280,1024,768]){
+        await enviar('Emulation.setDeviceMetricsOverride',{width:ancho,height:900,deviceScaleFactor:1,mobile:false});
+        const medidas=await evaluar("({ancho:document.documentElement.clientWidth,contenido:document.documentElement.scrollWidth})");
+        assert.equal(medidas.ancho,medidas.contenido);
+      }
+      await evaluar("document.querySelector('#nav-student').click()");
+      await esperar("document.querySelector('#student-view').hidden===false");
+      for (const [nombre, valido] of [['12345',false],['!!!',false],['Álvaro-José',true],["D’Ávila O'Connor",true]]) {
+        for (const id of ['student-names','student-surnames']) {
+          await evaluar("(()=>{const input=document.getElementById("+JSON.stringify(id)+");input.value="+JSON.stringify(nombre)+";input.dispatchEvent(new Event('input'));})()");
+          assert.equal(await evaluar("document.getElementById("+JSON.stringify(id)+").checkValidity()"),valido);
+        }
+      }
+      assert.equal(erroresJavaScript(),0);
+    });
+    await auditarCaso('Chrome: botones de borrador respetan permiso de registro retirado',async()=>{
+      try{
+        await escenarios.permisoRegistro(false);
+        await entrar('director');
+        await abrirId(escenarios.borrador);
+        const botones=await evaluar("[...document.querySelectorAll('#detail-view button')].map(b=>b.textContent)");
+        const estado=await evaluar("(async()=> (await fetch('/api/incidencias/"+escenarios.borrador+"/confirmar',{method:'POST',headers:{'Content-Type':'application/json','X-SICE-Request':'1'},body:'{}'})).status)()");
+        assert.equal(estado,403);
+        assert.ok(!botones.includes('Editar borrador')&&!botones.includes('Confirmar incidencia'),'Se ofrecen editar y confirmar aunque el backend devuelve 403');
+      }finally{await escenarios.permisoRegistro(true);}
+    });
+    await auditarCaso('Chrome: seleccion numerica de pagina 2 y vuelta a 1',async()=>{
+      await evaluar("document.querySelector('#nav-list').click();document.querySelector('#search').value='';document.querySelector('#search-form').requestSubmit()");
+      await esperar("document.querySelectorAll('#incident-rows tr').length===20 && document.querySelectorAll('#page-numbers button').length>1");
+      await evaluar("[...document.querySelectorAll('#page-numbers button')].find(b=>b.textContent==='2').click()");
+      await esperar("document.querySelector('#page-numbers [aria-current]')?.textContent==='2'");
+      assert.equal(await evaluar("document.querySelector('#previous-page').disabled"),false);
+      await evaluar("[...document.querySelectorAll('#page-numbers button')].find(b=>b.textContent==='1').click()");
+      await esperar("document.querySelector('#page-numbers [aria-current]')?.textContent==='1'");
+    });
+
 }
