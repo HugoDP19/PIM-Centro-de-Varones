@@ -18,13 +18,13 @@ try {
   // Comprueba la conexión y las columnas técnicas necesarias antes de aceptar peticiones.
   pool = createDatabasePool();
   await pool.execute('SELECT 1');
-  await pool.execute('SELECT token_hash FROM sesiones LIMIT 0');
-  await pool.execute('SELECT clave FROM intentos_acceso LIMIT 0');
-  await pool.execute('SELECT id_persona FROM involucrados LIMIT 0');
-  await pool.execute('SELECT id, id_solicitante, estado FROM autorizaciones_cuentas LIMIT 0');
+  await pool.execute('SELECT TOP (0) token_hash FROM sesiones');
+  await pool.execute('SELECT TOP (0) clave FROM intentos_acceso');
+  await pool.execute('SELECT TOP (0) id_persona FROM involucrados');
+  await pool.execute('SELECT TOP (0) id, id_solicitante, estado FROM autorizaciones_cuentas');
   // Solo datos técnicos caducados. Nunca se eliminan incidencias ni historial.
-  await pool.execute('DELETE FROM sesiones WHERE vence_en <= UTC_TIMESTAMP(6)');
-  await pool.execute('DELETE FROM intentos_acceso WHERE vence_en <= UTC_TIMESTAMP(6)');
+  await pool.execute('DELETE FROM sesiones WHERE vence_en <= SYSUTCDATETIME()');
+  await pool.execute('DELETE FROM intentos_acceso WHERE vence_en <= SYSUTCDATETIME()');
   // Inicia HTTP solo después de validar la base y gestiona los errores de escucha.
   const app = createApp({ pool, origin, produccion, proxyLocal: process.env.TRUST_PROXY_LOCAL === '1' });
   const server = app.listen(port, host);
@@ -34,12 +34,12 @@ try {
     await pool.end();
     process.exitCode = 1;
   });
-  // Al detener el proceso, termina la escucha y cierra las conexiones de MariaDB.
+  // Al detener el proceso, termina la escucha y cierra las conexiones de SQL Server.
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => server.close(async () => { await pool.end(); }));
   }
 } catch (error) {
-  console.error(error.code ? `No se pudo iniciar SICE-Local: comprueba MariaDB y el esquema (${error.code}).` : error.message);
+  console.error(error.code ? `No se pudo iniciar SICE-Local: comprueba la base de datos y el esquema (${error.code}).` : error.message);
   if (pool) await pool.end();
   process.exitCode = 1;
 }

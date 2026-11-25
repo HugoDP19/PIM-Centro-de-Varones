@@ -5,107 +5,83 @@ import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
-import mysql from 'mysql2/promise';
+import { administrar } from '../database/administrar.js';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createDatabasePool } from '../src/database.js';
 import { createApp } from '../src/app.js';
 import { verificarEsquema, leerSentencias } from '../database/preparar.js';
 import { personalEscolar, cargarColeccion } from './datos.js';
-import { generarContrasena } from '../src/seguridad.js';
+import { generarContrasena, resumir } from '../src/seguridad.js';
 import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-incidencias.js';
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
 import { verificarGestionCuentas } from './cuentas.integration.js';
 import { verificarCambios } from './cambios.integration.js';
 
-async function leerEstadoOrigen(conexion) {
-  const [tablas] = await conexion.query('SHOW TABLES');
+async function leerEstadoOrigen(pool) {
+  const [tablas] = await pool.execute('SELECT name FROM sys.tables ORDER BY name');
   const estado = {};
-  for (const fila of tablas) {
-    const tabla = Object.values(fila)[0];
-    const [indices] = await conexion.query(`SHOW KEYS FROM \`${tabla}\` WHERE Key_name = 'PRIMARY'`);
-    const orden = indices.sort((a, b) => a.Seq_in_index - b.Seq_in_index).map(indice => `\`${indice.Column_name}\``).join(', ');
-    const [filas] = await conexion.query(`SELECT * FROM \`${tabla}\` ORDER BY ${orden}`);
-    const [[estructura]] = await conexion.query(`SHOW CREATE TABLE \`${tabla}\``);
-    // Solo se comparan cantidades y huellas; nunca se muestran datos ni credenciales.
-    // Las lecturas de un navegador abierto actualizan legítimamente este instante.
-    const datos = tabla === 'sesiones' ? filas.map(({ ultima_actividad_en, ...sesion }) => sesion) : filas;
-    estado[tabla] = { cantidad: filas.length,
-      huella: createHash('sha256').update(JSON.stringify([estructura, datos])).digest('hex') };
+  for (const { name } of tablas) {
+    const [filas] = await pool.execute('SELECT * FROM [' + name + ']');
+    const [columnas] = await pool.execute("SELECT name,system_type_id,max_length,is_nullable,is_identity FROM sys.columns WHERE object_id=OBJECT_ID(?) ORDER BY column_id", ['dbo.' + name]);
+    estado[name] = { cantidad: filas.length, huella: createHash('sha256').update(JSON.stringify([columnas,filas.map(f => JSON.stringify(f)).sort()])).digest('hex') };
   }
   return estado;
 }
 
-// Crea una base de prueba propia y limita sus concesiones, separadas de la cuenta de montaje.
 async function crearCopiaTemporal(claves) {
-  const nombre = `sice_test_${randomBytes(8).toString('hex')}`;
-  const opciones = { host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER, password: process.env.DB_PASSWORD, dateStrings: true,
-    supportBigNumbers: true, bigNumberStrings: true };
-  const origen = await mysql.createConnection({ ...opciones, database: process.env.DB_NAME });
-  const copia = await mysql.createConnection({ ...opciones,
-    user: process.env.DB_SETUP_USER || opciones.user,
-    password: process.env.DB_SETUP_PASSWORD ?? opciones.password });
-  let creada = false;
-  let permisosTemporales = false;
-  const tablasConBorrado = ['sesiones', 'intentos_acceso', 'roles_permisos', 'involucrados'];
-  const [[{ cuenta }]] = await origen.query('SELECT CURRENT_USER() AS cuenta');
-  const [usuario, host] = cuenta.split('@');
-  const [[identidadInicial]] = await copia.query("SELECT CONNECTION_ID() AS conexion, CONCAT(@@hostname, ':', @@port, ':', @@server_id) AS servidor");
-
+  const nombre = 'sice_test_' + randomBytes(8).toString('hex');
+  const contrasena = generarContrasena();
+  const entorno = { DB_NAME: nombre, DB_USER: nombre, DB_PASSWORD: contrasena };
+  const origen = createDatabasePool();
+  const estadoInicial = await leerEstadoOrigen(origen);
+  await origen.end();
+  let creada = false, cuentaCreada = false, copia, db;
+  let identidad;
+  const servidor = await administrar("SELECT CAST(SERVERPROPERTY('ServerName') AS NVARCHAR(128));");
   async function eliminarCopia() {
-    try {
-      if (!creada) return;
-      const [[identidad]] = await copia.query("SELECT DATABASE() AS base, CONNECTION_ID() AS conexion, CONCAT(@@hostname, ':', @@port, ':', @@server_id) AS servidor");
-      // Exige creación propia, nombre exacto y la misma conexión al mismo servidor.
-      if (!/^sice_test_[a-f0-9]{16}$/.test(nombre) || identidad.base !== nombre
-          || identidad.conexion !== identidadInicial.conexion || identidad.servidor !== identidadInicial.servidor) {
-        throw new Error('No coincide la identidad de la copia temporal; no se elimina ninguna base.');
-      }
-      if (permisosTemporales) {
-        for (const tabla of tablasConBorrado) await copia.query(`REVOKE DELETE ON \`${nombre}\`.\`${tabla}\` FROM ?@?`, [usuario, host]);
-        await copia.query(`REVOKE SELECT, INSERT, UPDATE ON \`${nombre}\`.* FROM ?@?`, [usuario, host]);
-      }
-      await copia.query(`DROP DATABASE \`${nombre}\``);
-      creada = false;
-    } finally { await copia.end(); }
+    if (!creada) return;
+    assert.match(nombre, /^sice_test_[a-f0-9]{16}$/);
+    assert.equal(await administrar("SELECT CAST(SERVERPROPERTY('ServerName') AS NVARCHAR(128));"), servidor);
+    assert.equal(await administrar("SELECT CONCAT(database_id, '|', CONVERT(VARCHAR(33),create_date,126)) FROM sys.databases WHERE name=N'" + nombre + "';"), identidad);
+    await administrar('DROP DATABASE [' + nombre + '];');
+    creada = false;
+    if (cuentaCreada) { await administrar('DROP LOGIN [' + nombre + '];'); cuentaCreada = false; }
   }
-
   try {
-    await origen.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
-    const estadoInicial = await leerEstadoOrigen(origen);
-    await copia.query(`CREATE DATABASE \`${nombre}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await administrar('CREATE DATABASE [' + nombre + '] COLLATE Latin1_General_100_CI_AI_SC;');
     creada = true;
-    await copia.changeUser({ database: nombre });
-    for (const sentencia of await leerSentencias()) await copia.query(sentencia);
-    if (process.env.DB_SETUP_USER) {
-      await copia.query(`GRANT SELECT, INSERT, UPDATE ON \`${nombre}\`.* TO ?@?`, [usuario, host]);
-      permisosTemporales = true;
-      for (const tabla of tablasConBorrado) await copia.query(`GRANT DELETE ON \`${nombre}\`.\`${tabla}\` TO ?@?`, [usuario, host]);
-    }
-    await copia.beginTransaction();
-    assert.deepEqual(await cargarColeccion(copia, claves), { cargadas: 24, existentes: 0 });
-    assert.deepEqual(await cargarColeccion(copia, claves), { cargadas: 0, existentes: 24 });
-    await copia.commit();
-    await origen.rollback();
-    async function verificarOrigen() {
-      const conexion = await mysql.createConnection({ ...opciones, database: process.env.DB_NAME });
-      try {
-        await conexion.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
-        assert.deepEqual(await leerEstadoOrigen(conexion), estadoInicial, 'Las tablas, relaciones y datos de SICE deben permanecer intactos.');
-        await conexion.rollback();
-      } finally { await conexion.end(); }
-    }
-    return { nombre, eliminar: eliminarCopia, verificarOrigen };
+    identidad = await administrar("SELECT CONCAT(database_id, '|', CONVERT(VARCHAR(33),create_date,126)) FROM sys.databases WHERE name=N'" + nombre + "';");
+    await administrar((await leerSentencias()).join(';\n') + ';', nombre);
+    await administrar("CREATE LOGIN [" + nombre + "] WITH PASSWORD=N'" + contrasena + "', CHECK_POLICY=ON;");
+    cuentaCreada = true;
+    const tablas = (await leerSentencias()).filter(s => s.startsWith('CREATE TABLE')).map(s => s.match(/^CREATE TABLE (\w+)/)[1]);
+    await administrar('CREATE USER [' + nombre + '] FOR LOGIN [' + nombre + ']; GRANT SELECT, INSERT ON SCHEMA::dbo TO [' + nombre + '];\n' +
+      tablas.filter(t => t !== 'historial').map(t => 'GRANT UPDATE ON dbo.[' + t + '] TO [' + nombre + '];').join('\n') +
+      '\n' + ['sesiones','intentos_acceso','roles_permisos'].map(t => 'GRANT DELETE ON dbo.[' + t + '] TO [' + nombre + '];').join('\n'), nombre);
+    copia = createDatabasePool({ ...process.env, ...entorno });
+    db = await copia.getConnection();
+    await db.beginTransaction();
+    assert.deepEqual(await cargarColeccion(db, claves), { cargadas: 24, existentes: 0 });
+    assert.deepEqual(await cargarColeccion(db, claves), { cargadas: 0, existentes: 24 });
+    await db.commit();
+    db.release();
+    await copia.end();
+    return { nombre, entorno, eliminar: eliminarCopia, async verificarOrigen() {
+      const conexion = createDatabasePool();
+      try { assert.deepEqual(await leerEstadoOrigen(conexion), estadoInicial, 'SICE debe permanecer intacta.'); }
+      finally { await conexion.end(); }
+    } };
   } catch (error) {
-    await copia.rollback();
+    if (db) { await db.rollback().catch(() => {}); db.release(); }
+    if (copia) await copia.end();
     await eliminarCopia();
     throw error;
-  } finally { await origen.end(); }
+  }
 }
 
 test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento y PDF', { timeout: 180000 }, async (t) => {
-  assert.ok(['sice', 'sice_local'].includes(process.env.DB_NAME?.toLowerCase()));
+  assert.equal(process.env.DB_NAME?.toLowerCase(), 'sice');
   assert.equal(process.env.NODE_ENV, 'development');
   // Las credenciales de los datos sintéticos existen solo en el proceso de prueba.
   const claves = Object.fromEntries(personalEscolar.map(([rol]) => [`${rol.toUpperCase()}_PASSWORD`, process.env.TEST_PASSWORD || generarContrasena()]));
@@ -120,7 +96,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       finally { await copia.verificarOrigen(); }
     }
   });
-  pool = createDatabasePool({ ...process.env, DB_NAME: copia.nombre });
+  pool = createDatabasePool({ ...process.env, ...copia.entorno });
   const [filas] = await pool.execute(`SELECT u.*, p.nombres, p.apellidos, r.codigo AS rol FROM usuarios u
     JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol WHERE p.codigo_interno LIKE 'PER-2026-00%'`);
   const usuarios = Object.fromEntries(filas.map((u) => [u.rol, u]));
@@ -181,7 +157,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   // Compara HTTP con SELECT y arranca otro proceso para detectar dependencias de estado en memoria.
   await t.test('los registros HTTP coinciden con SQL y sobreviven a otro proceso del servidor', async () => {
     const creado = await datos('incidencias', 'director', 'POST', cuerpo('seguridad'), 201);
-    const titulo = 'Ubicación revisada y conservada en MariaDB';
+    const titulo = 'Ubicación revisada y conservada en SQL Server';
     await datos(`incidencias/${creado.id}/borrador`, 'director', 'PUT', { ...cuerpo('seguridad'), titulo });
     const [[registro]] = await pool.execute(`SELECT i.id, i.estado, v.titulo, v.descripcion, v.lugar
       FROM incidencias i JOIN versiones_incidencia v ON v.id = i.id_version_vigente WHERE i.id = ?`, [creado.id]);
@@ -189,7 +165,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     await new Promise(resolve => server.close(resolve));
     await pool.end();
     const proceso = spawn(process.execPath, [fileURLToPath(new URL('../src/server.js', import.meta.url))], {
-      env: { ...process.env, DB_NAME: copia.nombre, HOST: '127.0.0.1', PORT: new URL(base).port, APP_ORIGIN: origin },
+      env: { ...process.env, ...copia.entorno, HOST: '127.0.0.1', PORT: new URL(base).port, APP_ORIGIN: origin },
       windowsHide: true, stdio: ['ignore', 'pipe', 'ignore']
     });
     try {
@@ -211,7 +187,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       if (proceso.exitCode === null && proceso.signalCode === null) {
         const salida = once(proceso, 'exit'); proceso.kill(); await salida;
       }
-      pool = createDatabasePool({ ...process.env, DB_NAME: copia.nombre });
+      pool = createDatabasePool({ ...process.env, ...copia.entorno });
       server = createApp({ pool, origin }).listen(Number(new URL(base).port), '127.0.0.1');
       await once(server, 'listening');
     }
@@ -230,7 +206,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     const sesion = await peticion('auth/sesion', 'director'); assert.equal(sesion.status, 200); assert.equal(sesion.headers.get('cache-control'), 'no-store');
   });
 
-  await t.test('cambio consecutivo de usuario: revocación en MySQL, cookie y CSRF', async () => {
+  await t.test('cambio consecutivo de usuario: revocación en SQL Server, cookie y CSRF', async () => {
     const secuencia = ['administrador', 'director', 'subdirector', 'administrador', 'coordinador_tutoria', 'docente', 'auxiliar'];
     for (const rol of secuencia) {
       const acceso = await peticion('auth/login', null, 'POST', { usuario: usuarios[rol].nombre_usuario, contrasena: claves[`${rol.toUpperCase()}_PASSWORD`] });
@@ -239,7 +215,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       const token = cookie.slice(cookie.indexOf('=') + 1);
       const sesion = await peticion('auth/sesion', null, 'GET', undefined, { Cookie: cookie });
       assert.equal((await sesion.json()).usuario.rol, rol);
-      const [[antes]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM sesiones WHERE token_hash = SHA2(?, 256)', [token]);
+      const [[antes]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM sesiones WHERE token_hash = ?', [resumir(token)]);
       assert.equal(Number(antes.cantidad), 1);
       const cierre = await peticion('auth/logout', null, 'POST', {}, { Cookie: cookie });
       assert.equal(cierre.status, 204);
@@ -250,7 +226,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       assert.ok(/SameSite=Strict/.test(borrado));
       assert.ok(new Date(borrado.match(/Expires=([^;]+)/)[1]).getTime() < Date.now());
       assert.ok(!/Domain=/i.test(borrado));
-      const [[despues]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM sesiones WHERE token_hash = SHA2(?, 256)', [token]);
+      const [[despues]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM sesiones WHERE token_hash = ?', [resumir(token)]);
       assert.equal(Number(despues.cantidad), 0);
       assert.equal((await peticion('auth/sesion', null, 'GET', undefined, { Cookie: cookie })).status, 401);
       assert.equal((await peticion('auth/sesion', null)).status, 401);
@@ -262,7 +238,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
 
   await t.test('caducidad absoluta e inactividad invalidan la sesión en el servidor', async () => {
     for (const columna of ['vence_en', 'ultima_actividad_en']) {
-      await pool.execute(`UPDATE sesiones SET ${columna} = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 9 HOUR) WHERE id_usuario = ?`, [usuarios.director.id]);
+      await pool.execute(`UPDATE sesiones SET ${columna} = DATEADD(HOUR, -9, SYSUTCDATETIME()) WHERE id_usuario = ?`, [usuarios.director.id]);
       assert.equal((await peticion('auth/sesion', 'director')).status, 401);
       assert.equal((await peticion('incidencias', 'director')).status, 401);
       const acceso = await peticion('auth/login', null, 'POST', { usuario: usuarios.director.nombre_usuario, contrasena: claves.DIRECTOR_PASSWORD });
@@ -271,10 +247,10 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     }
   });
 
-  await t.test('MariaDB y esquema validado; scripts sin cambios inesperados de base', async () => {
-    const [[fila]] = await pool.execute('SELECT VERSION() AS version'); assert.match(fila.version, /MariaDB/i);
-    assert.deepEqual(await verificarEsquema(pool), { tablas: 22, columnas: 225, clavesForaneas: 76, checks: 51 });
-    assert.ok((await leerSentencias()).every((s) => /^(CREATE TABLE|ALTER TABLE)\s/.test(s)));
+  await t.test('SQL Server y esquema validado; scripts sin cambios inesperados de base', async () => {
+    const [[fila]] = await pool.execute("SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS int) AS version"); assert.equal(fila.version, 16);
+    assert.deepEqual(await verificarEsquema(pool), { tablas: 22, columnas: 225, clavesForaneas: 76, checks: 148 });
+    assert.ok((await leerSentencias()).every((s) => /^(SET|CREATE TABLE|CREATE (?:UNIQUE )?INDEX|ALTER TABLE)\s/.test(s)));
   });
   await t.test('colección de 24 expedientes, adulto sin matrícula y carga repetible', async () => {
     assert.equal(escenarios.length, 24);
@@ -304,7 +280,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   });
   let editable;
   await t.test('borrador editable, autoría automática, validación y CSRF', async () => {
-    const [[previo]] = await pool.execute("SELECT id_incidencia AS id FROM historial WHERE accion = 'verificacion_borrador' LIMIT 1");
+    const [[previo]] = await pool.execute("SELECT TOP (1) id_incidencia AS id FROM historial WHERE accion = 'verificacion_borrador'");
     const payload = cuerpo('seguridad');
     if (previo) editable = previo.id;
     else {
@@ -326,7 +302,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   const registrados = {};
   await t.test('registro y confirmación de las seis categorías, con cero/uno/varios estudiantes', async () => {
     for (const categoria of Object.keys(categoriaDatos)) {
-      const [[previo]] = await pool.execute("SELECT id_incidencia AS id FROM historial WHERE accion = 'verificacion_categoria' AND valor_nuevo = ? LIMIT 1", [categoria]);
+      const [[previo]] = await pool.execute("SELECT id_incidencia AS id FROM historial WHERE accion = 'verificacion_categoria' AND valor_nuevo = ?", [categoria]);
       let id = previo?.id;
       if (!id) {
         id = (await datos('incidencias', 'director', 'POST', cuerpo(categoria), 201)).id;
@@ -369,7 +345,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     assert.equal((await peticion(`incidencias/${ids[22]}/actuaciones`, 'auxiliar', 'POST', { tipo: 'actuacion', detalle: 'No debe admitirse.' })).status, 409);
   });
   await t.test('seguimiento sensible eleva protección atómicamente y devuelve constancia sin contenido', async () => {
-    let [[registro]] = await pool.execute("SELECT i.id, i.confidencialidad FROM incidencias i JOIN historial h ON h.id_incidencia = i.id WHERE h.accion = 'verificacion_reserva' LIMIT 1");
+    let [[registro]] = await pool.execute("SELECT TOP (1) i.id, i.confidencialidad FROM incidencias i JOIN historial h ON h.id_incidencia = i.id WHERE h.accion = 'verificacion_reserva'");
     if (!registro) {
       const payload = { ...cuerpo('seguridad'), id_reportante: usuarios.auxiliar.id_persona, titulo: 'Seguimiento reservado de una observación en el acceso' };
       const creado = await datos('incidencias', 'auxiliar', 'POST', payload, 201);
@@ -390,14 +366,14 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
   await t.test('FK y CHECK rechazan datos inválidos con rollback, sin afectar otras bases', async () => {
     const db = await pool.getConnection(); await db.beginTransaction();
     try {
-      await assert.rejects(db.execute('UPDATE incidencias SET id_version_vigente = ? WHERE id = ?', [1, ids[19]]), { code: 'ER_NO_REFERENCED_ROW_2' });
+      await assert.rejects(db.execute('UPDATE incidencias SET id_version_vigente = ? WHERE id = ?', [1, ids[19]]), { number: 547 });
       await assert.rejects(db.execute("UPDATE incidencias SET prioridad = 'invalida' WHERE id = ?", [ids[19]]),
-        (error) => error.errno === 4025 && error.sqlMessage.includes('ck_incidencias_prioridad'));
+        (error) => error.number === 547 && error.message.includes('ck_incidencias_prioridad'));
       const [[testigo]] = await db.execute("SELECT id FROM personas WHERE codigo_interno = 'EXT-2026-001'");
-      await assert.rejects(db.execute('UPDATE involucrados SET id_matricula = ? WHERE id_persona = ?', [alumnos[1].matricula, testigo.id]), { code: 'ER_NO_REFERENCED_ROW_2' });
+      await assert.rejects(db.execute('UPDATE involucrados SET id_matricula = ? WHERE id_persona = ?', [alumnos[1].matricula, testigo.id]), { number: 547 });
     } finally { await db.rollback(); db.release(); }
   });
-  await t.test('paginación MySQL: 20 filas, orden estable, búsquedas y totales autorizados', async () => {
+  await t.test('paginación SQL Server: 20 filas, orden estable, búsquedas y totales autorizados', async () => {
     const roles = ['director', 'subdirector', 'coordinador_tutoria', 'docente', 'auxiliar'];
     const iniciales = {};
     for (const rol of roles) iniciales[rol] = (await datos('incidencias', rol)).paginacion.total;
@@ -492,7 +468,7 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
     assert.ok(ultimo.length > 700, 'La última página del informe extenso debe conservar texto junto a las firmas.');
     await pdf.cleanup?.(); await pdfLargo.cleanup?.();
   });
-  await t.test('PDF desde MySQL: actuaciones y observaciones extensas completas, sin filas fuera de página', async () => {
+  await t.test('PDF desde SQL Server: actuaciones y observaciones extensas completas, sin filas fuera de página', async () => {
     const nuevo = await datos('incidencias', 'subdirector', 'POST', cuerpo('seguridad'), 201);
     await datos(`incidencias/${nuevo.id}/confirmar`, 'subdirector', 'POST', {});
     const marcadores = [];
@@ -573,8 +549,8 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       const { verificarInterfaz } = await import('./interfaz-browser.js');
       await verificarInterfaz(base, claves, async (nombreUsuario) => {
         // Solo modifica sesiones de la copia temporal creada por esta suite.
-        await pool.execute(`UPDATE sesiones s JOIN usuarios u ON u.id = s.id_usuario
-          SET s.vence_en = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND) WHERE u.nombre_usuario = ?`, [nombreUsuario]);
+        await pool.execute(`UPDATE s SET s.vence_en = DATEADD(SECOND, -1, SYSUTCDATETIME())
+          FROM sesiones s JOIN usuarios u ON u.id = s.id_usuario WHERE u.nombre_usuario = ?`, [nombreUsuario]);
       });
     });
   }

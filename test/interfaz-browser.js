@@ -1,5 +1,5 @@
 // Comprobación manual reproducible con Chrome local: node test/interfaz-browser.js
-// Usa la copia temporal de la suite MySQL. No guarda capturas ni descarga navegadores.
+// Usa la copia temporal de la suite SQL Server. No guarda capturas ni descarga navegadores.
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, access, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

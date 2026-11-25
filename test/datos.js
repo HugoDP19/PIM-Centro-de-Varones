@@ -228,9 +228,9 @@ async function identidades(db, claves) {
     personas[rol] = { id: idPersona, nombre: `${nombres} ${apellidos}`, condicion: 'personal' };
   }
   for (const [codigo, permitidos] of Object.entries(limitesPermisos)) {
-    await db.execute('INSERT INTO permisos (codigo, descripcion) VALUES (?, ?) ON DUPLICATE KEY UPDATE codigo = codigo', [codigo, `Acción institucional: ${codigo}`]);
+    await db.execute('INSERT INTO permisos (codigo, descripcion) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM permisos WHERE codigo = ?)', [codigo, `Acción institucional: ${codigo}`, codigo]);
     const [[p]] = await db.execute('SELECT id FROM permisos WHERE codigo = ?', [codigo]);
-    for (const rol of permitidos) await db.execute('INSERT INTO roles_permisos (id_rol, id_permiso) VALUES (?, ?) ON DUPLICATE KEY UPDATE id_rol = id_rol', [usuarios[rol].id_rol, p.id]);
+    for (const rol of permitidos) await db.execute('INSERT INTO roles_permisos (id_rol, id_permiso) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM roles_permisos WHERE id_rol = ? AND id_permiso = ?)', [usuarios[rol].id_rol, p.id, usuarios[rol].id_rol, p.id]);
   }
   const madres = [['Verónica Isabel', 'Flores Medina'], ['Rosa Angélica', 'Rojas Sánchez'], ['Carmen Cecilia', 'Paredes Velásquez'], ['Patricia Susana', 'Huamán Vargas']];
   for (const [indice, [nombres, apellidos]] of madres.entries()) {
@@ -383,7 +383,7 @@ async function crearEscenarioEspecial(db, caso, registro, registros, identidades
 
 // Fixtures exclusivos de pruebas; exigir una base temporal propia antes de insertar.
 export async function cargarColeccion(conexion, claves) {
-  const [[{ base }]] = await conexion.query('SELECT DATABASE() AS base');
+  const [[{ base }]] = await conexion.query('SELECT DB_NAME() AS base');
   if (!/^sice_test_[a-f0-9]{16}$/.test(base)) throw new Error('Los fixtures solo permiten bases temporales de prueba.');
   const [[existente]] = await conexion.execute("SELECT COUNT(*) AS cantidad FROM historial WHERE accion = 'carga_escolar'");
   if (Number(existente.cantidad) === casos.length) return { cargadas: 0, existentes: casos.length };

@@ -29,7 +29,7 @@ test('servidor, portada y recursos locales', async (t) => {
   }
 });
 
-test('MySQL exige configuración real y puerto válido', () => {
+test('SQL Server exige configuración real y puerto válido', () => {
   assert.throws(() => createDatabasePool({}), /DB_HOST, DB_NAME, DB_USER, DB_PASSWORD/);
   assert.throws(() => createDatabasePool({ DB_HOST: 'test', DB_NAME: 'test', DB_USER: 'test', DB_PASSWORD: 'test', DB_PORT: 'invalid' }), /DB_PORT/);
 });

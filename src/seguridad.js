@@ -76,7 +76,7 @@ export function rechazar(status, mensaje) {
 // Validación común sin depender de rutas, consultas ni generación de PDF.
 export function validarIdentificador(valor) {
   const identificador = String(valor ?? '');
-  if (!/^[1-9]\d{0,19}$/.test(identificador) || BigInt(identificador) > 18446744073709551615n) {
+  if (!/^[1-9]\d{0,19}$/.test(identificador) || BigInt(identificador) > 9223372036854775807n) {
     rechazar(400, 'Identificador no válido.');
   }
   return identificador;

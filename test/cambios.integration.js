@@ -90,7 +90,7 @@ export async function verificarCambios({ t, pool, datos, peticion, claves, cuerp
     assert.equal(fila.confidencialidad, 'restringida');
   });
   await t.test('estudiantes: roles autorizados, matrícula inmediata, auditoría y duplicados sin filas parciales', async () => {
-    const [aulas] = await pool.execute('SELECT id,anio_lectivo FROM aulas LIMIT 1');
+    const [aulas] = await pool.execute('SELECT TOP (1) id,anio_lectivo FROM aulas');
     for (const rol of ['director', 'subdirector', 'coordinador_tutoria']) {
       const codigo = `PR-${rol.slice(0, 10)}`;
       const cuerpo = { nombres: 'Estudiante de prueba', apellidos: rol, codigo_estudiante: codigo,

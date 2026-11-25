@@ -59,8 +59,8 @@ export function createApp({ pool, origin = 'http://127.0.0.1:3000', produccion =
     if (res.headersSent) return next(error);
     const mensajes = { 400: 'La solicitud no es válida.', 401: 'Inicia sesión para continuar.', 403: 'Acceso no autorizado.',
       404: 'Recurso no encontrado.', 405: 'Operación no disponible.', 409: 'El registro cambió; revisa su estado.', 413: 'La solicitud supera el tamaño permitido.' };
-    const status = error.code === 'ER_DUP_ENTRY' ? 409 : mensajes[error.status] ? error.status : 500;
-    const mensaje = error.code === 'ER_DUP_ENTRY' ? 'Esa identificación ya está registrada. Revisa los datos autorizados.'
+    const status = [2601, 2627].includes(error.number) ? 409 : mensajes[error.status] ? error.status : 500;
+    const mensaje = [2601, 2627].includes(error.number) ? 'Esa identificación ya está registrada. Revisa los datos autorizados.'
       : error.publicMessage && mensajes[status] ? error.publicMessage : mensajes[status] || 'No se pudo completar la solicitud. Inténtalo de nuevo.';
     res.status(status).json({ error: mensaje });
   });

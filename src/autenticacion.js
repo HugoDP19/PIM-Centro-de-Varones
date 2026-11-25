@@ -57,7 +57,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
   const opciones = opcionesCookie(produccion);
   const limpiar = (res) => res.clearCookie(cookie, opciones);
 
-  // Revalida la sesión en MariaDB en cada petición antes de entregar el usuario a las rutas.
+  // Revalida la sesión en SQL Server en cada petición antes de entregar el usuario a las rutas.
   async function exigirSesion(req, res, next) {
     if (!pool) return res.status(503).json({ error: 'El servicio de acceso no está disponible.' });
     const token = leerToken(req, cookie);

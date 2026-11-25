@@ -41,17 +41,17 @@ export async function listarIncidencias(db, usuario, { buscar = '', pagina = 1, 
   const desplazamiento = (pagina - 1) * porPagina;
   const [filas] = await db.execute(`
     SELECT i.id, i.estado, i.prioridad, i.confidencialidad, i.registrada_en, v.titulo, t.categoria,
-           i.nombre_registrador ${origen} ORDER BY i.registrada_en DESC, i.id DESC LIMIT 20 OFFSET ?`,
-  [...parametros, String(desplazamiento)]);
+           i.nombre_registrador ${origen} ORDER BY i.registrada_en DESC, i.id DESC OFFSET ? ROWS FETCH NEXT 20 ROWS ONLY`,
+  [...parametros, desplazamiento]);
   return { incidencias: filas, paginacion: { pagina, paginas, porPagina, total,
     desde: total ? desplazamiento + 1 : 0, hasta: desplazamiento + filas.length } };
 }
 
 export async function buscarIncidencia(db, usuario, id, bloquear = false) {
   const filtro = alcance(usuario);
-  const [filas] = await db.execute(`SELECT i.*, r.nombre AS cargo_registrador FROM incidencias i
+  const [filas] = await db.execute(`SELECT i.*, r.nombre AS cargo_registrador FROM incidencias i ${bloquear ? 'WITH (UPDLOCK, HOLDLOCK)' : ''}
     JOIN roles r ON r.id = i.id_rol_registrador
-    WHERE i.id = ? AND ${filtro.sql}${bloquear ? ' FOR UPDATE' : ''}`, [id, ...filtro.valores]);
+    WHERE i.id = ? AND ${filtro.sql}`, [id, ...filtro.valores]);
   return filas[0];
 }
 
@@ -67,15 +67,15 @@ export async function catalogos(db, usuario) {
   const [tipos] = await db.execute('SELECT id, categoria, nombre, minimo_estudiantes FROM tipos_incidencia WHERE activo = 1 ORDER BY categoria, nombre');
   const [personas] = await db.execute(`
     SELECT p.id, p.nombres, p.apellidos, p.es_personal,
-      EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id) AS es_estudiante,
-      EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) AS es_apoderado
+      CASE WHEN EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id) THEN 1 ELSE 0 END AS es_estudiante,
+      CASE WHEN EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) THEN 1 ELSE 0 END AS es_apoderado
     FROM personas p WHERE p.activo = 1
       AND (? = 1 OR p.id = ? OR NOT EXISTS (
         SELECT 1 FROM incidencias i JOIN versiones_incidencia v ON v.id_incidencia = i.id
         LEFT JOIN involucrados inv ON inv.id_version = v.id AND inv.id_persona = p.id
         WHERE i.confidencialidad = 'restringida' AND (i.estado <> 'borrador' OR i.id_registrador <> ?)
           AND (v.id_reportante = p.id OR inv.id_persona IS NOT NULL)))
-    ORDER BY p.apellidos, p.nombres LIMIT 250`, [Number(reserva), usuario.id_persona, usuario.id]);
+    ORDER BY p.apellidos, p.nombres OFFSET 0 ROWS FETCH NEXT 250 ROWS ONLY`, [Number(reserva), usuario.id_persona, usuario.id]);
   const ids = new Set(personas.map((p) => String(p.id)));
   const [matriculas] = await db.execute(`SELECT m.id, m.id_estudiante AS id_persona, m.fecha_inicio, m.fecha_fin,
     a.anio_lectivo, a.nivel, a.grado, a.seccion FROM matriculas m JOIN aulas a ON a.id = m.id_aula ORDER BY a.anio_lectivo DESC`);
@@ -84,8 +84,8 @@ export async function catalogos(db, usuario) {
 }
 
 export async function persona(db, id) {
-  const [[fila]] = await db.execute(`SELECT p.*, EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id AND e.activo = 1) AS es_estudiante,
-    EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) AS es_apoderado FROM personas p WHERE p.id = ?`, [id]);
+  const [[fila]] = await db.execute(`SELECT p.*, CASE WHEN EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id AND e.activo = 1) THEN 1 ELSE 0 END AS es_estudiante,
+    CASE WHEN EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) THEN 1 ELSE 0 END AS es_apoderado FROM personas p WHERE p.id = ?`, [id]);
   return fila;
 }
 
@@ -94,12 +94,12 @@ export async function detalleIncidencia(db, incidencia) {
   const version = await versionActual(db, incidencia);
   const [involucrados] = await db.execute(`SELECT inv.*, CONCAT(p.nombres, ' ', p.apellidos) AS nombre,
     a.nivel, a.grado, a.seccion, a.anio_lectivo,
-    EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id) AS es_estudiante
+    CASE WHEN EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id) THEN 1 ELSE 0 END AS es_estudiante
     FROM involucrados inv JOIN personas p ON p.id = inv.id_persona
     LEFT JOIN matriculas m ON m.id = inv.id_matricula LEFT JOIN aulas a ON a.id = m.id_aula
     WHERE inv.id_version = ? ORDER BY p.apellidos, p.nombres`, [version.id]);
   const [actuaciones] = await db.execute(`SELECT a.*, CONCAT(p.nombres, ' ', p.apellidos) AS autor,
-    r.nombre AS cargo_autor, CONCAT(pr.nombres, ' ', pr.apellidos) AS responsable
+    r.nombre AS cargo_autor, CASE WHEN pr.id IS NULL THEN NULL ELSE CONCAT(pr.nombres, ' ', pr.apellidos) END AS responsable
     FROM actuaciones a JOIN usuarios u ON u.id = a.id_autor JOIN personas p ON p.id = u.id_persona
     JOIN roles r ON r.id = a.id_rol_autor LEFT JOIN usuarios ur ON ur.id = a.id_responsable
     LEFT JOIN personas pr ON pr.id = ur.id_persona WHERE a.id_incidencia = ? ORDER BY a.registrada_en, a.id`, [incidencia.id]);
@@ -135,8 +135,9 @@ export async function auditar(db, usuario, incidencia, accion, datos = {}) {
 // Nombres internos, nunca identificadores recibidos del cliente.
 export async function insertar(db, tabla, datos) {
   const columnas = Object.keys(datos);
-  const [resultado] = await db.execute(`INSERT INTO ${tabla} (${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(', ')})`, Object.values(datos));
-  return String(resultado.insertId);
+  const identidad = !['estudiantes', 'involucrados', 'roles_permisos', 'participantes_revision'].includes(tabla);
+  const [filas] = await db.execute(`INSERT INTO ${tabla} (${columnas.join(', ')}) ${identidad ? 'OUTPUT INSERTED.id' : ''} VALUES (${columnas.map(() => '?').join(', ')})`, Object.values(datos));
+  return identidad ? String(filas[0].id) : undefined;
 }
 
 export async function editarVersion(db, id, datos) {
@@ -158,8 +159,8 @@ export async function solicitudesPendientes(db, incidencia) {
 
 // Bloquea la solicitud del expediente para serializar su evaluación o resolución.
 export async function solicitudCambio(db, id, incidencia) {
-  return (await db.execute(`SELECT s.*, u.id_persona AS id_persona_solicitante FROM solicitudes_cambio s
-    JOIN usuarios u ON u.id = s.id_solicitante WHERE s.id = ? AND s.id_incidencia = ? FOR UPDATE`, [id, incidencia]))[0][0];
+  return (await db.execute(`SELECT s.*, u.id_persona AS id_persona_solicitante FROM solicitudes_cambio s WITH (UPDLOCK, HOLDLOCK)
+    JOIN usuarios u ON u.id = s.id_solicitante WHERE s.id = ? AND s.id_incidencia = ?`, [id, incidencia]))[0][0];
 }
 
 export async function actualizarSolicitud(db, id, datos) {

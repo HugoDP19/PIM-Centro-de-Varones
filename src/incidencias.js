@@ -38,7 +38,7 @@ function fechaCivilValida(valor) {
   return fecha && Number.isFinite(fecha.getTime()) && fecha.toISOString().slice(0, 10) === valor;
 }
 
-// Interpreta la fecha civil de Lima y valida los filtros antes de consultar MySQL.
+// Interpreta la fecha civil de Lima y valida los filtros antes de consultar SQL Server.
 function filtrosListado(consulta) {
   const buscar = consulta.buscar ? validarTexto(consulta.buscar, 'búsqueda', 100) : '';
   const categoria = consulta.categoria || '', estado = consulta.estado || '';
