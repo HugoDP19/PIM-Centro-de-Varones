@@ -89,6 +89,24 @@ export function validarTexto(valor, campo, maximo, obligatorio = true) {
   return valor.trim();
 }
 
+// Admite nombres Unicode y separadores naturales, sin aceptar números o símbolos aislados.
+export function validarNombre(valor, campo, maximo) {
+  const nombre = validarTexto(valor, campo, maximo).normalize('NFC').replace(/\s+/g, ' ');
+  if (!/^\p{L}[\p{L}\p{M}]*(?:[ '’ʼ-]\p{L}[\p{L}\p{M}]*)*$/u.test(nombre)) {
+    rechazar(400, `Revisa ${campo}: usa letras, espacios, apóstrofes o guiones entre nombres.`);
+  }
+  return nombre;
+}
+
+export const escaparBusqueda = valor => valor.replace(/[!%_\[]/g, '!$&');
+
+// La huella no depende del orden de las propiedades JSON de un reintento.
+export function huellaRegistro(valor) {
+  const ordenar = dato => Array.isArray(dato) ? dato.map(ordenar)
+    : dato && typeof dato === 'object' ? Object.fromEntries(Object.keys(dato).sort().map(clave => [clave, ordenar(dato[clave])])) : dato;
+  return resumir(JSON.stringify(ordenar(valor)));
+}
+
 export function permisosEfectivos(usuario) {
   return usuario.permisos.filter((permiso) => tienePermiso(usuario, permiso));
 }

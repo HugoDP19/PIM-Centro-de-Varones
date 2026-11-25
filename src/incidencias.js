@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { autorizar } from './autenticacion.js';
-import { rechazar, tienePermiso, validarIdentificador, validarTexto } from './seguridad.js';
+import { actorVigente } from './cuentas.js';
+import { rechazar, tienePermiso, validarIdentificador, validarTexto, huellaRegistro } from './seguridad.js';
 import { transaccion } from './database.js';
 import * as consultas from './consultas-incidencias.js';
 import { generarInforme } from './informes.js';
@@ -58,15 +59,16 @@ function filtrosListado(consulta) {
   return filtros;
 }
 
-async function personaPermitida(conexion, identificador, personasPermitidas) {
+async function personaPermitida(conexion, identificador, usuario) {
   const idPersona = validarIdentificador(identificador);
-  if (!personasPermitidas.has(idPersona)) rechazar(403, 'No puedes seleccionar esa identidad desde este acceso.');
-  return consultas.persona(conexion, idPersona);
+  const persona = await consultas.personaVisible(conexion, usuario, idPersona);
+  if (!persona) rechazar(403, 'No puedes seleccionar esa identidad desde este acceso.');
+  return persona;
 }
 
 // Contrasta la condición declarada con la identidad permitida y sus perfiles reales.
-async function validarReportante(conexion, cuerpo, personasPermitidas) {
-  const reportante = await personaPermitida(conexion, cuerpo.id_reportante, personasPermitidas);
+async function validarReportante(conexion, cuerpo, usuario) {
+  const reportante = await personaPermitida(conexion, cuerpo.id_reportante, usuario);
   const condicion = cuerpo.condicion_reportante;
   if (!['personal', 'estudiante', 'apoderado', 'externo'].includes(condicion)
       || (condicion === 'personal' && !reportante.es_personal)
@@ -106,14 +108,14 @@ async function validarMatricula(conexion, idMatricula, persona, ocurridaEn) {
   if (dia && (dia < matricula.fecha_inicio.toISOString().slice(0, 10) || (matricula.fecha_fin && dia > matricula.fecha_fin.toISOString().slice(0, 10)))) rechazar(400, 'La matrícula no corresponde a la fecha del hecho.');
 }
 
-async function validarInvolucrados(conexion, filas, personasPermitidas, ocurridaEn) {
+async function validarInvolucrados(conexion, filas, usuario, ocurridaEn) {
   if (!Array.isArray(filas) || filas.length > 50) rechazar(400, 'Revisa las personas involucradas.');
   const involucrados = [];
   for (const fila of filas) {
     if (!fila || typeof fila !== 'object' || Array.isArray(fila) || Object.keys(fila).some((campo) => !['id_persona', 'id_matricula', 'participacion'].includes(campo))) rechazar(400, 'Datos de participación no válidos.');
     const idPersona = validarIdentificador(fila.id_persona);
     if (involucrados.some((p) => p.id_persona === idPersona)) rechazar(400, 'Una persona no puede repetirse en la misma versión.');
-    const persona = await personaPermitida(conexion, idPersona, personasPermitidas);
+    const persona = await personaPermitida(conexion, idPersona, usuario);
     if (!['afectado', 'testigo', 'involucrado'].includes(fila.participacion)) rechazar(400, 'Participación no válida.');
     const idMatricula = fila.id_matricula ? validarIdentificador(fila.id_matricula) : null;
     await validarMatricula(conexion, idMatricula, persona, ocurridaEn);
@@ -129,9 +131,7 @@ export async function validarRegistro(conexion, usuario, cuerpo) {
   if (!cuerpo || Object.keys(cuerpo).some(campo => !permitidos.includes(campo))) rechazar(400, 'La solicitud contiene campos no permitidos; la autoría se obtiene de la sesión.');
   const tipo = await consultas.tipoIncidencia(conexion, validarIdentificador(cuerpo.id_tipo));
   if (!tipo) rechazar(400, 'Selecciona un tipo de incidencia activo.');
-  const catalogo = await consultas.catalogos(conexion, usuario);
-  const personasPermitidas = new Set(catalogo.personas.map(persona => String(persona.id)));
-  const reportante = await validarReportante(conexion, cuerpo, personasPermitidas);
+  const reportante = await validarReportante(conexion, cuerpo, usuario);
   if (!['baja', 'normal', 'alta', 'urgente'].includes(cuerpo.prioridad)) rechazar(400, 'Selecciona una prioridad válida.');
   if (!['interna', 'restringida'].includes(cuerpo.confidencialidad) || typeof cuerpo.contenido_sensible !== 'boolean') rechazar(400, 'Indica la confidencialidad y si existe contenido sensible.');
   const version = {
@@ -139,7 +139,7 @@ export async function validarRegistro(conexion, usuario, cuerpo) {
     ocurrida_en: fechaHecho(cuerpo.ocurrida_en), lugar: cuerpo.lugar ? validarTexto(cuerpo.lugar, 'lugar', 255) : null,
     ...reportante, ...validarCamposCategoria(cuerpo, tipo.categoria)
   };
-  const involucrados = await validarInvolucrados(conexion, cuerpo.involucrados, personasPermitidas, version.ocurrida_en);
+  const involucrados = await validarInvolucrados(conexion, cuerpo.involucrados, usuario, version.ocurrida_en);
   return { version, involucrados, prioridad: cuerpo.prioridad,
     confidencialidad: cuerpo.contenido_sensible || ['salud', 'proteccion_estudiantil'].includes(tipo.categoria) ? 'restringida' : cuerpo.confidencialidad };
 }
@@ -177,6 +177,13 @@ export function rutasIncidencias(pool) {
     next();
   });
   router.get('/catalogos', autorizar('incidencias.registrar'), async (req, res) => res.json(await consultas.catalogos(pool, req.usuario)));
+  router.get('/personas', autorizar('incidencias.registrar'), async (req, res) => {
+    const buscar = req.query.buscar ? validarTexto(req.query.buscar, 'búsqueda de personas', 100) : '';
+    const pagina = req.query.pagina ?? '1';
+    if (typeof pagina !== 'string' || !/^[1-9]\d{0,6}$/.test(pagina)) rechazar(400, 'Selecciona una página válida.');
+    const id = req.query.id === undefined ? undefined : validarIdentificador(req.query.id);
+    res.json(await consultas.buscarPersonas(pool, req.usuario, { buscar, pagina: Number(pagina), id }));
+  });
   router.get('/', autorizar('incidencias.consultar'), async (req, res) => {
     const filtros = filtrosListado(req.query);
     const pagina = req.query.pagina ?? '1';
@@ -186,23 +193,35 @@ export function rutasIncidencias(pool) {
   });
   // Registra borrador, versión, participantes y auditoría dentro de la misma transacción.
   router.post('/', autorizar('incidencias.registrar'), async (req, res) => {
-    const id = await transaccion(pool, async (db) => {
-      const datos = await validarRegistro(db, req.usuario, req.body);
-      const id = await consultas.insertar(db, 'incidencias', { id_registrador: req.usuario.id, id_rol_registrador: req.usuario.id_rol,
-        nombre_registrador: req.usuario.nombre, registrada_en: new Date(), estado: 'borrador', prioridad: datos.prioridad, confidencialidad: datos.confidencialidad });
+    const clave = req.get('X-SICE-Operation');
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(clave || '')) rechazar(400, 'Falta una referencia válida de registro. Vuelve a abrir el formulario.');
+    const huella = huellaRegistro(req.body || {});
+    const resultado = await transaccion(pool, async (db) => {
+      const usuario = await actorVigente(db, req.usuario, 'incidencias.registrar', req.tokenSesion);
+      const previo = await consultas.registroPrevio(db, usuario, clave);
+      if (previo) {
+        if (previo.huella !== huella) rechazar(409, 'La referencia de registro ya corresponde a otros datos. Inicia un nuevo registro.');
+        return { id: previo.id, estado: previo.estado, existente: true };
+      }
+      const datos = await validarRegistro(db, usuario, req.body);
+      const id = await consultas.insertar(db, 'incidencias', { id_registrador: usuario.id, id_rol_registrador: usuario.id_rol,
+        nombre_registrador: usuario.nombre, registrada_en: new Date(), estado: 'borrador', prioridad: datos.prioridad, confidencialidad: datos.confidencialidad });
       const version = await consultas.insertar(db, 'versiones_incidencia', { ...datos.version, id_incidencia: id,
-        numero_version: 1, estado_version: 'borrador', id_autor: req.usuario.id, creada_en: new Date() });
+        numero_version: 1, estado_version: 'borrador', id_autor: usuario.id, creada_en: new Date() });
       await consultas.insertarInvolucrados(db, version, datos.involucrados);
       await consultas.fijarEstado(db, id, { id_version_vigente: version });
-      await consultas.auditar(db, req.usuario, id, 'incidencia_creada', { id_version: version });
-      await auditarInvolucrados(db, req.usuario, id, version, datos.involucrados, 'involucrado_agregado');
-      return id;
+      await consultas.auditar(db, usuario, id, 'incidencia_creada', { id_version: version,
+        campo: 'operacion_registro', valor_anterior: huella, valor_nuevo: clave });
+      await auditarInvolucrados(db, usuario, id, version, datos.involucrados, 'involucrado_agregado');
+      return { id, estado: 'borrador', existente: false };
     });
-    res.status(201).json({ id, estado: 'borrador' });
+    res.status(resultado.existente ? 200 : 201).json(resultado);
   });
   router.get('/:id/pdf', autorizar('incidencias.exportar'), async (req, res) => {
     if (!tienePermiso(req.usuario, 'incidencias.consultar')) rechazar(403, 'No tienes permiso de consulta.');
     const resultado = await transaccion(pool, async (db) => {
+      req.usuario = await actorVigente(db, req.usuario, 'incidencias.exportar', req.tokenSesion);
+      if (!tienePermiso(req.usuario, 'incidencias.consultar')) rechazar(403, 'No tienes permiso de consulta.');
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
       if (incidencia.estado === 'borrador') rechazar(409, 'Confirma el expediente antes de generar su informe.');
       const datos = await consultas.detalleIncidencia(db, incidencia);
@@ -215,6 +234,7 @@ export function rutasIncidencias(pool) {
   });
   router.get('/:id', autorizar('incidencias.consultar'), async (req, res) => {
     const datos = await transaccion(pool, async (db) => {
+      req.usuario = await actorVigente(db, req.usuario, 'incidencias.consultar', req.tokenSesion);
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
       const datos = await consultas.detalleIncidencia(db, incidencia);
       if (incidencia.confidencialidad === 'restringida') await consultas.auditar(db, req.usuario, incidencia.id, 'expediente_consultado');
@@ -225,6 +245,7 @@ export function rutasIncidencias(pool) {
   // Cada edición propia añade una versión y conserva los hechos y participantes anteriores.
   router.put('/:id/borrador', autorizar('incidencias.registrar'), async (req, res) => {
     await transaccion(pool, async (db) => {
+      req.usuario = await actorVigente(db, req.usuario, 'incidencias.registrar', req.tokenSesion);
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
       if (incidencia.estado !== 'borrador' || String(incidencia.id_registrador) !== String(req.usuario.id)) rechazar(409, 'Solo puedes editar tus borradores. Los hechos confirmados requieren una solicitud.');
       const datos = await validarRegistro(db, req.usuario, req.body);
@@ -251,6 +272,7 @@ export function rutasIncidencias(pool) {
   // Solo confirma un borrador propio válido y devuelve constancia si el autor pierde acceso por reserva.
   router.post('/:id/confirmar', autorizar('incidencias.registrar'), async (req, res) => {
     const resultado = await transaccion(pool, async (db) => {
+      req.usuario = await actorVigente(db, req.usuario, 'incidencias.registrar', req.tokenSesion);
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
       if (incidencia.estado !== 'borrador' || String(incidencia.id_registrador) !== String(req.usuario.id)) rechazar(409, 'La confirmación solo admite un borrador propio.');
       const datos = await consultas.detalleIncidencia(db, incidencia);
@@ -266,6 +288,8 @@ export function rutasIncidencias(pool) {
   router.post('/:id/actuaciones', autorizar('incidencias.seguimiento'), async (req, res) => {
     if (!tienePermiso(req.usuario, 'incidencias.consultar')) rechazar(403, 'No tienes permiso de consulta para este seguimiento.');
     const resultado = await transaccion(pool, async (db) => {
+      req.usuario = await actorVigente(db, req.usuario, 'incidencias.seguimiento', req.tokenSesion);
+      if (!tienePermiso(req.usuario, 'incidencias.consultar')) rechazar(403, 'No tienes permiso de consulta.');
       const incidencia = await obtener(db, req.usuario, req.params.id, true);
       if (!['confirmada', 'en_seguimiento'].includes(incidencia.estado)) rechazar(409, 'El expediente no admite seguimiento ordinario en su estado actual.');
       const cuerpo = req.body || {};

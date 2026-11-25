@@ -1,4 +1,4 @@
-import { tienePermiso } from './seguridad.js';
+import { tienePermiso, escaparBusqueda } from './seguridad.js';
 
 // Construye el filtro común de ámbito, confidencialidad y conflictos para las consultas del expediente.
 export function alcance(usuario) {
@@ -22,7 +22,7 @@ export async function listarIncidencias(db, usuario, { buscar = '', pagina = 1, 
   if (codigo) { condiciones.push('i.id = ?'); parametros.push(codigo); }
   else if (desde) { condiciones.push('v.ocurrida_en >= ? AND v.ocurrida_en < ?'); parametros.push(desde, hasta); }
   else if (buscar) {
-    const patron = `%${buscar.replace(/[!%_]/g, '!$&')}%`;
+    const patron = `%${escaparBusqueda(buscar)}%`;
     // EXISTS busca estudiantes de la versión visible sin duplicar filas ni revelar otros expedientes.
     condiciones.push(`(v.titulo LIKE ? ESCAPE '!' OR EXISTS (
       SELECT 1 FROM involucrados inv JOIN estudiantes e ON e.id_persona = inv.id_persona
@@ -61,26 +61,51 @@ export async function versionActual(db, incidencia) {
   return version;
 }
 
-// Oculta identidades reservadas al usuario sin acceso y limita las matrículas a personas visibles.
-export async function catalogos(db, usuario) {
-  const reserva = tienePermiso(usuario, 'incidencias.restringidas');
-  const [tipos] = await db.execute('SELECT id, categoria, nombre, minimo_estudiantes FROM tipos_incidencia WHERE activo = 1 ORDER BY categoria, nombre');
-  const [personas] = await db.execute(`
-    SELECT p.id, p.nombres, p.apellidos, p.es_personal,
-      CASE WHEN EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id) THEN 1 ELSE 0 END AS es_estudiante,
-      CASE WHEN EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) THEN 1 ELSE 0 END AS es_apoderado
-    FROM personas p WHERE p.activo = 1
-      AND (? = 1 OR p.id = ? OR NOT EXISTS (
+// Comparte la misma reserva entre búsqueda e identidad seleccionada, sin depender de una página.
+function filtroPersonas(usuario) {
+  return { sql: `p.activo = 1 AND (? = 1 OR p.id = ? OR NOT EXISTS (
         SELECT 1 FROM incidencias i JOIN versiones_incidencia v ON v.id_incidencia = i.id
         LEFT JOIN involucrados inv ON inv.id_version = v.id AND inv.id_persona = p.id
         WHERE i.confidencialidad = 'restringida' AND (i.estado <> 'borrador' OR i.id_registrador <> ?)
-          AND (v.id_reportante = p.id OR inv.id_persona IS NOT NULL)))
-    ORDER BY p.apellidos, p.nombres OFFSET 0 ROWS FETCH NEXT 250 ROWS ONLY`, [Number(reserva), usuario.id_persona, usuario.id]);
-  const ids = new Set(personas.map((p) => String(p.id)));
+          AND (v.id_reportante = p.id OR inv.id_persona IS NOT NULL)))`,
+    valores: [Number(tienePermiso(usuario, 'incidencias.restringidas')), usuario.id_persona, usuario.id] };
+}
+
+const identidadPersona = `p.id, p.nombres, p.apellidos, p.es_personal,
+  CASE WHEN EXISTS(SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id AND e.activo = 1) THEN 1 ELSE 0 END AS es_estudiante,
+  CASE WHEN EXISTS(SELECT 1 FROM estudiantes_apoderados a WHERE a.id_apoderado = p.id) THEN 1 ELSE 0 END AS es_apoderado`;
+
+export async function personaVisible(db, usuario, id) {
+  const filtro = filtroPersonas(usuario);
+  const [[fila]] = await db.execute(`SELECT ${identidadPersona} FROM personas p WHERE p.id = ? AND ${filtro.sql}`, [id, ...filtro.valores]);
+  return fila;
+}
+
+export async function buscarPersonas(db, usuario, { buscar = '', pagina = 1, id } = {}) {
+  const filtro = filtroPersonas(usuario);
+  const condiciones = [filtro.sql], valores = [...filtro.valores];
+  if (id) { condiciones.push('p.id = ?'); valores.push(id); }
+  if (buscar) {
+    condiciones.push("(CONCAT(p.nombres, ' ', p.apellidos) LIKE ? ESCAPE '!' OR p.codigo_interno LIKE ? ESCAPE '!')");
+    valores.push(`%${escaparBusqueda(buscar)}%`, `%${escaparBusqueda(buscar)}%`);
+  }
+  const origen = `FROM personas p WHERE ${condiciones.join(' AND ')}`;
+  const [[{ total }]] = await db.execute(`SELECT COUNT(*) AS total ${origen}`, valores);
+  const porPagina = 50, paginas = Math.max(1, Math.ceil(total / porPagina));
+  pagina = Math.min(pagina, paginas);
+  const [personas] = await db.execute(`SELECT ${identidadPersona} ${origen}
+    ORDER BY p.apellidos, p.nombres, p.id OFFSET ? ROWS FETCH NEXT 50 ROWS ONLY`, [...valores, (pagina - 1) * porPagina]);
+  if (!personas.length) return { personas, matriculas: [], paginacion: { pagina, paginas, total } };
   const [matriculas] = await db.execute(`SELECT m.id, m.id_estudiante AS id_persona, m.fecha_inicio, m.fecha_fin,
-    a.anio_lectivo, a.nivel, a.grado, a.seccion FROM matriculas m JOIN aulas a ON a.id = m.id_aula ORDER BY a.anio_lectivo DESC`);
+    a.anio_lectivo, a.nivel, a.grado, a.seccion FROM matriculas m JOIN aulas a ON a.id = m.id_aula
+    WHERE m.id_estudiante IN (${personas.map(() => '?').join(', ')}) ORDER BY a.anio_lectivo DESC`, personas.map(p => p.id));
+  return { personas, matriculas, paginacion: { pagina, paginas, total } };
+}
+
+export async function catalogos(db, usuario) {
+  const [tipos] = await db.execute('SELECT id, categoria, nombre, minimo_estudiantes FROM tipos_incidencia WHERE activo = 1 ORDER BY categoria, nombre');
   const [aulas] = await db.execute('SELECT DISTINCT nivel, grado, seccion FROM aulas ORDER BY nivel, grado, seccion');
-  return { tipos, personas, aulas, matriculas: matriculas.filter((m) => ids.has(String(m.id_persona))) };
+  return { tipos, aulas, ...await buscarPersonas(db, usuario) };
 }
 
 export async function persona(db, id) {
@@ -103,7 +128,10 @@ export async function detalleIncidencia(db, incidencia) {
     FROM actuaciones a JOIN usuarios u ON u.id = a.id_autor JOIN personas p ON p.id = u.id_persona
     JOIN roles r ON r.id = a.id_rol_autor LEFT JOIN usuarios ur ON ur.id = a.id_responsable
     LEFT JOIN personas pr ON pr.id = ur.id_persona WHERE a.id_incidencia = ? ORDER BY a.registrada_en, a.id`, [incidencia.id]);
-  const [historial] = await db.execute(`SELECT h.id, h.ocurrido_en, h.accion, h.campo, h.valor_anterior, h.valor_nuevo,
+  const [historial] = await db.execute(`SELECT h.id, h.ocurrido_en, h.accion,
+    CASE WHEN h.campo = 'operacion_registro' THEN NULL ELSE h.campo END AS campo,
+    CASE WHEN h.campo = 'operacion_registro' THEN NULL ELSE h.valor_anterior END AS valor_anterior,
+    CASE WHEN h.campo = 'operacion_registro' THEN NULL ELSE h.valor_nuevo END AS valor_nuevo,
     h.motivo, CONCAT(p.nombres, ' ', p.apellidos) AS actor, r.nombre AS cargo
     FROM historial h JOIN usuarios u ON u.id = h.id_actor JOIN personas p ON p.id = u.id_persona
     JOIN roles r ON r.id = h.id_rol_actor WHERE h.id_incidencia = ? ORDER BY h.ocurrido_en, h.id`, [incidencia.id]);
@@ -114,14 +142,7 @@ export async function detalleIncidencia(db, incidencia) {
     JOIN usuarios us ON us.id = s.id_solicitante JOIN personas ps ON ps.id = us.id_persona
     LEFT JOIN usuarios ud ON ud.id = s.id_decisor LEFT JOIN personas pd ON pd.id = ud.id_persona
     LEFT JOIN versiones_incidencia vp ON vp.id = s.id_version_propuesta WHERE s.id_incidencia = ? ORDER BY s.id`, [incidencia.id]);
-  const [responsables] = await db.execute(`SELECT u.id, r.codigo AS rol, CONCAT(p.nombres, ' ', p.apellidos) AS nombre
-    FROM usuarios u JOIN personas p ON p.id = u.id_persona JOIN roles r ON r.id = u.id_rol
-    WHERE u.activo = 1 AND p.activo = 1
-      AND (r.codigo IN ('director', 'subdirector') OR (? = 'interna' AND (r.codigo = 'coordinador_tutoria' OR u.id = ?)))
-      AND EXISTS (SELECT 1 FROM roles_permisos rp JOIN permisos pe ON pe.id = rp.id_permiso
-        WHERE rp.id_rol = u.id_rol AND pe.codigo = 'incidencias.seguimiento')
-      AND NOT EXISTS (SELECT 1 FROM conflictos_interes c WHERE c.id_incidencia = ? AND c.id_usuario_afectado = u.id AND c.estado IN ('pendiente', 'inhibido'))
-    ORDER BY p.apellidos`, [incidencia.confidencialidad, incidencia.id_registrador, incidencia.id]);
+  const responsables = await responsablesDelCaso(db, incidencia);
   return { incidencia, version, involucrados, actuaciones, historial, versiones, solicitudes, responsables };
 }
 
@@ -202,17 +223,27 @@ export async function actuacionDelCaso(db, id, incidencia) {
 
 // Valida cuenta, permisos, ámbito y conflictos antes de asignar responsabilidad de seguimiento.
 export async function responsableDelCaso(db, id, incidencia) {
-  const [[fila]] = await db.execute(`SELECT u.id, r.codigo AS rol FROM usuarios u JOIN personas p ON p.id = u.id_persona
-    JOIN roles r ON r.id = u.id_rol WHERE u.id = ? AND u.activo = 1 AND p.activo = 1
+  return (await responsablesDelCaso(db, incidencia, id))[0];
+}
+
+async function responsablesDelCaso(db, incidencia, id) {
+  const [filas] = await db.execute(`SELECT u.id, r.codigo AS rol, CONCAT(p.nombres, ' ', p.apellidos) AS nombre FROM usuarios u JOIN personas p ON p.id = u.id_persona
+    JOIN roles r ON r.id = u.id_rol WHERE u.activo = 1 AND p.activo = 1 AND p.es_personal = 1
     AND EXISTS (SELECT 1 FROM roles_permisos rp JOIN permisos pe ON pe.id = rp.id_permiso WHERE rp.id_rol = u.id_rol AND pe.codigo = 'incidencias.seguimiento')
     AND EXISTS (SELECT 1 FROM roles_permisos rp JOIN permisos pe ON pe.id = rp.id_permiso WHERE rp.id_rol = u.id_rol AND pe.codigo = 'incidencias.consultar')
     AND r.codigo <> 'administrador' AND NOT EXISTS (SELECT 1 FROM conflictos_interes c
-      WHERE c.id_incidencia = ? AND c.id_usuario_afectado = u.id AND c.estado IN ('pendiente', 'inhibido'))`, [id, incidencia.id]);
-  if (!fila) return null;
-  if (incidencia.confidencialidad === 'restringida') {
-    const [[permiso]] = await db.execute(`SELECT rp.id_rol FROM roles_permisos rp JOIN permisos p ON p.id = rp.id_permiso
-      JOIN usuarios u ON u.id_rol = rp.id_rol WHERE u.id = ? AND p.codigo = 'incidencias.restringidas'`, [id]);
-    return ['director', 'subdirector'].includes(fila.rol) && permiso ? fila : null;
-  }
-  return ['director', 'subdirector', 'coordinador_tutoria'].includes(fila.rol) || String(fila.id) === String(incidencia.id_registrador) ? fila : null;
+      WHERE c.id_incidencia = ? AND c.id_usuario_afectado = u.id AND c.estado IN ('pendiente', 'inhibido'))
+    AND ((? = 'interna' AND (r.codigo IN ('director','subdirector','coordinador_tutoria') OR u.id = ?))
+      OR (r.codigo IN ('director','subdirector') AND EXISTS (SELECT 1 FROM roles_permisos rp
+        JOIN permisos pe ON pe.id = rp.id_permiso WHERE rp.id_rol = u.id_rol AND pe.codigo = 'incidencias.restringidas')))
+    ${id ? 'AND u.id = ?' : ''} ORDER BY p.apellidos, p.nombres, u.id`,
+  [incidencia.id, incidencia.confidencialidad, incidencia.id_registrador, ...(id ? [id] : [])]);
+  return filas;
+}
+
+export async function registroPrevio(db, usuario, clave) {
+  const [[fila]] = await db.execute(`SELECT h.id_incidencia AS id, h.valor_anterior AS huella, i.estado FROM historial h
+    JOIN incidencias i ON i.id = h.id_incidencia WHERE h.id_actor = ? AND h.accion = 'incidencia_creada'
+      AND h.campo = 'operacion_registro' AND h.valor_nuevo = ?`, [usuario.id, clave]);
+  return fila;
 }

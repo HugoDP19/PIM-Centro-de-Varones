@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { autorizar, reautenticar } from './autenticacion.js';
 import { actorVigente } from './cuentas.js';
 import { transaccion } from './database.js';
-import { rechazar, validarTexto, validarIdentificador } from './seguridad.js';
+import { rechazar, validarTexto, validarIdentificador, validarNombre } from './seguridad.js';
 import { insertar, auditar, aulasActivas } from './consultas-incidencias.js';
 
 export function rutasEstudiantes(pool) {
@@ -13,8 +13,8 @@ export function rutasEstudiantes(pool) {
   router.post('/', async (req, res) => {
     const cuerpo = req.body || {};
     if (Object.keys(cuerpo).some(c => !['nombres', 'apellidos', 'codigo_estudiante', 'id_aula', 'fecha_inicio', 'contrasena'].includes(c))) rechazar(400, 'Campos de estudiante no permitidos.');
-    const nombres = validarTexto(cuerpo.nombres, 'nombres', 100);
-    const apellidos = validarTexto(cuerpo.apellidos, 'apellidos', 150);
+    const nombres = validarNombre(cuerpo.nombres, 'nombres', 100);
+    const apellidos = validarNombre(cuerpo.apellidos, 'apellidos', 150);
     const codigo = validarTexto(cuerpo.codigo_estudiante, 'código de estudiante', 20);
     if (!/^[A-Za-z0-9-]+$/.test(codigo)) rechazar(400, 'El código admite letras, números y guiones.');
     // Valida la fecha civil antes de vincular la matrícula al año del aula seleccionada.

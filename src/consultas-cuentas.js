@@ -12,7 +12,8 @@ export async function catalogosCuentas(db) {
   return { usuarios, personas, roles, permisos };
 }
 export async function cuenta(db, id, bloquear = false) {
-  const [[fila]] = await db.execute(`SELECT u.*, r.codigo AS rol, p.activo AS persona_activa, p.es_personal FROM usuarios u ${bloquear ? 'WITH (UPDLOCK, HOLDLOCK)' : ''} JOIN roles r ON r.id = u.id_rol JOIN personas p ON p.id = u.id_persona
+  const [[fila]] = await db.execute(`SELECT u.*, r.codigo AS rol, p.activo AS persona_activa, p.es_personal,
+    CONCAT(p.nombres, ' ', p.apellidos) AS nombre FROM usuarios u ${bloquear ? 'WITH (UPDLOCK, HOLDLOCK)' : ''} JOIN roles r ON r.id = u.id_rol JOIN personas p ON p.id = u.id_persona
     WHERE u.id = ?`, [id]);
   return fila;
 }

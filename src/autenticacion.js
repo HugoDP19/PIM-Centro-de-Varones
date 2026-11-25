@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { verificarHash, roles, tienePermiso, permisosEfectivos, resumir, rechazar } from './seguridad.js';
-import { limpiarIntentoReautenticacion } from './consultas-cuentas.js';
+import { limpiarIntentoReautenticacion, bloquearGestion } from './consultas-cuentas.js';
 import { buscarUsuario, cargarPermisos, limitarIntentos, guardarSesion, buscarSesion, borrarSesion, registrarAcceso } from './consultas-auth.js';
 
 export function opcionesCookie(produccion) {
@@ -97,6 +97,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
     const conexion = await pool.getConnection();
     try {
       await conexion.beginTransaction();
+      await bloquearGestion(conexion);
       const actual = await buscarUsuario(conexion, usuario, true);
       if (!actual || !actual.activo || !actual.persona_activa || !actual.es_personal
           || actual.contrasena_hash !== cuenta.contrasena_hash || !roles.includes(actual.rol)) {
@@ -122,6 +123,7 @@ export function configurarAutenticacion({ pool, origin, produccion = false }) {
     const conexion = await pool.getConnection();
     try {
       await conexion.beginTransaction();
+      await bloquearGestion(conexion);
       await borrarSesion(conexion, req.tokenSesion, req.usuario);
       await conexion.commit();
       limpiar(res);

@@ -38,13 +38,14 @@ function leerSolicitud(cuerpo, directa = false) {
   return datos;
 }
 
-// Bloquea la cuenta y revalida sesión, credencial, rol y permiso antes de escribir.
+// Orden común: gestión, cuenta y expediente; revalida sesión y permisos antes de escribir.
 export async function actorVigente(db, usuario, permiso, token) {
+  await consultas.bloquearGestion(db);
   const actual = await consultas.cuenta(db, usuario.id, true);
   if (!actual?.activo || !actual.persona_activa || !actual.es_personal
       || actual.contrasena_hash !== usuario.contrasena_hash || !misma(actual.id_rol, usuario.id_rol)
       || !await consultas.sesionVigente(db, token, usuario.id)) rechazar(401, 'La sesión cambió. Inicia sesión nuevamente.');
-  const actor = await cargarPermisos(db, actual);
+  const actor = await cargarPermisos(db, { ...usuario, ...actual });
   if (!tienePermiso(actor, permiso)) rechazar(403, 'No tienes autorización para esta operación.');
   return actor;
 }
@@ -148,7 +149,6 @@ export function rutasCuentas(pool) {
     if (datos.tipo === 'editar_cuenta' && req.body.contrasena !== undefined) rechazar(400, 'La edición básica solo cambia el nombre de usuario.');
     const hash = datos.tipo === 'crear_cuenta' ? await crearHash(req.body.contrasena) : null;
     const id = await transaccion(pool, async db => {
-      await consultas.bloquearGestion(db);
       const actor = await actorVigente(db, req.usuario, 'cuentas.administrar', req.tokenSesion);
       const objetivo = await validarObjetivo(db, actor, datos);
       if (protegidos.includes(objetivo.rol?.codigo || objetivo.cuenta?.rol)) rechazar(403, 'Las cuentas de autoridad o Administrador requieren autorización independiente.');
@@ -163,7 +163,6 @@ export function rutasCuentas(pool) {
   router.post('/autorizaciones', autorizar('cuentas.solicitar'), async (req, res) => {
     const datos = leerSolicitud(req.body || {});
     const resultado = await transaccion(pool, async db => {
-      await consultas.bloquearGestion(db);
       const actor = await actorVigente(db, req.usuario, 'cuentas.solicitar', req.tokenSesion);
       const objetivo = await validarObjetivo(db, actor, datos);
       Object.assign(datos, { huella_objetivo: objetivo.marca, id_solicitante: actor.id, id_rol_solicitante: actor.id_rol,
@@ -188,7 +187,6 @@ export function rutasCuentas(pool) {
     const fundamento = validarTexto(cuerpo.fundamento, 'fundamento', 500);
     await reautenticar(pool, req);
     await transaccion(pool, async db => {
-      await consultas.bloquearGestion(db);
       const actor = await actorVigente(db, req.usuario, 'cuentas.autorizar', req.tokenSesion);
       const datos = await consultas.autorizacion(db, validarIdentificador(req.params.id));
       if (!datos || estadoVisible(datos) !== 'pendiente') rechazar(409, 'La solicitud ya está resuelta o ha vencido.');
@@ -214,7 +212,6 @@ export function rutasCuentas(pool) {
     if (Object.keys(req.body || {}).some(campo => campo !== 'contrasena')) rechazar(400, 'La ejecución no puede cambiar los valores aprobados.');
     const hash = req.body?.contrasena !== undefined ? await crearHash(req.body.contrasena) : null;
     await transaccion(pool, async db => {
-      await consultas.bloquearGestion(db);
       const actor = await actorVigente(db, req.usuario, 'cuentas.ejecutar', req.tokenSesion);
       const datos = await consultas.autorizacion(db, validarIdentificador(req.params.id));
       if (!datos || estadoVisible(datos) !== 'aprobada') rechazar(409, 'La solicitud no está aprobada y vigente; no puede ejecutarse.');
