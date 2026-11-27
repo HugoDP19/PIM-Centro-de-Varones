@@ -1,19 +1,20 @@
 // Comprobación manual reproducible con Chrome local: node test/interfaz-browser.js
-// Usa la copia temporal de la suite MySQL. No guarda capturas ni descarga navegadores.
+// Usa la copia temporal de la suite SQL Server. No guarda capturas ni descarga navegadores.
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, access, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, basename, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
-import { personalEscolar } from '../database/cargar-escolar.js';
+import { personalEscolar } from './datos.js';
 
 const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-export async function verificarInterfaz(base, credenciales, expirarSesion) {
+export async function verificarInterfaz(base, credenciales, expirarSesion, prepararRegresiones) {
   const chrome = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   await access(chrome);
   const perfil = await mkdtemp(join(tmpdir(), 'sice-preview-'));
-  const proceso = spawn(chrome, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${perfil}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore', windowsHide: true });
+  const opciones = process.env.CHROME_NO_SANDBOX === '1' ? ['--no-sandbox'] : [];
+  const proceso = spawn(chrome, ['--headless=new', ...opciones, '--remote-debugging-port=0', `--user-data-dir=${perfil}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore', windowsHide: true });
   let socket;
   try {
     let puerto;
@@ -27,6 +28,7 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     socket = new WebSocket(navegador.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
     let secuencia = 0, navegaciones = 0, erroresJavaScript = 0, sesionPrincipal;
+    // Relaciona cada respuesta de DevTools con su petición y propaga los errores al caso correspondiente.
     const pendientes = new Map();
     socket.addEventListener('message', (evento) => {
       const mensaje = JSON.parse(evento.data);
@@ -296,6 +298,7 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
     await esperar("document.querySelector('#detail-content > .eyebrow').textContent.includes('en seguimiento')");
     await verificarPanel('expediente-detalle');
     assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Descargar PDF')"), true);
+    // Aísla las cookies de AD, D y SD para comprobar decisiones entre sesiones independientes.
     async function verificarTresSesiones() {
       const sesiones = {};
       const contextos = [];
@@ -422,7 +425,63 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
       console.log('Gestión de cuentas: tres sesiones independientes, solicitud, reautenticación, ejecución y desacuerdo bloqueado en navegador.');
     }
     await verificarTresSesiones();
+    // Comprueba desde los formularios los cambios de expediente, la matrícula y su autorización.
+    const codigoCambio = await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.match(/INC-\\d+/)[0]");
+    const abrirCambio = async () => {
+      await evaluar("document.querySelector('#nav-list').click()");
+      await esperar("document.querySelector('#list-view').hidden === false");
+      await evaluar(`document.querySelector('#search').value = ${JSON.stringify(codigoCambio)}; document.querySelector('#search-form').requestSubmit()`);
+      await esperar("document.querySelector('#incident-rows').children.length === 1");
+      await evaluar("document.querySelector('#incident-rows button').click()");
+      await esperar("document.querySelector('#detail-view').hidden === false");
+    };
+    const operacion = async (boton, contrasena, extra = '') => {
+      await evaluar(`[...document.querySelectorAll('#detail-content button')].find(b => b.textContent === ${JSON.stringify(boton)}).click()`);
+      await esperar("Boolean(document.querySelector('#sensitive-operation'))");
+      await evaluar(`(() => { const f = document.querySelector('#sensitive-operation'); f.elements.motivo.value = 'Fundamento independiente de la prueba de navegador.'; f.elements.contrasena.value = ${JSON.stringify(contrasena)}; f.elements.independencia.checked = true; ${extra} f.requestSubmit(); })()`);
+      await esperar("!document.querySelector('#sensitive-operation')");
+    };
+    await evaluar("[...document.querySelectorAll('#detail-content button')].find(b => b.textContent === 'Solicitar rectificación').click()");
+    await esperar("Boolean(document.querySelector('#correction-password'))");
+    await evaluar(`document.querySelector('#incident-title').value = 'Título rectificado conservando los hechos'; document.querySelector('#correction-reason').value = 'Corrección material del título.'; document.querySelector('#correction-password').value = ${JSON.stringify(credenciales.DIRECTOR_PASSWORD)}; document.querySelector('#incident-form').requestSubmit()`);
+    await esperar("document.querySelector('#detail-view').hidden === false && document.querySelector('#message').textContent.includes('Propuesta presentada')");
+    assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Evaluar revisión necesaria')"), false);
+    await evaluar("document.querySelector('#logout').click()");
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    await ingresar('mhuaman', credenciales.SUBDIRECTOR_PASSWORD);
+    await esperar("document.querySelector('#workspace')?.hidden === false");
+    await abrirCambio();
+    await operacion('Evaluar revisión necesaria', credenciales.SUBDIRECTOR_PASSWORD, "f.elements.revision.value = 'false';");
+    await operacion('Aprobar solicitud', credenciales.SUBDIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content h2').textContent"), 'Título rectificado conservando los hechos');
+    await operacion('Cerrar expediente', credenciales.SUBDIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.includes('cerrada')"), true);
+    await operacion('Reabrir expediente', credenciales.SUBDIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.includes('en seguimiento')"), true);
+    await evaluar("document.querySelector('#nav-student').click()");
+    await esperar("document.querySelector('#student-view').hidden === false");
+    await evaluar(`(() => { const f = document.querySelector('#student-form'); f.elements.nombres.value = 'Estudiante de navegador'; f.elements.apellidos.value = 'Prueba institucional'; f.elements.codigo_estudiante.value = 'BROW-ST01'; f.elements.id_aula.selectedIndex = 1; f.elements.fecha_inicio.value = '2026-03-02'; f.elements.contrasena.value = ${JSON.stringify(credenciales.SUBDIRECTOR_PASSWORD)}; f.requestSubmit(); })()`);
+    await esperar("document.querySelector('#message').textContent.includes('BROW-ST01')");
+    await abrirCambio();
+    const duplicada = await evaluar(`(async () => { const d = await (await fetch('/api/incidencias')).json(); return d.incidencias.find(i => Number(i.id) !== Number(${JSON.stringify(codigoCambio.slice(4))}) && i.estado !== 'borrador' && i.estado !== 'anulada').id; })()`);
+    await operacion('Solicitar anulación lógica', credenciales.SUBDIRECTOR_PASSWORD, `f.elements.duplicada.value = ${JSON.stringify(duplicada)};`);
+    await evaluar("document.querySelector('#logout').click()");
+    await esperar("document.querySelector('#login-form')?.hidden === false");
+    await ingresar('rsalazar', credenciales.DIRECTOR_PASSWORD);
+    await esperar("document.querySelector('#workspace')?.hidden === false");
+    await abrirCambio();
+    await operacion('Evaluar revisión necesaria', credenciales.DIRECTOR_PASSWORD, "f.elements.revision.value = 'false';");
+    await operacion('Aprobar solicitud', credenciales.DIRECTOR_PASSWORD);
+    assert.equal(await evaluar("document.querySelector('#detail-content > .eyebrow').textContent.includes('anulada')"), true);
+    assert.equal(await evaluar("[...document.querySelectorAll('#detail-content button')].some(b => b.textContent === 'Reabrir expediente')"), false);
+    console.log('Expedientes: rectificación independiente, cierre, reapertura, anulación lógica y estudiante guardados desde Chrome.');
     assert.equal(erroresJavaScript, 0, 'Sin excepciones JavaScript en las sesiones del navegador');
+    if (prepararRegresiones) {
+      const escenarios = await prepararRegresiones();
+      await verificarRegresionesInterfaz({ base, credenciales, enviar, evaluar, esperar, escenarios, erroresJavaScript: () => erroresJavaScript });
+      await verificarEstudiantesInterfaz({ t: escenarios.t, credenciales, enviar, evaluar, esperar });
+      assert.equal(erroresJavaScript, 0, 'Gestión escolar sin excepciones JavaScript');
+    }
     await enviar('Browser.close');
   } finally {
     socket?.close();
@@ -433,12 +492,150 @@ export async function verificarInterfaz(base, credenciales, expirarSesion) {
         setTimeout(finalizar, 3000).unref();
       });
     }
+    // Solo elimina el perfil temporal creado por esta ejecución, después de cerrar Chrome.
     const rutaPerfil = resolve(perfil);
     if (!rutaPerfil.startsWith(resolve(tmpdir()) + sep) || !basename(rutaPerfil).startsWith('sice-preview-')) {
       throw new Error('Ruta temporal inesperada; no se elimina.');
     }
     await rm(rutaPerfil, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
+}
+
+async function verificarEstudiantesInterfaz({ t, credenciales, enviar, evaluar, esperar }) {
+  const clave = credenciales.DIRECTOR_PASSWORD;
+  const prueba = (nombre, comprobar) => t.test('Chrome escolar: ' + nombre, comprobar);
+  const rellenar = async (id, campos) =>
+    evaluar(`(() => {
+    const formulario = document.getElementById(${JSON.stringify(id)});
+    for (const [nombre, valor] of Object.entries(${JSON.stringify(campos)})) {
+      const control = formulario.elements[nombre];
+      control.value = valor;
+      control.dispatchEvent(new Event('input', { bubbles: true }));
+      control.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    formulario.requestSubmit();
+  })()`);
+  const guardado = async (id, texto) =>
+    esperar(
+      `!document.getElementById(${JSON.stringify(id)}).dataset.enviando && ` +
+        `document.querySelector('#message').textContent.includes(${JSON.stringify(texto)})`
+    );
+  let estudianteId;
+  await prueba(
+    'registro extranjero y selección dependiente de nivel, grado y sección',
+    async () => {
+      await evaluar("document.querySelector('#nav-student').click()");
+      await esperar("document.querySelector('#student-view').hidden === false");
+      await evaluar(`(() => {
+      const nivel = document.querySelector('#student-level');
+      nivel.selectedIndex = nivel.options.length - 1;
+      nivel.dispatchEvent(new Event('change'));
+      document.querySelector('#student-classroom').selectedIndex = 1;
+      const grado = document.querySelector('#student-grade');
+      grado.selectedIndex = grado.options.length - 1;
+      grado.dispatchEvent(new Event('change'));
+    })()`);
+      assert.equal(await evaluar("document.querySelector('#student-classroom').value"), '');
+      const aula = await evaluar("document.querySelector('#student-classroom').options[1].value");
+      await rellenar('student-form', {
+        nombres: 'Mateo Andrés',
+        apellidos: 'Navegador Extranjero',
+        codigo_estudiante: 'BROW-EXT',
+        tipo_documento: 'PASAPORTE',
+        numero_documento: 'nv123456',
+        pais_documento: 'VE',
+        id_aula: aula,
+        fecha_inicio: '2026-03-02',
+        contrasena: clave
+      });
+      await guardado('student-form', 'BROW-EXT');
+      const ficha = await evaluar(`(async () =>
+      (await (await fetch('/api/estudiantes?buscar=NV123456')).json()).estudiantes[0])()`);
+      estudianteId = ficha.id;
+      assert.equal(ficha.numero_documento, 'NV123456');
+      assert.equal(ficha.pais_documento, 'VE');
+      assert.equal(await evaluar("document.querySelector('#student-password').value"), '');
+    }
+  );
+  await prueba('duplicado informado y edición desde búsqueda por documento', async () => {
+    await rellenar('student-form', { contrasena: clave });
+    await guardado('student-form', 'ya está registrada');
+    await evaluar(`document.querySelector('#student-search').value = 'NV123456';
+      document.querySelector('#student-search-form').requestSubmit();`);
+    await esperar(
+      "!document.querySelector('#student-search-form').dataset.enviando && " +
+        "document.querySelector('#student-results').textContent.includes('Navegador Extranjero')"
+    );
+    await evaluar("document.querySelector('#student-results button').click()");
+    await esperar(
+      "document.querySelector('#student-form-title').textContent === 'Editar estudiante'"
+    );
+    await rellenar('student-form', {
+      nombres: 'Mateo Alejandro',
+      telefono: '999888777',
+      contrasena: clave
+    });
+    await guardado('student-form', 'Cambios del estudiante guardados');
+    const ficha = await evaluar(`(async () =>
+      (await (await fetch('/api/estudiantes/${estudianteId}')).json()).estudiante)()`);
+    assert.equal(ficha.nombres, 'Mateo Alejandro');
+    assert.equal(ficha.telefono, '999888777');
+  });
+  await prueba(
+    'apoderado registrado, editado y asociado como principal desde formularios',
+    async () => {
+      await evaluar("document.querySelector('#guardian-new').click()");
+      await rellenar('guardian-form', {
+        nombres: 'Laura Elena',
+        apellidos: 'Navegador Apoderada',
+        tipo_documento: 'DNI',
+        numero_documento: '22334455',
+        correo: 'laura@example.test',
+        contrasena: clave
+      });
+      await guardado('guardian-form', 'Apoderado guardado');
+      assert.ok(await evaluar("document.querySelector('#guardian-selected-id').value"));
+      await rellenar('guardian-form', { telefono: '999777666', contrasena: clave });
+      await guardado('guardian-form', 'Apoderado guardado');
+      await rellenar('guardian-link-form', {
+        vinculo: 'Madre',
+        vigente_desde: '2026-03-02',
+        contrasena: clave
+      });
+      await guardado('guardian-link-form', 'Apoderado principal guardado');
+      assert.match(
+        await evaluar("document.querySelector('#student-guardians').textContent"),
+        /Principal: Laura Elena Navegador Apoderada/
+      );
+      const ficha = await evaluar(`(async () =>
+      await (await fetch('/api/estudiantes/${estudianteId}')).json())()`);
+      assert.equal(ficha.apoderados.length, 1);
+      assert.equal(ficha.apoderados[0].telefono, '999777666');
+    }
+  );
+  await prueba('nueva matrícula conserva la anterior y formularios sin desborde', async () => {
+    const aula = await evaluar("document.querySelector('#enrollment-classroom').options[1].value");
+    await rellenar('enrollment-form', {
+      id_aula: aula,
+      fecha_inicio: '2026-11-26',
+      contrasena: clave
+    });
+    await guardado('enrollment-form', 'Nueva matrícula registrada');
+    assert.equal(await evaluar("document.querySelectorAll('#student-enrollments p').length"), 2);
+    for (const ancho of [1280, 768, 375]) {
+      await enviar('Emulation.setDeviceMetricsOverride', {
+        width: ancho,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+      const medidas = await evaluar(
+        '({ ancho: document.documentElement.clientWidth, ' +
+          'contenido: document.documentElement.scrollWidth })'
+      );
+      assert.equal(medidas.ancho, medidas.contenido);
+    }
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -450,4 +647,140 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     ejecucion.once('error', rechazar);
     ejecucion.once('close', codigo => finalizar(codigo ?? 1));
   });
+}
+
+async function verificarRegresionesInterfaz({ base, credenciales, enviar, evaluar, esperar, escenarios, erroresJavaScript }) {
+
+    const auditarCaso = (nombre, prueba) => escenarios.t.test('Regresión: ' + nombre, prueba);
+    const credencial=rol=>credenciales[rol.toUpperCase()+'_PASSWORD'];
+    async function entrar(rol) {
+      await enviar('Network.clearBrowserCookies');
+      await enviar('Page.navigate',{url:base});
+      await esperar("document.querySelector('#login-form')?.hidden === false");
+      const acceso=personalEscolar.find(([r])=>r===rol)[3];
+      await evaluar("document.querySelector('#username').value="+JSON.stringify(acceso)+"; document.querySelector('#password').value="+JSON.stringify(credencial(rol))+"; document.querySelector('#login-form').requestSubmit();");
+      await esperar("location.pathname==='/panel.html' && document.querySelector('#workspace')?.hidden===false");
+    }
+    async function salir(){
+      await evaluar("document.querySelector('#logout').click()");
+      await esperar("document.querySelector('#login-form')?.hidden===false");
+    }
+    async function abrirId(id) {
+      await evaluar("document.querySelector('#nav-list').click()");
+      await esperar("document.querySelector('#list-view')?.hidden===false");
+      await evaluar("document.querySelector('#search').value="+JSON.stringify('INC-'+id)+";document.querySelector('#search-form').requestSubmit();");
+      await esperar("document.querySelectorAll('#incident-rows tr').length===1 && document.querySelector('#incident-rows').textContent.includes("+JSON.stringify(String(id).padStart(6,'0'))+")");
+      await evaluar("document.querySelector('#incident-rows button').click()");
+      await esperar("document.querySelector('#detail-view')?.hidden===false");
+    }
+    await enviar('Browser.setDownloadBehavior',{behavior:'deny',eventsEnabled:true});
+    await enviar('Page.addScriptToEvaluateOnNewDocument',{source:"const crear=URL.createObjectURL;URL.createObjectURL=function(blob){window.__auditBlob=blob;return crear.call(this,blob)};"});
+    await auditarCaso('Chrome: descarga PDF real desde botones, cinco roles y seis categorias', async()=>{
+      let rolActual=null, cantidad=0;
+      for(const caso of escenarios.pdfs){
+        if(rolActual!==caso.rol){if(rolActual)await salir();await entrar(caso.rol);rolActual=caso.rol;}
+        await abrirId(caso.id);
+        await evaluar("window.__auditBlob=null;[...document.querySelectorAll('#detail-view button')].find(b=>b.textContent==='Descargar PDF').click()");
+        await esperar("window.__auditBlob?.size>0");
+        const base64=await evaluar("(async()=>{const b=new Uint8Array(await window.__auditBlob.arrayBuffer());let s='';for(const n of b)s+=String.fromCharCode(n);return btoa(s)})()");
+        const {getDocument,OPS}=await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const pdf=await getDocument({data:new Uint8Array(Buffer.from(base64,'base64')),useSystemFonts:true}).promise;
+        const pagina=await pdf.getPage(1);const texto=(await pagina.getTextContent()).items.map(x=>x.str).join(' ');
+        assert.ok(texto.includes('20874')&&texto.includes(caso.titulo));
+        const operaciones=await pagina.getOperatorList();
+        assert.ok(operaciones.fnArray.includes(OPS.paintImageXObject),'Logo como imagen en el PDF');
+        let completo=texto;for(let p=2;p<=pdf.numPages;p++)completo+=(await (await pdf.getPage(p)).getTextContent()).items.map(x=>x.str).join(' ');
+        assert.ok(completo.includes('Firma del registrador')&&completo.includes('Sello del Director'));
+        await pdf.cleanup?.();cantidad++;
+      }
+      console.log('PDF_INTERFAZ '+cantidad+' documentos verificados en memoria; descargas a disco bloqueadas.');
+      if(rolActual)await salir();
+    });
+    await entrar('director');
+    await auditarCaso('Chrome: plazo guardado visible en detalle de seguimiento',async()=>{
+      await abrirId(escenarios.plazo);
+      const texto=await evaluar("document.querySelector('#detail-view').innerText");
+      assert.ok(/18.12.(2026|26)/.test(texto),'El plazo 18/12/2026 guardado no aparece en el detalle');
+    });
+    await auditarCaso('Chrome: XSS almacenado se presenta como texto sin ejecutarse',async()=>{
+      await abrirId(escenarios.xss);
+      assert.equal(await evaluar("window.__auditXss===1"),false);
+      assert.equal(await evaluar("document.querySelector('#detail-view').innerText.includes('<script>')"),true);
+      assert.equal(await evaluar("document.querySelectorAll('#detail-view img[src=x],#detail-view script').length"),0);
+    });
+    await auditarCaso('Chrome: Anterior, Siguiente, numeros y resultados vacios',async()=>{
+      await evaluar("document.querySelector('#nav-list').click();document.querySelector('#search').value='';document.querySelector('#search-form').requestSubmit();");
+      await esperar("document.querySelectorAll('#incident-rows tr').length===20");
+      const primero=await evaluar("document.querySelector('#incident-rows tr').innerText");
+      await evaluar("document.querySelector('#next-page').click()");
+      await esperar("document.querySelector('#previous-page').disabled===false");
+      assert.notEqual(await evaluar("document.querySelector('#incident-rows tr').innerText"),primero);
+      await evaluar("document.querySelector('#previous-page').click()");
+      await esperar("document.querySelector('#previous-page').disabled===true");
+      assert.equal(await evaluar("document.querySelector('#incident-rows tr').innerText"),primero);
+      await evaluar("document.querySelector('#search').value='NO_EXISTE_AUDITORIA';document.querySelector('#search-form').requestSubmit()");
+      await esperar("document.querySelector('#list-empty').hidden===false");
+      assert.equal(await evaluar("document.querySelectorAll('#incident-rows tr').length"),0);
+    });
+    await auditarCaso('Chrome: dos envios seguidos de borrador no duplican',async()=>{
+      await evaluar("document.querySelector('#nav-new').click()");
+      await esperar("document.querySelector('#form-view').hidden===false && document.querySelector('#reporter').options.length>1");
+      await evaluar("document.querySelector('#category').value='seguridad';document.querySelector('#category').dispatchEvent(new Event('change'));");
+      await evaluar("document.querySelector('#reporter').parentElement.querySelector('[data-person-search] input').value='Salazar';document.querySelector('#reporter').parentElement.querySelector('[data-person-search] button').click()");
+      await esperar("[...document.querySelector('#reporter').options].some(o=>o.value==="+JSON.stringify(String(escenarios.personaDirector))+")");
+      await evaluar("document.querySelector('#incident-type').selectedIndex=1;document.querySelector('#incident-type').dispatchEvent(new Event('change'));document.querySelector('#incident-title').value='AUDITORIA_DOBLE_ENTER';document.querySelector('#description').value='Se verifica el ingreso durante el recreo.';document.querySelector('#reporter').value="+JSON.stringify(String(escenarios.personaDirector))+";document.querySelector('#reporter').dispatchEvent(new Event('change'));document.querySelector('#reporter-condition').value='personal';document.querySelector('#sensitive').value='false';");
+      await evaluar("document.querySelector('#add-person').click();const controles=document.querySelector('#involved-rows [data-person-search]');controles.querySelector('input').value='AUD-CAT-260';controles.querySelector('button').click()");
+      await esperar("[...document.querySelector('#involved-rows [data-persona]').options].some(o=>o.value==="+JSON.stringify(String(escenarios.personaPagina))+")");
+      await evaluar("document.querySelector('#involved-rows [data-persona]').value="+JSON.stringify(String(escenarios.personaPagina))+";document.querySelector('#involved-rows [data-participacion]').value='testigo';");
+      await evaluar("window.__fetchOriginal=window.fetch;let perderRespuesta=true;window.fetch=async(...args)=>{const r=await window.__fetchOriginal(...args);if(perderRespuesta&&args[0]==='/api/incidencias'&&args[1]?.method==='POST'){perderRespuesta=false;throw Error('Respuesta perdida en prueba');}return r;};");
+      const resultado=await evaluar("(async()=>{const f=document.querySelector('#incident-form');f.dispatchEvent(new Event('submit',{cancelable:true}));f.dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,1000));return (await (await fetch('/api/incidencias?buscar=AUDITORIA_DOBLE_ENTER')).json()).paginacion.total})()");
+      assert.equal(resultado,1,'Dos eventos submit consecutivos guardan '+resultado+' borradores');
+      await esperar("document.querySelector('#message').textContent.includes('No se pudo contactar') && !document.querySelector('#save-draft').disabled");
+      await evaluar("document.querySelector('#incident-form').dispatchEvent(new Event('submit',{cancelable:true}))");
+      await esperar("document.querySelector('#detail-view').hidden===false && document.querySelector('#message').textContent.includes('Borrador guardado')");
+      assert.equal(await evaluar("(async()=> (await (await fetch('/api/incidencias?buscar=AUDITORIA_DOBLE_ENTER')).json()).paginacion.total)()"),1);
+      await evaluar("window.fetch=window.__fetchOriginal;[...document.querySelectorAll('#detail-view button')].find(b=>b.textContent==='Editar borrador').click()");
+      await esperar("document.querySelector('#form-view').hidden===false && document.querySelector('#involved-rows [data-persona]')?.value==="+JSON.stringify(String(escenarios.personaPagina)));
+      const control = "document.querySelector('#reporter').parentElement.querySelector('[data-person-search]')";
+      await evaluar("[..."+control+".querySelectorAll('button')].find(b=>b.textContent==='Siguiente').click()");
+      await esperar(control+".textContent.includes('Página 2')");
+      assert.equal(await evaluar("document.querySelector('#reporter').value"),String(escenarios.personaDirector));
+    });
+    await auditarCaso('Chrome: escritorio y laptop sin errores de consola',async()=>{
+      for(const ancho of [1280,1024,768]){
+        await enviar('Emulation.setDeviceMetricsOverride',{width:ancho,height:900,deviceScaleFactor:1,mobile:false});
+        const medidas=await evaluar("({ancho:document.documentElement.clientWidth,contenido:document.documentElement.scrollWidth})");
+        assert.equal(medidas.ancho,medidas.contenido);
+      }
+      await evaluar("document.querySelector('#nav-student').click()");
+      await esperar("document.querySelector('#student-view').hidden===false");
+      for (const [nombre, valido] of [['12345',false],['!!!',false],['Álvaro-José',true],["D’Ávila O'Connor",true]]) {
+        for (const id of ['student-names','student-surnames']) {
+          await evaluar("(()=>{const input=document.getElementById("+JSON.stringify(id)+");input.value="+JSON.stringify(nombre)+";input.dispatchEvent(new Event('input'));})()");
+          assert.equal(await evaluar("document.getElementById("+JSON.stringify(id)+").checkValidity()"),valido);
+        }
+      }
+      assert.equal(erroresJavaScript(),0);
+    });
+    await auditarCaso('Chrome: botones de borrador respetan permiso de registro retirado',async()=>{
+      try{
+        await escenarios.permisoRegistro(false);
+        await entrar('director');
+        await abrirId(escenarios.borrador);
+        const botones=await evaluar("[...document.querySelectorAll('#detail-view button')].map(b=>b.textContent)");
+        const estado=await evaluar("(async()=> (await fetch('/api/incidencias/"+escenarios.borrador+"/confirmar',{method:'POST',headers:{'Content-Type':'application/json','X-SICE-Request':'1'},body:'{}'})).status)()");
+        assert.equal(estado,403);
+        assert.ok(!botones.includes('Editar borrador')&&!botones.includes('Confirmar incidencia'),'Se ofrecen editar y confirmar aunque el backend devuelve 403');
+      }finally{await escenarios.permisoRegistro(true);}
+    });
+    await auditarCaso('Chrome: seleccion numerica de pagina 2 y vuelta a 1',async()=>{
+      await evaluar("document.querySelector('#nav-list').click();document.querySelector('#search').value='';document.querySelector('#search-form').requestSubmit()");
+      await esperar("document.querySelectorAll('#incident-rows tr').length===20 && document.querySelectorAll('#page-numbers button').length>1");
+      await evaluar("[...document.querySelectorAll('#page-numbers button')].find(b=>b.textContent==='2').click()");
+      await esperar("document.querySelector('#page-numbers [aria-current]')?.textContent==='2'");
+      assert.equal(await evaluar("document.querySelector('#previous-page').disabled"),false);
+      await evaluar("[...document.querySelectorAll('#page-numbers button')].find(b=>b.textContent==='1').click()");
+      await esperar("document.querySelector('#page-numbers [aria-current]')?.textContent==='1'");
+    });
+
 }

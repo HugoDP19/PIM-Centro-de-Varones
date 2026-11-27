@@ -5,6 +5,7 @@ import { crearHash, verificarHash, generarContrasena, contrasenaValida, roles, t
 import { opcionesCookie } from '../src/autenticacion.js';
 
 test('scrypt: sal independiente, verificación y rechazo de hashes inválidos', async () => {
+  // La misma contraseña debe producir resúmenes distintos y seguir siendo verificable.
   const clave = generarContrasena();
   const primero = await crearHash(clave);
   const segundo = await crearHash(clave);
@@ -17,6 +18,7 @@ test('scrypt: sal independiente, verificación y rechazo de hashes inválidos', 
 });
 
 test('contraseñas: límites de 8 y 12 caracteres y los cuatro tipos requeridos', async () => {
+  // Estos ejemplos son datos de prueba, no credenciales de acceso al sistema.
   for (const clave of ['Abc1!xyz', 'Abc1!xyz789A', generarContrasena()]) {
     assert.equal(contrasenaValida(clave), true);
   }
@@ -27,6 +29,7 @@ test('contraseñas: límites de 8 y 12 caracteres y los cuatro tipos requeridos'
 });
 
 test('los seis roles respetan límites aunque reciban permisos incompatibles', () => {
+  // Las prohibiciones de cada rol prevalecen sobre los permisos que se le asignen.
   for (const rol of roles) {
     const usuario = { rol, permisos: ['sesion.consultar', 'cuentas.administrar', 'cuentas.autorizar', 'incidencias.consultar', 'incidencias.modificar', 'incidencias.eliminar'] };
     assert.equal(tienePermiso(usuario, 'sesion.consultar'), true);
@@ -41,6 +44,7 @@ test('los seis roles respetan límites aunque reciban permisos incompatibles', (
 });
 
 test('cookies httpOnly y SameSite Strict; Secure en producción', () => {
+  // Comprueba la protección de la cookie y el requisito de HTTPS en producción.
   assert.deepEqual(opcionesCookie(true), { httpOnly: true, secure: true, sameSite: 'strict', path: '/' });
   assert.equal(opcionesCookie(false).secure, false);
 });

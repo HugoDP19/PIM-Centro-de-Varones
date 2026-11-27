@@ -1,6 +1,9 @@
+import { crearHash, limitesPermisos } from '../src/seguridad.js';
+import { insertar, auditar } from '../src/consultas-incidencias.js';
+
 // Relatos completamente sintéticos. Horas persistidas en UTC (Lima = UTC-5).
 // Incluye testigos adultos; los identificadores se asignan al cargar la colección.
-export const casos = [
+const casos = [
   {
     numero: 1, categoria: 'convivencia', tipo: 'Agresión física observada en recreo',
     titulo: 'Discusión durante un partido en el recreo', fecha: '2026-10-05 15:20:00', lugar: 'Patio de secundaria',
@@ -197,25 +200,208 @@ export const casos = [
   }
 ];
 
-export const casosAdicionales = [
-  {
-    numero: 25, categoria: 'bienes', tipo: 'Deterioro de material didáctico',
-    titulo: 'Regla de medición fracturada durante una actividad de primaria',
-    fecha: '2026-11-12 15:30:00', lugar: 'Aula de 5.º de primaria A', registrador: 'docente',
-    alumnos: [[1, 'involucrado'], [2, 'testigo']], prioridad: 'normal', estado: 'en_seguimiento',
-    descripcion: 'Durante una actividad de medición, Diego Alonso Quispe Flores advirtió una fractura en la regla que utilizaba su grupo y la entregó a la docente. Mateo André Quispe Flores confirmó que ambos habían usado el material durante la sesión, sin poder precisar cuándo se produjo la fractura. La docente observó un borde irregular y retiró la regla. Ningún estudiante refirió una lesión. Se registra el deterioro sin atribuir responsabilidades ni exigir reposición a la familia.',
-    campos: { descripcion_dano: 'Regla plástica de uso compartido fracturada en un extremo; material retirado por presentar un borde irregular.' },
-    actuacion: 'Se retiró y separó la regla deteriorada, se entregó un instrumento íntegro al grupo y se revisó el resto del material utilizado en la sesión. Tutoría coordinó con la docente la comprobación del material antes de la próxima actividad.',
-    observacion: 'En la siguiente sesión se comprobó que el instrumento de reemplazo se encontraba íntegro y que los estudiantes pudieron completar la medición. Se mantiene la revisión del material común durante la semana.'
-  },
-  {
-    numero: 26, categoria: 'seguridad', tipo: 'Mobiliario inestable en ambiente escolar',
-    titulo: 'Estante inestable advertido durante una visita de secundaria a la biblioteca',
-    fecha: '2026-11-13 16:10:00', lugar: 'Biblioteca', registrador: 'subdirector',
-    alumnos: [[5, 'testigo'], [6, 'testigo']], prioridad: 'alta', estado: 'en_seguimiento',
-    descripcion: 'Durante una visita de segundo de secundaria a la biblioteca, Joaquín Eduardo Mendoza Paredes comunicó que un estante se movía al retirar un libro. Samuel Ignacio Mendoza Paredes indicó haber observado el movimiento. La Subdirectora verificó una oscilación leve sin manipular la fijación, alejó al grupo y delimitó el sector. No se registraron caídas de libros ni lesiones. La causa técnica permanece pendiente de evaluación por personal competente.',
-    campos: { riesgo_identificado: 'Estante con oscilación observable en una zona de consulta; requiere evaluación de estabilidad y fijaciones.', riesgo_persistente: 1 },
-    actuacion: 'Se restringió el acceso al estante y se trasladó la actividad a una mesa alejada. Se comunicó la necesidad de revisión a Dirección y se acordó mantener el sector delimitado hasta recibir una comprobación de estabilidad.',
-    observacion: 'Al día siguiente se comprobó que la delimitación seguía instalada y que los estudiantes accedían al material por una ruta alternativa. No se reabrió el sector ni se dio por solucionado el riesgo sin la verificación correspondiente.'
-  }
+export const personalEscolar = [
+  ['director', 'Ricardo Alberto', 'Salazar Mendoza', 'rsalazar'],
+  ['subdirector', 'María Elena', 'Huamán Rojas', 'mhuaman'],
+  ['coordinador_tutoria', 'José Luis', 'Paredes Díaz', 'jparedes'],
+  ['docente', 'Lucía Patricia', 'Ramos Vega', 'lramos'],
+  ['auxiliar', 'Carlos Enrique', 'Torres Castillo', 'ctorres'],
+  ['administrador', 'Hugo', 'Vargas', 'hugodp19']
 ];
+const estudiantesNombres = [
+  ['Diego Alonso', 'Quispe Flores'], ['Mateo André', 'Quispe Flores'],
+  ['Adrián Sebastián', 'Cárdenas Rojas'], ['Nicolás Gabriel', 'Cárdenas Rojas'],
+  ['Joaquín Eduardo', 'Mendoza Paredes'], ['Samuel Ignacio', 'Mendoza Paredes'],
+  ['Leonardo Rafael', 'Chávez Huamán'], ['Thiago Daniel', 'Chávez Huamán']
+];
+
+// Prepara identidades y permisos de prueba en SQL con las contraseñas ya suministradas por la suite.
+async function identidades(db, claves) {
+  const usuarios = {}, personas = {}, estudiantes = {};
+  for (const [indice, [rol, nombres, apellidos, nombreUsuario]] of personalEscolar.entries()) {
+    const [[r]] = await db.execute('SELECT id FROM roles WHERE codigo = ?', [rol]);
+    const idRol = r?.id || await insertar(db, 'roles', { codigo: rol, nombre: nombresRoles[indice] });
+    const idPersona = await insertar(db, 'personas', { codigo_interno: `PER-2026-${String(indice + 1).padStart(3, '0')}`, nombres, apellidos, es_personal: 1, activo: 1 });
+    const id = await insertar(db, 'usuarios', { id_persona: idPersona, id_rol: idRol, nombre_usuario: nombreUsuario,
+      contrasena_hash: await crearHash(claves[`${rol.toUpperCase()}_PASSWORD`]), activo: 1, creado_en: new Date() });
+    usuarios[rol] = { id, id_rol: idRol, id_persona: idPersona, nombre: `${nombres} ${apellidos}` };
+    personas[rol] = { id: idPersona, nombre: `${nombres} ${apellidos}`, condicion: 'personal' };
+  }
+  for (const [codigo, permitidos] of Object.entries(limitesPermisos)) {
+    await db.execute('INSERT INTO permisos (codigo, descripcion) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM permisos WHERE codigo = ?)', [codigo, `Acción institucional: ${codigo}`, codigo]);
+    const [[p]] = await db.execute('SELECT id FROM permisos WHERE codigo = ?', [codigo]);
+    for (const rol of permitidos) await db.execute('INSERT INTO roles_permisos (id_rol, id_permiso) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM roles_permisos WHERE id_rol = ? AND id_permiso = ?)', [usuarios[rol].id_rol, p.id, usuarios[rol].id_rol, p.id]);
+  }
+  const madres = [['Verónica Isabel', 'Flores Medina'], ['Rosa Angélica', 'Rojas Sánchez'], ['Carmen Cecilia', 'Paredes Velásquez'], ['Patricia Susana', 'Huamán Vargas']];
+  for (const [indice, [nombres, apellidos]] of madres.entries()) {
+    const id = await insertar(db, 'personas', { codigo_interno: `APO-2026-00${indice + 1}`, nombres, apellidos, es_personal: 0, activo: 1 });
+    personas[`apoderado${indice + 1}`] = { id, nombre: `${nombres} ${apellidos}`, condicion: 'apoderado' };
+  }
+  const aulas = [];
+  for (const [nivel, grado, seccion] of [['primaria', 5, 'A'], ['primaria', 6, 'B'], ['secundaria', 2, 'A'], ['secundaria', 3, 'B']]) {
+    const [[a]] = await db.execute('SELECT id FROM aulas WHERE anio_lectivo = 2026 AND nivel = ? AND grado = ? AND seccion = ?', [nivel, grado, seccion]);
+    aulas.push(a?.id || await insertar(db, 'aulas', { anio_lectivo: 2026, nivel, grado, seccion, activo: 1 }));
+  }
+  for (const [indice, [nombres, apellidos]] of estudiantesNombres.entries()) {
+    const id = await insertar(db, 'personas', { codigo_interno: `EST-2026-00${indice + 1}`, nombres, apellidos, es_personal: 0, activo: 1 });
+    await insertar(db, 'estudiantes', { id_persona: id, codigo_estudiante: `2026-00${indice + 1}`, activo: 1 });
+    const grupo = Math.floor(indice / 2);
+    const matricula = await insertar(db, 'matriculas', { id_estudiante: id, id_aula: aulas[grupo], fecha_inicio: '2026-03-02' });
+    const apoderado = personas[`apoderado${grupo + 1}`];
+    await insertar(db, 'estudiantes_apoderados', { id_estudiante: id, id_apoderado: apoderado.id, vinculo: 'madre', es_principal: 1, vigente_desde: '2026-03-02' });
+    estudiantes[indice + 1] = { id, matricula, nombre: `${nombres} ${apellidos}`, apoderado };
+  }
+  const testigo = await insertar(db, 'personas', { codigo_interno: 'EXT-2026-001', nombres: 'Miguel Ángel', apellidos: 'Soto Benavides', es_personal: 0, activo: 1 });
+  for (const [indice, [nombres, apellidos]] of [['Rosa Milagros', 'Vega Carrillo'], ['Luis Fernando', 'Navarro Espinoza']].entries()) {
+    await insertar(db, 'personas', { codigo_interno: `PER-2026-10${indice + 1}`, nombres, apellidos, es_personal: 1, activo: 1 });
+  }
+  return { usuarios, personas, estudiantes, testigo };
+}
+
+const nombresRoles = ['Director', 'Subdirector', 'Coordinador de Tutoría', 'Docente', 'Auxiliar', 'Administrador'];
+const fecha = (valor, minutos = 0) => new Date(new Date(`${valor.replace(' ', 'T')}Z`).getTime() + minutos * 60000).toISOString().slice(0, 19).replace('T', ' ');
+
+// Ordena los instantes sintéticos para que solicitudes, decisiones y seguimiento resulten coherentes.
+function minutosSeguimiento(caso) {
+  if (caso.minutosActuacion) return caso.minutosActuacion;
+  if (['aprobada', 'rechazada', 'duplicado'].includes(caso.especial)) return 181;
+  if (caso.especial === 'reunion') return 160;
+  if (caso.especial === 'conflicto') return 65;
+  return 20;
+}
+
+async function historial(db, actor, accion, instante, destino = {}) {
+  const { id_incidencia, ...referencias } = destino;
+  await auditar(db, actor, id_incidencia, accion, { ...referencias, ocurrido_en: instante });
+}
+
+// Construye las relaciones y evidencias de un expediente sintético, incluida su versión vigente.
+async function crearCaso(db, caso, identidades) {
+  const { usuarios, personas, estudiantes } = identidades;
+  const registrador = usuarios[caso.registrador || 'docente'];
+  const reportante = personas[caso.reportante || caso.registrador || 'docente'];
+  const [[tipoExistente]] = await db.execute('SELECT id FROM tipos_incidencia WHERE categoria = ? AND nombre = ?', [caso.categoria, caso.tipo]);
+  const tipo = tipoExistente?.id || await insertar(db, 'tipos_incidencia', {
+    categoria: caso.categoria, nombre: caso.tipo, minimo_estudiantes: caso.alumnos.length ? 1 : 0, activo: 1
+  });
+  const registrada = fecha(caso.fecha, caso.numero === 22 ? 30 : 10);
+  const confirmada = fecha(registrada, 5);
+  const id = await insertar(db, 'incidencias', { id_registrador: registrador.id, id_rol_registrador: registrador.id_rol,
+    nombre_registrador: registrador.nombre, registrada_en: registrada, estado: 'borrador', prioridad: caso.prioridad,
+    confidencialidad: caso.restringida ? 'restringida' : 'interna' });
+  const versionDatos = { id_incidencia: id, numero_version: 1, estado_version: 'confirmada', id_autor: registrador.id,
+    creada_en: confirmada, id_tipo: tipo, titulo: caso.titulo,
+    descripcion: caso.descripcion, ocurrida_en: caso.fecha, lugar: caso.lugar, id_reportante: reportante.id,
+    condicion_reportante: reportante.condicion, nombre_reportante: reportante.nombre, ...caso.campos };
+  const version = await insertar(db, 'versiones_incidencia', versionDatos);
+  for (const [numero, participacion] of caso.alumnos) {
+    const alumno = estudiantes[numero];
+    await insertar(db, 'involucrados', { id_version: version, id_persona: alumno.id, id_matricula: alumno.matricula, participacion });
+  }
+  for (const adulto of caso.adultos || []) await insertar(db, 'involucrados', { id_version: version, id_persona: adulto.id, participacion: 'testigo' });
+  await db.execute('UPDATE incidencias SET id_version_vigente = ?, confirmada_en = ?, estado = ? WHERE id = ?', [version, confirmada, 'confirmada', id]);
+  await historial(db, registrador, caso.numero > 24 ? 'carga_escolar_adicional' : 'carga_escolar', confirmada,
+    { id_incidencia: id, id_version: version, campo: 'escenario', valor_nuevo: String(caso.numero) });
+  const responsable = usuarios[caso.restringida ? 'subdirector' : 'coordinador_tutoria'];
+  const seguimiento = minutosSeguimiento(caso);
+  const actuacion = await insertar(db, 'actuaciones', { id_incidencia: id, id_autor: responsable.id, id_rol_autor: responsable.id_rol,
+    tipo: 'actuacion', detalle: caso.actuacion, realizada_en: fecha(confirmada, seguimiento), registrada_en: fecha(confirmada, seguimiento + 1),
+    id_responsable: responsable.id, fecha_limite: fecha(confirmada, 7 * 24 * 60).slice(0, 10) });
+  await historial(db, responsable, 'demo_actuacion', fecha(confirmada, seguimiento + 1), { id_incidencia: id, id_actuacion: actuacion });
+  // Protección: no asumir que contactar a la familia siempre es seguro.
+  if (caso.alumnos.length && caso.categoria !== 'proteccion_estudiantil') {
+    const alumno = estudiantes[caso.alumnos[0][0]];
+    const comunicacion = await insertar(db, 'actuaciones', { id_incidencia: id, id_autor: responsable.id, id_rol_autor: responsable.id_rol,
+      tipo: 'actuacion', detalle: `Se comunicó a ${alumno.apoderado.nombre}, apoderada de ${alumno.nombre}, la atención escolar y los próximos pasos descritos en este expediente. Se solicitó aportar información pertinente por un canal reservado, sin divulgar datos de otros estudiantes.`,
+      realizada_en: fecha(confirmada, 30), registrada_en: fecha(confirmada, 31), id_responsable: responsable.id });
+    await historial(db, responsable, 'demo_comunicacion', fecha(confirmada, 31), { id_incidencia: id, id_actuacion: comunicacion });
+  }
+  return { id, version, versionDatos, registrador, confirmada, responsable };
+}
+
+// Prepara estados históricos de prueba para verificar versiones, revisiones y conflictos sin simular SQL.
+async function crearEscenarioEspecial(db, caso, registro, registros, identidades) {
+  const { usuarios, personas, estudiantes } = identidades;
+  const { id, version, versionDatos, registrador, confirmada } = registro;
+  const decisor = usuarios.subdirector;
+  let propuesta = null;
+  if (caso.especial !== 'duplicado') {
+    let descripcion = `${caso.descripcion}\nPropuesta pendiente: precisar la actividad o la fecha referida sin borrar la versión original.`;
+    if (caso.especial === 'aprobada') descripcion = 'El docente observó una señal con fijación suelta en el acceso de secundaria. El auxiliar verificó la ubicación y aseguró la señal. La versión anterior consignaba el pasillo de primaria por un error de anotación. Esta versión incorpora únicamente la ubicación contrastada mediante revisión independiente; la observación original y la solicitud se conservan.';
+    if (caso.especial === 'rechazada') descripcion = 'Propuesta del solicitante: registrar que el cuaderno fue recuperado. La información recibida todavía no permite confirmar la entrega al estudiante. Esta propuesta se conserva como rechazada y no sustituye la versión vigente.';
+    propuesta = await insertar(db, 'versiones_incidencia', { ...versionDatos, numero_version: 2, estado_version: caso.especial === 'aprobada' ? 'confirmada' : 'propuesta', creada_en: fecha(confirmada, 40), descripcion,
+      lugar: caso.especial === 'aprobada' ? 'Acceso de secundaria' : caso.lugar });
+    for (const [numero, participacion] of caso.alumnos) {
+      const alumno = estudiantes[numero];
+      await insertar(db, 'involucrados', { id_version: propuesta, id_persona: alumno.id, id_matricula: alumno.matricula, participacion });
+    }
+  }
+  const resuelta = ['aprobada', 'rechazada', 'duplicado'].includes(caso.especial);
+  const evaluada = caso.especial !== 'conflicto';
+  const solicitud = await insertar(db, 'solicitudes_cambio', { id_incidencia: id, id_solicitante: registrador.id,
+    id_rol_solicitante: registrador.id_rol, tipo: caso.especial === 'duplicado' ? 'anulacion' : 'rectificacion',
+    justificacion: caso.especial === 'duplicado' ? 'Se comprobó que ambos registros describen el mismo cable expuesto, en el mismo lugar e instante.' : 'Se solicita contrastar la precisión documental descrita en la propuesta, conservando el contenido anterior.',
+    creada_en: fecha(confirmada, 45), estado: resuelta ? (caso.especial === 'rechazada' ? 'rechazada' : 'aprobada') : 'pendiente',
+    id_version_base: version, id_version_propuesta: propuesta,
+    motivo_anulacion: caso.especial === 'duplicado' ? 'duplicado' : null,
+    id_incidencia_duplicada: caso.especial === 'duplicado' ? registros[11].id : null,
+    id_evaluador: evaluada ? decisor.id : null, evaluada_en: evaluada ? fecha(confirmada, 60) : null,
+    requiere_revision: evaluada ? Number(caso.especial === 'reunion') : null,
+    fundamento_revision: evaluada ? 'Se requiere contrastar las anotaciones y los aportes relacionados con la precisión solicitada.' : null,
+    id_decisor: resuelta ? decisor.id : null, id_rol_decisor: resuelta ? decisor.id_rol : null,
+    fundamento_decision: resuelta ? (caso.especial === 'rechazada' ? 'No hay evidencia suficiente de entrega; permanece vigente el relato anterior.' : 'Las anotaciones contrastadas permiten corroborar la corrección solicitada sin sustituir la evidencia original.') : null,
+    decidida_en: resuelta ? fecha(confirmada, 180) : null });
+  await historial(db, registrador, 'demo_solicitud_presentada', fecha(confirmada, 45), { id_incidencia: id, id_solicitud: solicitud });
+  if (evaluada) await historial(db, decisor, 'demo_solicitud_evaluada', fecha(confirmada, 60), { id_incidencia: id, id_solicitud: solicitud });
+  if (resuelta) await historial(db, decisor, 'demo_solicitud_resuelta', fecha(confirmada, 180), { id_incidencia: id, id_solicitud: solicitud, valor_nuevo: caso.especial === 'rechazada' ? 'rechazada' : 'aprobada' });
+  if (caso.especial === 'aprobada') {
+    await db.execute('UPDATE incidencias SET id_version_vigente = ? WHERE id = ?', [propuesta, id]);
+    await historial(db, decisor, 'demo_version_vigente', fecha(confirmada, 180), { id_incidencia: id, id_version: propuesta,
+      campo: 'id_version_vigente', valor_anterior: String(version), valor_nuevo: String(propuesta) });
+  }
+  if (caso.especial === 'reunion') {
+    const revision = await insertar(db, 'revisiones', { id_incidencia: id, id_solicitud: solicitud, id_responsable: decisor.id,
+      motivo: 'Contrastar la precisión solicitada escuchando a las personas relacionadas.', abierta_en: fecha(confirmada, 70), cerrada_en: fecha(confirmada, 150),
+      estado: 'concluida', requiere_reunion: 1, hubo_reunion: 1, reunion_en: fecha(confirmada, 100), requiere_acta: 1,
+      fundamento_acta: 'Conservar los aportes y la conclusión de la reunión para la evaluación de la solicitud.',
+      acta: 'Se explicó el objeto de la solicitud y se escucharon los aportes de las personas relacionadas como participantes. Se contrastó la actividad realizada por el grupo y se acordó mantener acompañamiento. La conclusión se remite a una autoridad independiente; esta acta no aprueba la solicitud ni modifica los hechos. Los participantes se identifican en su relación, sin listas de nombres dentro del acta.',
+      id_emisor_acta: decisor.id, acta_emitida_en: fecha(confirmada, 140), conclusion: 'Se recogieron elementos para evaluar la precisión documental. La decisión de la solicitud permanece pendiente.' });
+    const participantes = [[decisor.id_persona, decisor.nombre, 'responsable'], [registrador.id_persona, registrador.nombre, 'solicitante oído'],
+      [estudiantes[1].id, estudiantes[1].nombre, 'estudiante oído'], [personas.apoderado1.id, personas.apoderado1.nombre, 'apoderada']];
+    for (const [idPersona, nombre, funcion] of participantes) await insertar(db, 'participantes_revision', {
+      id_revision: revision, id_persona: idPersona, funcion, asistencia: 'asistio', nombre_participante: nombre, intervencion: 'Aportó información sobre la secuencia de la actividad.'
+    });
+    await historial(db, decisor, 'demo_revision_concluida', fecha(confirmada, 150), { id_incidencia: id, id_revision: revision });
+  }
+  if (caso.especial === 'conflicto') {
+    const director = usuarios.director;
+    const conflicto = await insertar(db, 'conflictos_interes', { id_incidencia: id, id_usuario_afectado: director.id,
+      id_declarante: director.id, motivo: 'Relación personal declarada con una familia que puede afectar la independencia en la evaluación.', declarado_en: fecha(confirmada, 55), estado: 'inhibido' });
+    await historial(db, director, 'demo_inhibicion', fecha(confirmada, 55), { id_incidencia: id, id_conflicto: conflicto });
+  }
+}
+
+// Fixtures exclusivos de pruebas; exigir una base temporal propia antes de insertar.
+export async function cargarColeccion(conexion, claves) {
+  const [[{ base }]] = await conexion.query('SELECT DB_NAME() AS base');
+  if (!/^sice_test_[a-f0-9]{16}$/.test(base)) throw new Error('Los fixtures solo permiten bases temporales de prueba.');
+  const [[existente]] = await conexion.execute("SELECT COUNT(*) AS cantidad FROM historial WHERE accion = 'carga_escolar'");
+  if (Number(existente.cantidad) === casos.length) return { cargadas: 0, existentes: casos.length };
+  if (Number(existente.cantidad)) throw new Error('La colección está incompleta; no se sobrescribe.');
+  const datos = await identidades(conexion, claves);
+  const registros = {};
+  for (const definicion of casos) {
+    const caso = { ...definicion, adultos: definicion.testigo_externo ? [{ id: datos.testigo }] : [] };
+    const registro = await crearCaso(conexion, caso, datos);
+    registros[caso.numero] = registro;
+    if (caso.especial) await crearEscenarioEspecial(conexion, caso, registro, registros, datos);
+    if (caso.estado !== 'confirmada') {
+      await conexion.execute('UPDATE incidencias SET estado = ? WHERE id = ?', [caso.estado, registro.id]);
+      const autor = caso.estado === 'anulada' ? datos.usuarios.subdirector : registro.responsable;
+      await auditar(conexion, autor, registro.id, 'estado_actualizado', {
+        campo: 'estado', valor_anterior: 'confirmada', valor_nuevo: caso.estado
+      });
+    }
+  }
+  return { cargadas: casos.length, existentes: 0 };
+}

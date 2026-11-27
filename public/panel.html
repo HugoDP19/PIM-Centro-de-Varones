@@ -18,6 +18,7 @@
     <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">
       <button id="nav-list" class="btn btn-outline-primary" hidden>Incidencias</button>
       <button id="nav-new" class="btn btn-primary" hidden>Registrar incidencia</button>
+      <button id="nav-student" class="btn btn-outline-primary" hidden>Estudiantes y apoderados</button>
       <button id="nav-accounts" class="btn btn-outline-primary" hidden>Gestión de cuentas <span id="nav-pending" class="badge text-bg-light" aria-live="polite">Pendientes: …</span></button>
     </nav>
     <div id="message" role="status" class="alert" hidden></div>
@@ -65,6 +66,131 @@
         </div></fieldset>
         <fieldset class="mb-4"><legend class="section-legend">Personas involucradas</legend><p class="small text-secondary">El mínimo de estudiantes depende del tipo. Una persona adulta puede figurar como testigo sin matrícula. Las identidades reservadas no se ofrecen en catálogos de accesos sin permiso.</p><div id="involved-rows"></div><button id="add-person" class="btn btn-sm btn-outline-primary mt-2" type="button">Añadir persona</button></fieldset>
         <div class="d-flex flex-wrap gap-2"><button id="save-draft" class="btn btn-primary" type="submit">Guardar borrador y revisar</button><button id="cancel-form" class="btn btn-outline-primary" type="button">Volver al listado</button></div>
+      </form>
+    </section>
+    <section id="student-view" class="surface" hidden aria-labelledby="student-title">
+      <h2 id="student-title" class="h4">Estudiantes y apoderados</h2>
+      <form id="student-search-form" class="row g-3 mb-3">
+        <div class="col-md-7">
+          <label for="student-search" class="form-label">Nombre, documento o código</label>
+          <input id="student-search" class="form-control" type="search" maxlength="100">
+        </div>
+        <div class="col-md-3">
+          <label for="student-search-grade" class="form-label">Grado actual</label>
+          <select id="student-search-grade" class="form-select"></select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-outline-primary">Buscar</button>
+        </div>
+      </form>
+      <div id="student-results" aria-live="polite"></div>
+      <div id="student-pages" class="d-flex gap-2 align-items-center my-3"></div>
+      <button id="student-new" type="button" class="btn btn-outline-primary mb-3">
+        Nuevo estudiante
+      </button>
+      <h3 id="student-form-title" class="h5">Registrar estudiante y matrícula</h3>
+      <p id="student-identity-note" class="small text-secondary">
+        El documento es opcional. Si se desconoce, usa el código del estudiante sin inventar un DNI.
+      </p>
+      <form id="student-form" class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="student-names">Nombres</label><input id="student-names" name="nombres" class="form-control" maxlength="100" required></div>
+        <div class="col-md-6"><label class="form-label" for="student-surnames">Apellidos</label><input id="student-surnames" name="apellidos" class="form-control" maxlength="150" required></div>
+        <div class="col-md-4"><label class="form-label" for="student-code">Código de estudiante</label><input id="student-code" name="codigo_estudiante" class="form-control" maxlength="20" pattern="[A-Za-z0-9-]+" required></div>
+        <div class="col-md-4">
+          <label for="student-birth" class="form-label">Fecha de nacimiento, si se conoce</label>
+          <input id="student-birth" name="fecha_nacimiento" type="date" class="form-control">
+        </div>
+        <div id="student-person-fields" class="row g-3 m-0 p-0"></div>
+        <fieldset id="student-enrollment" class="col-12 row g-3 m-0 p-0">
+          <legend class="section-legend">Matrícula inicial</legend>
+          <div id="student-classroom-fields" class="row g-3 m-0 p-0"></div>
+          <div class="col-md-4">
+            <label class="form-label" for="student-date">Inicio de matrícula</label>
+            <input id="student-date" name="fecha_inicio" type="date" class="form-control" required>
+          </div>
+        </fieldset>
+        <div class="col-md-6"><label class="form-label" for="student-password">Confirma tu contraseña</label><input id="student-password" name="contrasena" type="password" autocomplete="current-password" class="form-control" required maxlength="256"></div>
+        <div class="col-12"><button id="student-save" class="btn btn-primary">Guardar estudiante y matrícula</button></div>
+      </form>
+      <div id="student-history" class="mt-4" hidden>
+        <h3 class="h5">Historial de matrículas</h3>
+        <div id="student-enrollments"></div>
+        <form id="enrollment-form" class="row g-3 mt-2">
+          <h4 class="h6">Registrar cambio de aula o nueva matrícula</h4>
+          <p class="small text-secondary mb-0">
+            Se conserva la matrícula anterior y se finaliza el día previo al nuevo inicio.
+          </p>
+          <div id="enrollment-classroom-fields" class="row g-3 m-0 p-0"></div>
+          <div class="col-md-4">
+            <label for="enrollment-date" class="form-label">Nueva fecha de inicio</label>
+            <input id="enrollment-date" name="fecha_inicio" type="date" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label for="enrollment-password" class="form-label">Confirma tu contraseña</label>
+            <input id="enrollment-password" name="contrasena" type="password"
+              autocomplete="current-password" class="form-control" required maxlength="256">
+          </div>
+          <div class="col-12"><button class="btn btn-outline-primary">Registrar matrícula</button></div>
+        </form>
+        <h3 class="h5 mt-4">Apoderados del estudiante</h3>
+        <div id="student-guardians"></div>
+        <form id="guardian-link-form" class="row g-3 mt-2">
+          <p id="guardian-selected" class="mb-0">Busca o registra un apoderado para seleccionarlo.</p>
+          <input id="guardian-selected-id" name="id_apoderado" type="hidden">
+          <div class="col-md-4">
+            <label for="guardian-relationship" class="form-label">Vínculo con el estudiante</label>
+            <input id="guardian-relationship" name="vinculo" class="form-control"
+              placeholder="Madre, padre, tutor…" maxlength="30" required>
+          </div>
+          <div class="col-md-4">
+            <label for="guardian-since" class="form-label">Inicio del vínculo principal</label>
+            <input id="guardian-since" name="vigente_desde" type="date" class="form-control" required>
+          </div>
+          <div class="col-md-4">
+            <label for="guardian-link-password" class="form-label">Confirma tu contraseña</label>
+            <input id="guardian-link-password" name="contrasena" type="password"
+              autocomplete="current-password" class="form-control" required maxlength="256">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-primary">Guardar apoderado principal</button>
+          </div>
+        </form>
+      </div>
+      <h3 class="h5 mt-4">Consultar y registrar apoderados</h3>
+      <p class="small text-secondary">
+        Busca antes de registrar: una persona puede representar a varios estudiantes.
+        También puedes seleccionar personal existente. No se crea una cuenta de usuario.
+      </p>
+      <form id="guardian-search-form" class="d-flex gap-2 align-items-end mb-3">
+        <div class="flex-grow-1">
+          <label for="guardian-search" class="form-label">Nombre, documento o código del apoderado</label>
+          <input id="guardian-search" type="search" class="form-control" maxlength="100">
+        </div>
+        <button class="btn btn-outline-primary">Buscar</button>
+      </form>
+      <div id="guardian-results" aria-live="polite"></div>
+      <div id="guardian-pages" class="d-flex gap-2 align-items-center my-3"></div>
+      <button id="guardian-new" type="button" class="btn btn-outline-primary mb-3">
+        Nuevo apoderado
+      </button>
+      <form id="guardian-form" class="row g-3" hidden>
+        <h4 id="guardian-form-title" class="h6">Registrar apoderado</h4>
+        <p id="guardian-identity-note" class="small text-secondary mb-0"></p>
+        <div class="col-md-6">
+          <label for="guardian-names" class="form-label">Nombres</label>
+          <input id="guardian-names" name="nombres" class="form-control" maxlength="100" required>
+        </div>
+        <div class="col-md-6">
+          <label for="guardian-surnames" class="form-label">Apellidos</label>
+          <input id="guardian-surnames" name="apellidos" class="form-control" maxlength="150" required>
+        </div>
+        <div id="guardian-person-fields" class="row g-3 m-0 p-0"></div>
+        <div class="col-md-6">
+          <label for="guardian-password" class="form-label">Confirma tu contraseña</label>
+          <input id="guardian-password" name="contrasena" type="password"
+            autocomplete="current-password" class="form-control" required maxlength="256">
+        </div>
+        <div class="col-12"><button class="btn btn-primary">Guardar apoderado</button></div>
       </form>
     </section>
     <section id="detail-view" class="surface" hidden aria-labelledby="detail-title"><div id="detail-content"></div></section>

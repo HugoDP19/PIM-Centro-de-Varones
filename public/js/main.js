@@ -1,12 +1,12 @@
-const form = document.getElementById('login-form');
-const feedback = document.getElementById('feedback');
-const status = document.getElementById('session-status');
-const password = document.getElementById('password');
-const loginButton = document.getElementById('login-button');
+const formulario = document.getElementById('login-form');
+const avisoAcceso = document.getElementById('feedback');
+const estadoSesion = document.getElementById('session-status');
+const contrasena = document.getElementById('password');
+const botonAcceso = document.getElementById('login-button');
 let redirigiendo = false;
 
 function limpiarAvisos() {
-  for (const mensaje of [feedback, status]) {
+  for (const mensaje of [avisoAcceso, estadoSesion]) {
     mensaje.hidden = true;
     mensaje.textContent = '';
   }
@@ -14,22 +14,26 @@ function limpiarAvisos() {
 
 function mostrarError(mensaje) {
   limpiarAvisos();
-  feedback.textContent = mensaje;
-  feedback.hidden = false;
+  avisoAcceso.textContent = mensaje;
+  avisoAcceso.hidden = false;
 }
 
 function abrirPanel() {
-  if (redirigiendo) return;
+  // Evita abrir el panel varias veces y borra la contraseña del formulario.
+  if (redirigiendo) {
+    return;
+  }
   redirigiendo = true;
-  form.hidden = true;
-  password.value = '';
+  formulario.hidden = true;
+  contrasena.value = '';
   location.replace('/panel.html');
 }
 
 function mostrarAcceso() {
+  // Explica por qué terminó la sesión y deja el acceso listo para otro usuario.
   limpiarAvisos();
-  form.reset();
-  password.type = 'password';
+  formulario.reset();
+  contrasena.type = 'password';
   document.getElementById('show-password').textContent = 'Mostrar';
   document.getElementById('show-password').setAttribute('aria-pressed', 'false');
   const mensajes = {
@@ -42,58 +46,91 @@ function mostrarAcceso() {
     direccion.searchParams.delete('sesion');
     history.replaceState(null, '', direccion.pathname + direccion.search + direccion.hash);
   }
-  status.textContent = mensajes[motivo] || '';
-  status.hidden = !status.textContent;
-  form.hidden = false;
-  password.value = '';
+  estadoSesion.textContent = mensajes[motivo] || '';
+  estadoSesion.hidden = !estadoSesion.textContent;
+  formulario.hidden = false;
+  contrasena.value = '';
 }
 
 async function solicitar(ruta, datos) {
-  const response = await fetch(`/api/auth/${ruta}`, {
-    method: datos ? 'POST' : 'GET', credentials: 'same-origin',
+  // Envía las credenciales al servidor y limita la espera si se pierde la conexión.
+  const respuesta = await fetch(`/api/auth/${ruta}`, {
+    method: datos ? 'POST' : 'GET',
+    credentials: 'same-origin',
     headers: datos ? { 'Content-Type': 'application/json', 'X-SICE-Request': '1' } : {},
-    body: datos ? JSON.stringify(datos) : undefined, signal: AbortSignal.timeout(15000)
+    body: datos ? JSON.stringify(datos) : undefined,
+    signal: AbortSignal.timeout(15000)
   });
-  const resultado = response.status === 204 ? {} : await response.json();
-  return { response, resultado };
+  const resultado = respuesta.status === 204 ? {} : await respuesta.json();
+  return { respuesta, resultado };
 }
 
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (loginButton.disabled || redirigiendo) return;
+formulario.addEventListener('submit', async (evento) => {
+  // Bloquea envíos repetidos mientras el servidor comprueba el acceso.
+  evento.preventDefault();
+  if (botonAcceso.disabled || redirigiendo) {
+    return;
+  }
   limpiarAvisos();
-  loginButton.disabled = true;
-  loginButton.textContent = 'Verificando…';
+  botonAcceso.disabled = true;
+  botonAcceso.textContent = 'Verificando…';
   try {
-    const { response, resultado } = await solicitar('login', { usuario: document.getElementById('username').value.trim(), contrasena: password.value });
-    if (response.ok) abrirPanel();
-    else mostrarError(resultado.error || 'No se pudo iniciar sesión.');
-  } catch { mostrarError('No se pudo contactar al servidor. Comprueba la conexión e inténtalo de nuevo.'); }
-  finally { password.value = ''; loginButton.disabled = false; loginButton.textContent = 'Iniciar sesión'; }
+    const { respuesta, resultado } = await solicitar('login', {
+      usuario: document.getElementById('username').value.trim(),
+      contrasena: contrasena.value
+    });
+    if (respuesta.ok) {
+      abrirPanel();
+    } else {
+      mostrarError(resultado.error || 'No se pudo iniciar sesión.');
+    }
+  } catch {
+    mostrarError('No se pudo contactar al servidor. Comprueba la conexión e inténtalo de nuevo.');
+  } finally {
+    contrasena.value = '';
+    botonAcceso.disabled = false;
+    botonAcceso.textContent = 'Iniciar sesión';
+  }
 });
 
-form.addEventListener('input', limpiarAvisos);
+formulario.addEventListener('input', limpiarAvisos);
 
-document.getElementById('show-password').addEventListener('click', (event) => {
-  const mostrar = password.type === 'password';
-  password.type = mostrar ? 'text' : 'password';
-  event.currentTarget.textContent = mostrar ? 'Ocultar' : 'Mostrar';
-  event.currentTarget.setAttribute('aria-pressed', String(mostrar));
+document.getElementById('show-password').addEventListener('click', (evento) => {
+  const mostrar = contrasena.type === 'password';
+  contrasena.type = mostrar ? 'text' : 'password';
+  evento.currentTarget.textContent = mostrar ? 'Ocultar' : 'Mostrar';
+  evento.currentTarget.setAttribute('aria-pressed', String(mostrar));
 });
 
 async function recuperarSesion() {
+  // Consulta la sesión antes de mostrar el panel, también al volver con el navegador.
   redirigiendo = false;
-  form.hidden = true;
-  feedback.hidden = true;
-  status.textContent = 'Comprobando tu sesión…';
-  status.hidden = false;
+  formulario.hidden = true;
+  avisoAcceso.hidden = true;
+  estadoSesion.textContent = 'Comprobando tu sesión…';
+  estadoSesion.hidden = false;
   try {
-    const { response, resultado } = await solicitar('sesion');
-    if (response.ok) return abrirPanel();
+    const { respuesta, resultado } = await solicitar('sesion');
+    if (respuesta.ok) {
+      return abrirPanel();
+    }
     mostrarAcceso();
-    if (!response.ok && response.status !== 401) mostrarError(resultado.error || 'No se pudo comprobar la sesión.');
-  } catch { mostrarAcceso(); mostrarError('No se pudo comprobar la sesión. Comprueba tu conexión.'); }
+    if (!respuesta.ok && respuesta.status !== 401) {
+      mostrarError(resultado.error || 'No se pudo comprobar la sesión.');
+    }
+  } catch {
+    mostrarAcceso();
+    mostrarError('No se pudo comprobar la sesión. Comprueba tu conexión.');
+  }
 }
-window.addEventListener('pagehide', () => { form.hidden = true; form.reset(); limpiarAvisos(); });
-window.addEventListener('pageshow', (event) => { if (event.persisted) recuperarSesion(); });
+window.addEventListener('pagehide', () => {
+  formulario.hidden = true;
+  formulario.reset();
+  limpiarAvisos();
+});
+window.addEventListener('pageshow', (evento) => {
+  if (evento.persisted) {
+    recuperarSesion();
+  }
+});
 recuperarSesion();

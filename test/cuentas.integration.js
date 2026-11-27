@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { generarContrasena, verificarHash } from '../src/seguridad.js';
 
+// Ejecuta el flujo de cuentas en la base temporal y contrasta sus efectos y rechazos con SQL.
 export async function verificarGestionCuentas({ t, pool, peticion, datos, usuarios, claves, cookies }) {
   const catalogo = await datos('cuentas/catalogos', 'administrador');
   const claveNueva = generarContrasena();
@@ -64,7 +65,7 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
     for (const rol of ['director', 'subdirector']) {
       const respuesta = await datos('cuentas/autorizaciones', rol);
       const visible = respuesta.autorizaciones.find(a => String(a.id) === String(denegada.id));
-      assert.ok(visible?.puede_decidir, `La desactivación guardada en MySQL debe llegar por HTTP a ${rol}`);
+      assert.ok(visible?.puede_decidir, `La desactivación guardada en SQL Server debe llegar por HTTP a ${rol}`);
       assert.ok(respuesta.pendientes >= 1);
     }
     await decidir(denegada.id, 'subdirector', 'rechazar');
@@ -117,8 +118,8 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
   });
 
   await t.test('cuentas: creación recíproca y autoridad inhabilitada bloquean la ejecución', async () => {
-    const [persona] = await pool.execute("INSERT INTO personas (codigo_interno, nombres, apellidos, es_personal, activo) VALUES ('PER-PRUEBA-RECIPROCA', 'Personal', 'Verificación', 1, 1)");
-    const solicitud = await solicitar('director', { tipo: 'crear_cuenta', id_persona: persona.insertId,
+    const [[persona]] = await pool.execute("INSERT INTO personas (codigo_interno, nombres, apellidos, es_personal, activo) OUTPUT INSERTED.id VALUES ('PER-PRUEBA-RECIPROCA', 'Personal', 'Verificación', 1, 1)");
+    const solicitud = await solicitar('director', { tipo: 'crear_cuenta', id_persona: persona.id,
       id_rol_objetivo: usuarios.docente.id_rol, nombre_usuario: 'reciproca.prueba' });
     await decidir(solicitud.id, 'subdirector');
     await pool.execute('UPDATE usuarios SET activo = 0 WHERE id = ?', [usuarios.subdirector.id]);
@@ -149,7 +150,7 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
     assert.equal((await peticion('cuentas/autorizaciones', 'director', 'POST', { tipo: 'asignar_permiso', id_rol_objetivo: usuarios.administrador.id_rol,
       id_permiso: permiso.id, motivo: 'Intento de exceder el rol.' })).status, 403);
     const vencida = await solicitar('administrador', { tipo: 'restablecer_clave', id_usuario_objetivo: idCuenta });
-    await pool.execute('UPDATE autorizaciones_cuentas SET vence_en = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND) WHERE id = ?', [vencida.id]);
+    await pool.execute('UPDATE autorizaciones_cuentas SET vence_en = DATEADD(SECOND, -1, SYSUTCDATETIME()) WHERE id = ?', [vencida.id]);
     await decidir(vencida.id, 'director', 'aprobar', {}, 409);
     assert.equal((await obtener(vencida.id)).estado, 'vencida');
     const obsoleta = await solicitar('administrador', { tipo: 'restablecer_clave', id_usuario_objetivo: idCuenta });
@@ -170,6 +171,7 @@ export async function verificarGestionCuentas({ t, pool, peticion, datos, usuari
     await decidir(baja.id, 'subdirector');
     await ejecutar(baja.id);
     assert.equal((await peticion('auth/sesion', null, 'GET', undefined, { Cookie: cookie })).status, 401);
+    assert.equal((await peticion('auth/login', null, 'POST', { usuario: 'lnavarro', contrasena: claveNueva })).status, 401);
     const permiso = catalogo.permisos.find(p => p.codigo === 'incidencias.exportar');
     for (const tipo of ['retirar_permiso', 'asignar_permiso']) {
       const cambio = await solicitar('administrador', { tipo, id_rol_objetivo: usuarios.docente.id_rol, id_permiso: permiso.id });
