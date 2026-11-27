@@ -42,6 +42,12 @@ El esquema vacío no crea personal, cuentas ni catálogos. Su provisión inicial
 
 La base local conserva seis cuentas activas, tres estudiantes y seis borradores sintéticos de presentación. Las claves permanecen en el archivo privado existente. Para exportar un borrador hay que completar sus campos y confirmarlo. No trasladar estos registros a una instalación con información real. El servidor nunca carga datos sintéticos.
 
+## Lectura del código
+
+Para sustentar un flujo, sigue este orden: formulario en `public/js/`, ruta y validaciones en `src/`, consultas en `src/consultas-*.js` y evidencia en `test/`. Las rutas comprueban la sesión y el permiso antes de trabajar; las escrituras sensibles vuelven a comprobarlos dentro de una transacción.
+
+En `cuentas.js`, las validaciones de cuenta, permiso y solicitante están separadas. En `incidencias.js`, cada grupo de campos tiene su validación; `cambios-incidencias.js` distingue la revisión documental de la formal. `database.js` vincula los parámetros SQL y confirma o revierte la operación completa. Las funciones permanecen en los archivos actuales, sin capas adicionales.
+
 ## Pruebas
 
 ```text
@@ -54,7 +60,7 @@ La última orden incluye la integración y añade Chrome a 1280/1024/768 px. Req
 
 La colección de `test/datos.js` solo admite bases temporales. La suite comprueba los seis roles, decisiones, privacidad, integridad, PDF y persistencia tras reiniciar el servidor; compara SICE antes/después y elimina únicamente sus recursos tras verificar su identidad. No utilizar simultáneamente SICE durante esa comparación. No guarda capturas ni PDF.
 
-Revisión del 24 de noviembre de 2026: **7 pruebas básicas y 59 de integración/Chrome aprobadas, cero fallidas**; incluye las 23 regresiones de auditoría y conserva SICE sin cambios. Tras actualizar el código, reiniciar Node para cargar el backend corregido.
+Revisión de legibilidad del 26 de noviembre de 2026: **7 pruebas básicas y 59 de integración/Chrome aprobadas, cero fallidas**; conserva las 66 comprobaciones anteriores y SICE sin cambios. También se ejecutó `npm run test:sqlserver`: 50 aprobadas, incluidas en la cobertura anterior. La validación final se repitió después de liberar memoria por esperas agotadas en SQL Server y Chrome, sin modificar las pruebas. Tras actualizar el código, reiniciar Node para cargar el backend revisado.
 
 Resultados y pendientes de la revisión: [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md). Modelo: [database/DISENO.md](database/DISENO.md). Reglas: [database/REGLAS_FUNCIONALES.md](database/REGLAS_FUNCIONALES.md).
 

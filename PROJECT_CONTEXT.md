@@ -1,6 +1,6 @@
 # Contexto de SICE-Local
 
-## Estado vigente — 24 de noviembre de 2026
+## Estado vigente — 26 de noviembre de 2026
 
 Proyecto de la I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; personal y reportantes pueden ser hombres o mujeres. Conservar el logo original de image/, el diseño blanco y guinda y la interfaz responsive.
 
@@ -69,16 +69,25 @@ PDF con autorización separada, sin borradores ni contenido fuera del ámbito; f
 
 No se añadieron tablas, dependencias ni archivos. El recibo de registro reutiliza el evento existente de creación en historial: referencia y huella del contenido, ocultas en el detalle escolar. No contiene credenciales ni se usa para ejecutar instrucciones.
 
+## Revisión de legibilidad — 26 de noviembre de 2026
+
+- Reorganizados los 17 JavaScript de aplicación y administración: llaves en condiciones y bucles, bloques separados, consultas SQL en varias líneas y nombres más descriptivos. De 629 líneas mayores de 100 caracteres quedan tres excepciones de 101–108 caracteres en dos consultas SQL y una expresión regular; no quedan ternarios anidados ni `if` sin llaves en esos archivos.
+- Cuentas separa validaciones de cuenta, permiso y solicitante. Incidencias separa tipos de campos y validaciones de identidad/matrícula. Cambios de incidencias reúne los criterios de revisión formal en una función; autenticación y conexión SQL expresan sus comprobaciones por pasos.
+- Formularios e informes conservan textos, controles y presentación. Los cinco bloques de HTML generado se compararon con el original: idénticos. Comentarios breves en español fuera de `public/`; README incluye una guía de lectura para sustentar los flujos.
+- Sin archivos de código nuevos, dependencias del proyecto, cambios de esquema, permisos ni reglas institucionales. Se conservan consultas parametrizadas, transacciones, bloqueos, scrypt, sesiones revocables y auditoría. Pruebas existentes sin modificaciones.
+- Siete commits locales de código separados por responsabilidad y uno de documentación; sin push ni Pull Request. El servidor principal no se reinició durante la revisión.
+
 ## Verificación y límites
 
-- `npm test`: **7 aprobadas, 0 fallidas**. `node test/interfaz-browser.js`: **59 aprobadas, 0 fallidas**. Total: **66**, las 43 originales y 23 regresiones incorporadas a archivos de pruebas existentes.
+- Repetición final del 26 de noviembre: `npm test`, **7 aprobadas, 0 fallidas**; `node test/interfaz-browser.js`, **59 aprobadas, 0 fallidas**. Total: **66**, las 43 originales y 23 regresiones existentes. También se ejecutó `npm run test:sqlserver`: **50 aprobadas**, cobertura incluida en la suite con Chrome.
+- Hubo dos esperas de interfaz agotadas y una ejecución interrumpida por lentitud y tiempos de conexión SQL. El motor informó presión de memoria; el usuario liberó memoria antes de la repetición final satisfactoria. La ejecución detenida requirió retirar sus dos procesos y su base/login propios, verificando servidor, nombre, ID y fecha de creación. No se cambiaron aserciones ni tiempos de espera de las pruebas.
 - Seis roles en Chrome, login/logout/caducidad, permisos, reserva, cuentas y decisiones independientes, seguimiento, estudiantes, rectificación documental, anulación lógica, cierre y reapertura. Chrome a 1280/1024/768 px; diez PDF de cinco roles operativos y seis categorías verificados en memoria, sin descargas a disco.
 - Escenarios reproducidos: ambas secuencias de revocación concurrente, doble confirmación, doble envío, respuesta perdida y reintento, UUID repetido/alterado, búsqueda literal y paginación, nombres inválidos/Unicode, 429, responsable sin permiso de reserva, plazos y botones sin permiso. Catálogo con 260 estudiantes y 260 integrantes del personal adicionales, exclusivamente temporales.
 - Registros, versiones, sesiones y referencia de reintento sobreviven al reinicio de Node contra la base temporal. Pérdida de conexión SQL y recuperación comprobadas mediante un puente temporal; no se reinició el servicio SQL Server ni se interrumpieron otras bases.
 - La suite comparó todas las filas y columnas de SICE antes/después: sin cambios. Eliminó únicamente su base y login temporales tras verificar servidor, nombre, ID y fecha de creación. Perfil temporal de Chrome retirado; sin capturas, PDF ni auxiliares permanentes.
 - Esquema principal verificado: 22 tablas/225 columnas/76 FK/148 CHECK. DBCC CHECKCONSTRAINTS sin infracciones, restricciones activas y confiables, cero bases/cuentas temporales restantes. SQL Server 2022 conservado; sin cambios de esquema, claves locales ni permisos SQL.
 - Sintaxis de los 24 JavaScript revisada. Archivos privados excluidos de Git y sin credenciales incorporadas a los cambios. Logo y dependencias conservados.
-- El proceso principal responde HTTP 200 en http://127.0.0.1:3000 y se conservó sin reiniciar: el arranque normal purga datos técnicos caducados y esta revisión exige mantener SICE intacta. **Hay que reiniciar ese proceso para cargar las correcciones del backend.** La validación de reinicio se hizo solo en la base aislada.
+- La comprobación HTTP final no encontró un servicio escuchando en http://127.0.0.1:3000. No se inició ni reinició la aplicación sobre SICE: el arranque normal purga datos técnicos caducados y esta revisión exige mantenerla intacta. La validación de arranque y reinicio se hizo solo en la base aislada; al iniciar la aplicación local se cargará el backend revisado.
 - No quedaron fallos en los escenarios ejecutados. Las correcciones y pruebas se entregan mediante commits locales separados, sin push ni PR. Esto no habilita las funciones institucionales pendientes.
 
 Pendientes institucionales y de instalación:
