@@ -22,6 +22,7 @@ const nombresPermisos = {
   'cuentas.administrar': 'Ejecutar administración autorizada',
   'cuentas.solicitar': 'Solicitar cambios de cuentas',
   'cuentas.ejecutar': 'Ejecutar cambios aprobados',
+  'estudiantes.crear': 'Gestionar estudiantes y apoderados',
   'incidencias.registrar': 'Registrar incidencias',
   'incidencias.consultar': 'Consultar incidencias',
   'incidencias.seguimiento': 'Agregar seguimiento',
@@ -1600,47 +1601,481 @@ porId('incident-form').addEventListener('submit', async (e) => {
   }
 });
 
+let estudianteActual = null;
+let apoderadoActual = null;
+let aulasEscolares = [];
+
+function campoEscolar(contenedor, id, nombre, titulo, tipo = 'text', longitud = 40) {
+  const bloque = elemento('div', undefined, 'col-md-4');
+  const etiqueta = elemento('label', titulo, 'form-label');
+  etiqueta.htmlFor = id;
+  const control = elemento(tipo === 'select' ? 'select' : 'input');
+  control.id = id;
+  control.name = nombre;
+  control.className = tipo === 'select' ? 'form-select' : 'form-control';
+  if (tipo !== 'select') {
+    control.type = tipo;
+    control.maxLength = longitud;
+  }
+  bloque.append(etiqueta, control);
+  contenedor.append(bloque);
+  return control;
+}
+
+function prepararCamposPersona(prefijo) {
+  const contenedor = porId(`${prefijo}-person-fields`);
+  const tipo = campoEscolar(
+    contenedor,
+    `${prefijo}-document-type`,
+    'tipo_documento',
+    'Documento de identidad',
+    'select'
+  );
+  tipo.replaceChildren(
+    new Option('Sin documento conocido', ''),
+    new Option('DNI', 'DNI'),
+    new Option('Carnet de extranjería', 'CE'),
+    new Option('Pasaporte', 'PASAPORTE')
+  );
+  campoEscolar(contenedor, `${prefijo}-document-number`, 'numero_documento', 'Número de documento');
+  const pais = campoEscolar(
+    contenedor,
+    `${prefijo}-document-country`,
+    'pais_documento',
+    'País emisor',
+    'select'
+  );
+  pais.add(new Option('Seleccionar', ''));
+  campoEscolar(contenedor, `${prefijo}-phone`, 'telefono', 'Teléfono, si se conoce', 'tel', 30);
+  campoEscolar(contenedor, `${prefijo}-email`, 'correo', 'Correo, si se conoce', 'email', 254);
+  tipo.addEventListener('change', () => actualizarDocumento(prefijo));
+  actualizarDocumento(prefijo);
+}
+
+function actualizarDocumento(prefijo) {
+  const tipo = porId(`${prefijo}-document-type`).value;
+  const numero = porId(`${prefijo}-document-number`);
+  const pais = porId(`${prefijo}-document-country`);
+  numero.required = Boolean(tipo);
+  pais.required = Boolean(tipo);
+  numero.readOnly = !tipo;
+  pais.disabled = !tipo || tipo === 'DNI' || tipo === 'CE';
+  numero.removeAttribute('pattern');
+  if (!tipo) {
+    numero.value = '';
+    pais.value = '';
+  } else if (tipo === 'DNI') {
+    pais.value = 'PE';
+    numero.pattern = '[0-9]{8}';
+    numero.title = 'Ocho dígitos.';
+  } else if (tipo === 'CE') {
+    pais.value = 'PE';
+    numero.pattern = '[A-Za-z0-9]{9,12}';
+    numero.title = 'De 9 a 12 letras o números.';
+  } else {
+    numero.pattern = '[A-Za-z0-9]{3,40}';
+    numero.title = 'De 3 a 40 letras o números, sin espacios.';
+  }
+}
+
+function prepararCamposAula(prefijo) {
+  const contenedor = porId(`${prefijo}-classroom-fields`);
+  campoEscolar(contenedor, `${prefijo}-level`, '', 'Año lectivo y nivel', 'select');
+  campoEscolar(contenedor, `${prefijo}-grade`, '', 'Grado', 'select');
+  const seccion = campoEscolar(contenedor, `${prefijo}-classroom`, 'id_aula', 'Sección', 'select');
+  seccion.required = true;
+  porId(`${prefijo}-level`).addEventListener('change', () => cargarGrados(prefijo));
+  porId(`${prefijo}-grade`).addEventListener('change', () => cargarSecciones(prefijo));
+}
+
+function claveNivel(aula) {
+  return `${aula.anio_lectivo}|${aula.nivel}`;
+}
+
+function cargarNiveles(prefijo) {
+  const niveles = [...new Map(aulasEscolares.map((aula) => [claveNivel(aula), aula])).values()];
+  opciones(
+    porId(`${prefijo}-level`),
+    niveles,
+    claveNivel,
+    (aula) => `${aula.anio_lectivo} · ${aula.nivel}`,
+    niveles[0] && claveNivel(niveles[0])
+  );
+  cargarGrados(prefijo);
+}
+
+function cargarGrados(prefijo) {
+  const nivel = porId(`${prefijo}-level`).value;
+  const grados = [
+    ...new Set(
+      aulasEscolares.filter((aula) => claveNivel(aula) === nivel).map((aula) => aula.grado)
+    )
+  ].sort((a, b) => a - b);
+  opciones(
+    porId(`${prefijo}-grade`),
+    grados,
+    (grado) => grado,
+    (grado) => `${grado}.º`,
+    grados[0]
+  );
+  cargarSecciones(prefijo);
+}
+
+function cargarSecciones(prefijo) {
+  const nivel = porId(`${prefijo}-level`).value;
+  const grado = porId(`${prefijo}-grade`).value;
+  const aulas = aulasEscolares.filter(
+    (aula) => claveNivel(aula) === nivel && String(aula.grado) === grado
+  );
+  opciones(
+    porId(`${prefijo}-classroom`),
+    aulas,
+    (aula) => aula.id,
+    (aula) => aula.seccion
+  );
+}
+
+function completarPersona(prefijo, persona = {}) {
+  const formulario = porId(`${prefijo}-form`);
+  for (const campo of [
+    'nombres',
+    'apellidos',
+    'tipo_documento',
+    'numero_documento',
+    'pais_documento',
+    'telefono',
+    'correo'
+  ]) {
+    formulario.elements[campo].value = persona[campo] || '';
+  }
+  actualizarDocumento(prefijo);
+  const historica = Boolean(persona.identidad_historica);
+  for (const campo of ['nombres', 'apellidos', 'numero_documento', 'pais_documento']) {
+    if (historica) {
+      formulario.elements[campo].readOnly = true;
+    } else if (['nombres', 'apellidos'].includes(campo)) {
+      formulario.elements[campo].readOnly = false;
+    }
+  }
+  formulario.elements.tipo_documento.disabled = historica;
+  if (historica) {
+    formulario.elements.pais_documento.disabled = true;
+  }
+  porId(`${prefijo}-identity-note`).textContent = historica
+    ? 'Identidad con historial: puedes actualizar el contacto y añadir matrículas o vínculos.'
+    : 'Documento opcional. Si se desconoce, deja tipo, número y país vacíos; no inventes un DNI.';
+}
+
+function nuevoEstudiante() {
+  estudianteActual = null;
+  const formulario = porId('student-form');
+  formulario.reset();
+  completarPersona('student');
+  for (const id of ['student-names', 'student-surnames']) {
+    porId(id).setCustomValidity('');
+  }
+  porId('student-code').readOnly = false;
+  porId('student-birth').readOnly = false;
+  porId('student-enrollment').hidden = false;
+  porId('student-enrollment').disabled = false;
+  porId('student-history').hidden = true;
+  porId('student-form-title').textContent = 'Registrar estudiante y matrícula';
+  porId('student-save').textContent = 'Guardar estudiante y matrícula';
+  porId('guardian-link-form').reset();
+  porId('guardian-selected-id').value = '';
+  cargarNiveles('student');
+}
+
+function mostrarPaginasEscolares(id, paginacion, cargar) {
+  const { pagina, paginas, total } = paginacion;
+  const anterior = accion('Anterior', () => cargar(pagina - 1));
+  const siguiente = accion('Siguiente', () => cargar(pagina + 1));
+  anterior.disabled = pagina <= 1;
+  siguiente.disabled = pagina >= paginas;
+  porId(id).replaceChildren(
+    anterior,
+    elemento('span', `Página ${pagina} de ${paginas} · ${total} resultados`),
+    siguiente
+  );
+}
+
+function documentoPersona(persona) {
+  if (!persona.numero_documento) {
+    return 'Sin documento conocido';
+  }
+  return `${persona.tipo_documento} ${persona.numero_documento} (${persona.pais_documento})`;
+}
+
+async function buscarEstudiantesEscolares(pagina = 1) {
+  const filtros = new URLSearchParams({
+    buscar: porId('student-search').value,
+    grado: porId('student-search-grade').value,
+    pagina
+  });
+  const resultado = await json(`estudiantes?${filtros}`);
+  const lista = porId('student-results');
+  lista.replaceChildren();
+  for (const estudiante of resultado.estudiantes) {
+    const fila = elemento('div', undefined, 'border-bottom py-2');
+    let aula = 'Sin matrícula vigente';
+    if (estudiante.nivel) {
+      aula =
+        `${estudiante.anio_lectivo} · ${estudiante.nivel} · ` +
+        `${estudiante.grado}.º ${estudiante.seccion}`;
+    }
+    fila.append(
+      elemento(
+        'p',
+        `${estudiante.apellidos}, ${estudiante.nombres} · ` + `${estudiante.codigo_estudiante}`,
+        'mb-1 fw-semibold'
+      )
+    );
+    fila.append(elemento('p', `${documentoPersona(estudiante)} · ${aula}`, 'small mb-1'));
+    fila.append(accion('Consultar y editar', () => abrirEstudiante(estudiante.id)));
+    lista.append(fila);
+  }
+  if (!resultado.estudiantes.length) {
+    lista.append(elemento('p', 'No hay estudiantes que coincidan dentro de tu acceso.'));
+  }
+  mostrarPaginasEscolares('student-pages', resultado.paginacion, buscarEstudiantesEscolares);
+}
+
+async function abrirEstudiante(id) {
+  const ficha = await json(`estudiantes/${id}`);
+  nuevoEstudiante();
+  estudianteActual = ficha.estudiante;
+  completarPersona('student', estudianteActual);
+  porId('student-code').value = estudianteActual.codigo_estudiante;
+  porId('student-code').readOnly = true;
+  porId('student-birth').value = (estudianteActual.fecha_nacimiento || '').slice(0, 10);
+  porId('student-birth').readOnly = Boolean(estudianteActual.identidad_historica);
+  porId('student-enrollment').hidden = true;
+  porId('student-enrollment').disabled = true;
+  porId('student-history').hidden = false;
+  porId('student-form-title').textContent = 'Editar estudiante';
+  porId('student-save').textContent = 'Guardar cambios del estudiante';
+  porId('enrollment-form').reset();
+  cargarNiveles('enrollment');
+  porId('student-enrollments').replaceChildren(
+    ...ficha.matriculas.map((matricula) =>
+      elemento(
+        'p',
+        `${matricula.anio_lectivo} · ${matricula.nivel} · ` +
+          `${matricula.grado}.º ${matricula.seccion}: ${fechaCivil(matricula.fecha_inicio)} — ` +
+          (matricula.fecha_fin ? fechaCivil(matricula.fecha_fin) : 'vigente'),
+        'small mb-1'
+      )
+    )
+  );
+  porId('student-guardians').replaceChildren(
+    ...ficha.apoderados.map((apoderado) => {
+      const bloque = elemento('div', undefined, 'border-bottom py-2');
+      const hasta = apoderado.vigente_hasta ? fechaCivil(apoderado.vigente_hasta) : 'vigente';
+      const principal = apoderado.es_principal ? 'Principal' : 'Apoderado';
+      bloque.append(
+        elemento(
+          'p',
+          `${principal}: ${apoderado.nombres} ${apoderado.apellidos} · ` +
+            `${apoderado.vinculo} · ${fechaCivil(apoderado.vigente_desde)} — ${hasta}`,
+          'mb-1'
+        )
+      );
+      bloque.append(accion('Consultar apoderado', () => abrirApoderado(apoderado.id)));
+      return bloque;
+    })
+  );
+  if (!ficha.apoderados.length) {
+    porId('student-guardians').textContent = 'Sin apoderados visibles registrados.';
+  }
+  porId('guardian-selected').textContent = 'Busca o registra un apoderado para seleccionarlo.';
+}
+
+function seleccionarApoderado(persona) {
+  porId('guardian-selected-id').value = persona.id;
+  porId('guardian-selected').textContent = `Seleccionado: ${persona.nombres} ${persona.apellidos}.`;
+  if (estudianteActual) {
+    aviso('Apoderado seleccionado. Completa el vínculo y confirma para guardarlo como principal.');
+  }
+}
+
+async function abrirApoderado(id) {
+  apoderadoActual = await json(`estudiantes/apoderados/${id}`);
+  porId('guardian-form').reset();
+  completarPersona('guardian', apoderadoActual);
+  porId('guardian-form-title').textContent = 'Editar apoderado';
+  porId('guardian-form').hidden = false;
+}
+
+async function buscarApoderadosEscolares(pagina = 1) {
+  const filtros = new URLSearchParams({ buscar: porId('guardian-search').value, pagina });
+  const resultado = await json(`estudiantes/apoderados?${filtros}`);
+  const lista = porId('guardian-results');
+  lista.replaceChildren();
+  for (const persona of resultado.apoderados) {
+    const fila = elemento('div', undefined, 'border-bottom py-2');
+    fila.append(
+      elemento(
+        'p',
+        `${persona.apellidos}, ${persona.nombres} · ` + documentoPersona(persona),
+        'mb-1'
+      )
+    );
+    fila.append(accion('Consultar y editar', () => abrirApoderado(persona.id)));
+    if (estudianteActual) {
+      fila.append(
+        accion(
+          'Seleccionar como principal',
+          () => seleccionarApoderado(persona),
+          'btn btn-sm btn-outline-primary ms-2'
+        )
+      );
+    }
+    lista.append(fila);
+  }
+  if (!resultado.apoderados.length) {
+    lista.textContent = 'No hay personas que coincidan dentro de tu acceso.';
+  }
+  mostrarPaginasEscolares('guardian-pages', resultado.paginacion, buscarApoderadosEscolares);
+}
+
+function alEnviarEscolar(id, guardar) {
+  const formulario = porId(id);
+  formulario.addEventListener('submit', async (evento) => {
+    evento.preventDefault();
+    if (formulario.dataset.enviando || !formulario.reportValidity()) {
+      return;
+    }
+    const cuerpo = Object.fromEntries(new FormData(formulario));
+    if (formulario.elements.tipo_documento) {
+      cuerpo.tipo_documento = formulario.elements.tipo_documento.value;
+      cuerpo.pais_documento = formulario.elements.pais_documento.value;
+    }
+    const controles = [...formulario.elements].map((control) => [control, control.disabled]);
+    formulario.dataset.enviando = '1';
+    for (const [control] of controles) {
+      control.disabled = true;
+    }
+    try {
+      await guardar(cuerpo);
+    } catch (error) {
+      aviso(error.message, true);
+    } finally {
+      for (const [control, deshabilitado] of controles) {
+        control.disabled = deshabilitado;
+        if (control.type === 'password') {
+          control.value = '';
+        }
+      }
+      delete formulario.dataset.enviando;
+    }
+  });
+}
+
+for (const prefijo of ['student', 'guardian']) {
+  prepararCamposPersona(prefijo);
+}
+for (const prefijo of ['student', 'enrollment']) {
+  prepararCamposAula(prefijo);
+}
 porId('nav-student').addEventListener('click', async () => {
   try {
-    porId('student-form').reset();
+    aulasEscolares = await json('estudiantes/aulas');
+    const paises = await json('estudiantes/paises-documento');
+    for (const prefijo of ['student', 'guardian']) {
+      opciones(
+        porId(`${prefijo}-document-country`),
+        paises,
+        (pais) => pais.codigo,
+        (pais) => pais.nombre
+      );
+    }
+    nuevoEstudiante();
+    porId('guardian-form').hidden = true;
+    porId('guardian-results').replaceChildren();
+    porId('guardian-pages').replaceChildren();
+    const grados = [...new Set(aulasEscolares.map((aula) => aula.grado))].sort((a, b) => a - b);
     opciones(
-      porId('student-classroom'),
-      await json('estudiantes/aulas'),
-      (a) => a.id,
-      (a) => `${a.anio_lectivo} · ${a.nivel} · ${a.grado}.º ${a.seccion}`
+      porId('student-search-grade'),
+      grados,
+      (grado) => grado,
+      (grado) => `${grado}.º`
     );
+    porId('student-search-grade').options[0].textContent = 'Todos';
+    await buscarEstudiantesEscolares();
     mostrar('student-view');
   } catch (error) {
     aviso(error.message, true);
   }
 });
-
-porId('student-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.currentTarget;
-  const boton = form.querySelector('button');
-  if (boton.disabled) {
-    return;
+porId('student-new').addEventListener('click', nuevoEstudiante);
+porId('guardian-new').addEventListener('click', () => {
+  apoderadoActual = null;
+  porId('guardian-form').reset();
+  completarPersona('guardian');
+  for (const id of ['guardian-names', 'guardian-surnames']) {
+    porId(id).setCustomValidity('');
   }
-  validarNombresEstudiante();
-  if (!form.reportValidity()) {
-    return;
+  porId('guardian-form-title').textContent = 'Registrar apoderado';
+  porId('guardian-form').hidden = false;
+});
+alEnviarEscolar('student-search-form', () => buscarEstudiantesEscolares());
+alEnviarEscolar('guardian-search-form', () => buscarApoderadosEscolares());
+alEnviarEscolar('student-form', async (cuerpo) => {
+  let ruta = 'estudiantes';
+  let metodo = 'POST';
+  if (estudianteActual) {
+    ruta += `/${estudianteActual.id}`;
+    metodo = 'PUT';
+    delete cuerpo.codigo_estudiante;
+    cuerpo.tipo_documento = porId('student-document-type').value;
   }
-  boton.disabled = true;
-  try {
-    const resultado = await json('estudiantes', 'POST', Object.fromEntries(new FormData(form)));
-    form.reset();
-    aviso(`Estudiante ${resultado.codigo_estudiante} y matrícula registrados.`);
-  } catch (error) {
-    aviso(error.message, true);
-  } finally {
-    porId('student-password').value = '';
-    boton.disabled = false;
+  const resultado = await json(ruta, metodo, cuerpo);
+  await buscarEstudiantesEscolares();
+  if (metodo === 'POST') {
+    aviso(
+      `Estudiante ${resultado.codigo_estudiante} y matrícula registrados. ` +
+        'Abre su ficha para asociar al apoderado principal.'
+    );
+  } else {
+    aviso('Cambios del estudiante guardados.');
   }
 });
+alEnviarEscolar('guardian-form', async (cuerpo) => {
+  let ruta = 'estudiantes/apoderados';
+  let metodo = 'POST';
+  if (apoderadoActual) {
+    ruta += `/${apoderadoActual.id}`;
+    metodo = 'PUT';
+    cuerpo.tipo_documento = porId('guardian-document-type').value;
+  }
+  const resultado = await json(ruta, metodo, cuerpo);
+  apoderadoActual = { id: resultado.id, ...cuerpo };
+  delete apoderadoActual.contrasena;
+  seleccionarApoderado(apoderadoActual);
+  await buscarApoderadosEscolares();
+  porId('guardian-form-title').textContent = 'Editar apoderado';
+  aviso('Apoderado guardado. Puedes asociarlo como principal desde la ficha del estudiante.');
+});
+alEnviarEscolar('enrollment-form', async (cuerpo) => {
+  if (!estudianteActual) {
+    throw new Error('Selecciona primero un estudiante.');
+  }
+  await json(`estudiantes/${estudianteActual.id}/matriculas`, 'POST', cuerpo);
+  await abrirEstudiante(estudianteActual.id);
+  await buscarEstudiantesEscolares();
+  aviso('Nueva matrícula registrada; la anterior permanece en el historial.');
+});
+alEnviarEscolar('guardian-link-form', async (cuerpo) => {
+  if (!estudianteActual || !cuerpo.id_apoderado) {
+    throw new Error('Selecciona el estudiante y un apoderado antes de guardar el vínculo.');
+  }
+  await json(`estudiantes/${estudianteActual.id}/apoderado-principal`, 'POST', cuerpo);
+  await abrirEstudiante(estudianteActual.id);
+  aviso('Apoderado principal guardado; se conserva el historial de vínculos.');
+});
 
-function validarNombresEstudiante() {
-  return ['student-names', 'student-surnames']
+function validarNombresEscolares(prefijo) {
+  return [`${prefijo}-names`, `${prefijo}-surnames`]
     .map((id) => {
       const input = porId(id);
       const nombre = input.value.trim().normalize('NFC').replace(/\s+/g, ' ');
@@ -1652,8 +2087,10 @@ function validarNombresEstudiante() {
     })
     .every(Boolean);
 }
-for (const id of ['student-names', 'student-surnames']) {
-  porId(id).addEventListener('input', validarNombresEstudiante);
+for (const prefijo of ['student', 'guardian']) {
+  for (const campo of ['names', 'surnames']) {
+    porId(`${prefijo}-${campo}`).addEventListener('input', () => validarNombresEscolares(prefijo));
+  }
 }
 porId('authorization-fields').addEventListener('change', actualizarModoCuenta);
 porId('authorization-form').addEventListener('input', limpiarAviso);

@@ -479,6 +479,8 @@ export async function verificarInterfaz(base, credenciales, expirarSesion, prepa
     if (prepararRegresiones) {
       const escenarios = await prepararRegresiones();
       await verificarRegresionesInterfaz({ base, credenciales, enviar, evaluar, esperar, escenarios, erroresJavaScript: () => erroresJavaScript });
+      await verificarEstudiantesInterfaz({ t: escenarios.t, credenciales, enviar, evaluar, esperar });
+      assert.equal(erroresJavaScript, 0, 'Gestión escolar sin excepciones JavaScript');
     }
     await enviar('Browser.close');
   } finally {
@@ -497,6 +499,143 @@ export async function verificarInterfaz(base, credenciales, expirarSesion, prepa
     }
     await rm(rutaPerfil, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
+}
+
+async function verificarEstudiantesInterfaz({ t, credenciales, enviar, evaluar, esperar }) {
+  const clave = credenciales.DIRECTOR_PASSWORD;
+  const prueba = (nombre, comprobar) => t.test('Chrome escolar: ' + nombre, comprobar);
+  const rellenar = async (id, campos) =>
+    evaluar(`(() => {
+    const formulario = document.getElementById(${JSON.stringify(id)});
+    for (const [nombre, valor] of Object.entries(${JSON.stringify(campos)})) {
+      const control = formulario.elements[nombre];
+      control.value = valor;
+      control.dispatchEvent(new Event('input', { bubbles: true }));
+      control.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    formulario.requestSubmit();
+  })()`);
+  const guardado = async (id, texto) =>
+    esperar(
+      `!document.getElementById(${JSON.stringify(id)}).dataset.enviando && ` +
+        `document.querySelector('#message').textContent.includes(${JSON.stringify(texto)})`
+    );
+  let estudianteId;
+  await prueba(
+    'registro extranjero y selección dependiente de nivel, grado y sección',
+    async () => {
+      await evaluar("document.querySelector('#nav-student').click()");
+      await esperar("document.querySelector('#student-view').hidden === false");
+      await evaluar(`(() => {
+      const nivel = document.querySelector('#student-level');
+      nivel.selectedIndex = nivel.options.length - 1;
+      nivel.dispatchEvent(new Event('change'));
+      document.querySelector('#student-classroom').selectedIndex = 1;
+      const grado = document.querySelector('#student-grade');
+      grado.selectedIndex = grado.options.length - 1;
+      grado.dispatchEvent(new Event('change'));
+    })()`);
+      assert.equal(await evaluar("document.querySelector('#student-classroom').value"), '');
+      const aula = await evaluar("document.querySelector('#student-classroom').options[1].value");
+      await rellenar('student-form', {
+        nombres: 'Mateo Andrés',
+        apellidos: 'Navegador Extranjero',
+        codigo_estudiante: 'BROW-EXT',
+        tipo_documento: 'PASAPORTE',
+        numero_documento: 'nv123456',
+        pais_documento: 'VE',
+        id_aula: aula,
+        fecha_inicio: '2026-03-02',
+        contrasena: clave
+      });
+      await guardado('student-form', 'BROW-EXT');
+      const ficha = await evaluar(`(async () =>
+      (await (await fetch('/api/estudiantes?buscar=NV123456')).json()).estudiantes[0])()`);
+      estudianteId = ficha.id;
+      assert.equal(ficha.numero_documento, 'NV123456');
+      assert.equal(ficha.pais_documento, 'VE');
+      assert.equal(await evaluar("document.querySelector('#student-password').value"), '');
+    }
+  );
+  await prueba('duplicado informado y edición desde búsqueda por documento', async () => {
+    await rellenar('student-form', { contrasena: clave });
+    await guardado('student-form', 'ya está registrada');
+    await evaluar(`document.querySelector('#student-search').value = 'NV123456';
+      document.querySelector('#student-search-form').requestSubmit();`);
+    await esperar(
+      "!document.querySelector('#student-search-form').dataset.enviando && " +
+        "document.querySelector('#student-results').textContent.includes('Navegador Extranjero')"
+    );
+    await evaluar("document.querySelector('#student-results button').click()");
+    await esperar(
+      "document.querySelector('#student-form-title').textContent === 'Editar estudiante'"
+    );
+    await rellenar('student-form', {
+      nombres: 'Mateo Alejandro',
+      telefono: '999888777',
+      contrasena: clave
+    });
+    await guardado('student-form', 'Cambios del estudiante guardados');
+    const ficha = await evaluar(`(async () =>
+      (await (await fetch('/api/estudiantes/${estudianteId}')).json()).estudiante)()`);
+    assert.equal(ficha.nombres, 'Mateo Alejandro');
+    assert.equal(ficha.telefono, '999888777');
+  });
+  await prueba(
+    'apoderado registrado, editado y asociado como principal desde formularios',
+    async () => {
+      await evaluar("document.querySelector('#guardian-new').click()");
+      await rellenar('guardian-form', {
+        nombres: 'Laura Elena',
+        apellidos: 'Navegador Apoderada',
+        tipo_documento: 'DNI',
+        numero_documento: '22334455',
+        correo: 'laura@example.test',
+        contrasena: clave
+      });
+      await guardado('guardian-form', 'Apoderado guardado');
+      assert.ok(await evaluar("document.querySelector('#guardian-selected-id').value"));
+      await rellenar('guardian-form', { telefono: '999777666', contrasena: clave });
+      await guardado('guardian-form', 'Apoderado guardado');
+      await rellenar('guardian-link-form', {
+        vinculo: 'Madre',
+        vigente_desde: '2026-03-02',
+        contrasena: clave
+      });
+      await guardado('guardian-link-form', 'Apoderado principal guardado');
+      assert.match(
+        await evaluar("document.querySelector('#student-guardians').textContent"),
+        /Principal: Laura Elena Navegador Apoderada/
+      );
+      const ficha = await evaluar(`(async () =>
+      await (await fetch('/api/estudiantes/${estudianteId}')).json())()`);
+      assert.equal(ficha.apoderados.length, 1);
+      assert.equal(ficha.apoderados[0].telefono, '999777666');
+    }
+  );
+  await prueba('nueva matrícula conserva la anterior y formularios sin desborde', async () => {
+    const aula = await evaluar("document.querySelector('#enrollment-classroom').options[1].value");
+    await rellenar('enrollment-form', {
+      id_aula: aula,
+      fecha_inicio: '2026-11-26',
+      contrasena: clave
+    });
+    await guardado('enrollment-form', 'Nueva matrícula registrada');
+    assert.equal(await evaluar("document.querySelectorAll('#student-enrollments p').length"), 2);
+    for (const ancho of [1280, 768, 375]) {
+      await enviar('Emulation.setDeviceMetricsOverride', {
+        width: ancho,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+      const medidas = await evaluar(
+        '({ ancho: document.documentElement.clientWidth, ' +
+          'contenido: document.documentElement.scrollWidth })'
+      );
+      assert.equal(medidas.ancho, medidas.contenido);
+    }
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
