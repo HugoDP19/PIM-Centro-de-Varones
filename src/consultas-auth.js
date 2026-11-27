@@ -1,74 +1,156 @@
 import { resumir } from './seguridad.js';
 
 const seleccionUsuario = (bloquear = false) => `
-  SELECT u.id, u.id_persona, u.id_rol, u.nombre_usuario, u.contrasena_hash,
-         u.activo, p.activo AS persona_activa, p.es_personal,
-         CONCAT(p.nombres, ' ', p.apellidos) AS nombre, r.codigo AS rol
-  FROM usuarios u ${bloquear ? 'WITH (UPDLOCK, HOLDLOCK)' : ''} JOIN personas p ON p.id = u.id_persona
-  JOIN roles r ON r.id = u.id_rol`;
+  SELECT u.id,
+    u.id_persona,
+    u.id_rol,
+    u.nombre_usuario,
+    u.contrasena_hash,
+    u.activo,
+    p.activo AS persona_activa,
+    p.es_personal,
+    CONCAT(p.nombres, ' ', p.apellidos) AS nombre,
+    r.codigo AS rol
+  FROM usuarios u ${bloquear ? 'WITH (UPDLOCK, HOLDLOCK)' : ''}
+    JOIN personas p ON p.id = u.id_persona
+    JOIN roles r ON r.id = u.id_rol
+`;
 
 export async function buscarUsuario(db, nombre, bloquear = false) {
-  const [filas] = await db.execute(`${seleccionUsuario(bloquear)} WHERE u.nombre_usuario = ?`, [nombre]);
+  const [filas] = await db.execute(`${seleccionUsuario(bloquear)} WHERE u.nombre_usuario = ?`, [
+    nombre
+  ]);
   return filas[0];
 }
 
-// Obtiene las concesiones del rol actual; los límites institucionales se aplican además en el servidor.
+// Carga permisos del rol; el servidor aplica además los límites institucionales.
 export async function cargarPermisos(db, usuario) {
-  const [filas] = await db.execute(`
-    SELECT p.codigo FROM permisos p JOIN roles_permisos rp ON rp.id_permiso = p.id
-    WHERE rp.id_rol = ? ORDER BY p.codigo`, [usuario.id_rol]);
+  const [filas] = await db.execute(
+    `
+      SELECT p.codigo
+      FROM permisos p
+        JOIN roles_permisos rp ON rp.id_permiso = p.id
+      WHERE rp.id_rol = ?
+      ORDER BY p.codigo
+    `,
+    [usuario.id_rol]
+  );
   return { ...usuario, permisos: filas.map((fila) => fila.codigo) };
 }
 
 // Añade el evento de acceso al historial con el actor y rol que lo realizaron.
 export async function registrarAcceso(db, usuario, accion) {
-  await db.execute(`
-    INSERT INTO historial (id_actor, id_rol_actor, ocurrido_en, accion, id_usuario_afectado)
-    VALUES (?, ?, SYSUTCDATETIME(), ?, ?)`, [usuario.id, usuario.id_rol, accion, usuario.id]);
+  await db.execute(
+    `
+      INSERT INTO historial (id_actor, id_rol_actor, ocurrido_en, accion, id_usuario_afectado)
+      VALUES (?, ?, SYSUTCDATETIME(), ?, ?)
+    `,
+    [usuario.id, usuario.id_rol, accion, usuario.id]
+  );
 }
 
 export async function limitarIntentos(db, ip, nombre) {
   // Persistencia y contador atómico: reiniciar Node no reinicia los límites.
-  for (const [valor, limite] of [[`ip:${ip}`, 100], [`cuenta:${nombre.toLowerCase()}`, 10]]) {
+  for (const [valor, limite] of [
+    [`ip:${ip}`, 100],
+    [`cuenta:${nombre.toLowerCase()}`, 10]
+  ]) {
     const clave = resumir(valor);
-    await db.execute(`
-      MERGE intentos_acceso WITH (HOLDLOCK) AS destino
-      USING (SELECT ? AS clave) AS origen ON origen.clave = destino.clave
-      WHEN MATCHED THEN UPDATE SET
-        cantidad = CASE WHEN vence_en <= SYSUTCDATETIME() THEN 1 ELSE cantidad + 1 END,
-        vence_en = CASE WHEN vence_en <= SYSUTCDATETIME() THEN DATEADD(MINUTE, 15, SYSUTCDATETIME()) ELSE vence_en END
-      WHEN NOT MATCHED THEN INSERT (clave, cantidad, vence_en)
-        VALUES (origen.clave, 1, DATEADD(MINUTE, 15, SYSUTCDATETIME()));`, [clave]);
-    const [[fila]] = await db.execute('SELECT cantidad FROM intentos_acceso WHERE clave = ?', [clave]);
-    if (fila.cantidad > limite) return false;
+    await db.execute(
+      `
+        MERGE intentos_acceso
+        WITH (HOLDLOCK) AS destino USING (
+            SELECT ? AS clave
+          ) AS origen ON origen.clave = destino.clave
+        WHEN MATCHED THEN
+        UPDATE SET
+          cantidad = CASE
+            WHEN vence_en <= SYSUTCDATETIME() THEN 1
+            ELSE cantidad + 1
+          END,
+          vence_en = CASE
+            WHEN vence_en <= SYSUTCDATETIME() THEN DATEADD(MINUTE, 15, SYSUTCDATETIME())
+            ELSE vence_en
+          END
+        WHEN NOT MATCHED THEN
+        INSERT
+          (clave, cantidad, vence_en)
+        VALUES (origen.clave, 1, DATEADD(MINUTE, 15, SYSUTCDATETIME()));
+      `,
+      [clave]
+    );
+    const [[fila]] = await db.execute('SELECT cantidad FROM intentos_acceso WHERE clave = ?', [
+      clave
+    ]);
+    if (fila.cantidad > limite) {
+      return false;
+    }
   }
   return true;
 }
 
 // Persiste solo resúmenes del token y la credencial, con fechas de actividad y vencimiento.
 export async function guardarSesion(db, usuario, token, anterior) {
-  if (anterior) await db.execute('DELETE FROM sesiones WHERE token_hash = ?', [resumir(anterior)]);
-  await db.execute(`
-    INSERT INTO sesiones (token_hash, id_usuario, credencial_hash, creada_en, ultima_actividad_en, vence_en)
-    VALUES (?, ?, ?, SYSUTCDATETIME(), SYSUTCDATETIME(), DATEADD(HOUR, 8, SYSUTCDATETIME()))`,
-  [resumir(token), usuario.id, resumir(usuario.contrasena_hash)]);
-  await db.execute('DELETE FROM intentos_acceso WHERE clave = ?', [resumir(`cuenta:${usuario.nombre_usuario.toLowerCase()}`)]);
+  if (anterior) {
+    await db.execute('DELETE FROM sesiones WHERE token_hash = ?', [resumir(anterior)]);
+  }
+  await db.execute(
+    `
+      INSERT INTO sesiones (
+          token_hash,
+          id_usuario,
+          credencial_hash,
+          creada_en,
+          ultima_actividad_en,
+          vence_en
+        )
+      VALUES (
+          ?,
+          ?,
+          ?,
+          SYSUTCDATETIME(),
+          SYSUTCDATETIME(),
+          DATEADD(HOUR, 8, SYSUTCDATETIME())
+        )
+    `,
+    [resumir(token), usuario.id, resumir(usuario.contrasena_hash)]
+  );
+  await db.execute('DELETE FROM intentos_acceso WHERE clave = ?', [
+    resumir(`cuenta:${usuario.nombre_usuario.toLowerCase()}`)
+  ]);
   await registrarAcceso(db, usuario, 'sesion_iniciada');
 }
 
 // Comprueba vencimiento, inactividad y credencial vigente para invalidar sesiones antiguas.
 export async function buscarSesion(db, token) {
-  const [filas] = await db.execute(`${seleccionUsuario()}
-    JOIN sesiones s ON s.id_usuario = u.id
-    WHERE s.token_hash = ? AND s.vence_en > SYSUTCDATETIME()
-      AND s.ultima_actividad_en > DATEADD(MINUTE, -30, SYSUTCDATETIME())
-      AND s.credencial_hash = LOWER(CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(255), u.contrasena_hash)), 2))
-      AND u.activo = 1 AND p.activo = 1 AND p.es_personal = 1`, [resumir(token)]);
+  const [filas] = await db.execute(
+    `
+      ${seleccionUsuario()}
+      JOIN sesiones s ON s.id_usuario = u.id
+      WHERE s.token_hash = ?
+        AND s.vence_en > SYSUTCDATETIME()
+        AND s.ultima_actividad_en > DATEADD(MINUTE, -30, SYSUTCDATETIME())
+        AND s.credencial_hash = LOWER(
+          CONVERT(
+            VARCHAR(64),
+            HASHBYTES('SHA2_256', CONVERT(VARCHAR(255), u.contrasena_hash)),
+            2
+          )
+        )
+        AND u.activo = 1
+        AND p.activo = 1
+        AND p.es_personal = 1
+    `,
+    [resumir(token)]
+  );
   if (!filas[0]) {
     await db.execute('DELETE FROM sesiones WHERE token_hash = ?', [resumir(token)]);
     return null;
   }
-  await db.execute('UPDATE sesiones SET ultima_actividad_en = SYSUTCDATETIME() WHERE token_hash = ?', [resumir(token)]);
+  await db.execute(
+    'UPDATE sesiones SET ultima_actividad_en = SYSUTCDATETIME() WHERE token_hash = ?',
+    [resumir(token)]
+  );
   return cargarPermisos(db, filas[0]);
 }
 

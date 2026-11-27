@@ -26,7 +26,12 @@ try {
   await pool.execute('DELETE FROM sesiones WHERE vence_en <= SYSUTCDATETIME()');
   await pool.execute('DELETE FROM intentos_acceso WHERE vence_en <= SYSUTCDATETIME()');
   // Inicia HTTP solo después de validar la base y gestiona los errores de escucha.
-  const app = createApp({ pool, origin, produccion, proxyLocal: process.env.TRUST_PROXY_LOCAL === '1' });
+  const app = createApp({
+    pool,
+    origin,
+    produccion,
+    proxyLocal: process.env.TRUST_PROXY_LOCAL === '1'
+  });
   const server = app.listen(port, host);
   server.once('listening', () => console.log(`SICE-Local disponible en ${origin}`));
   server.on('error', async (error) => {
@@ -36,10 +41,20 @@ try {
   });
   // Al detener el proceso, termina la escucha y cierra las conexiones de SQL Server.
   for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.once(signal, () => server.close(async () => { await pool.end(); }));
+    process.once(signal, () =>
+      server.close(async () => {
+        await pool.end();
+      })
+    );
   }
 } catch (error) {
-  console.error(error.code ? `No se pudo iniciar SICE-Local: comprueba la base de datos y el esquema (${error.code}).` : error.message);
-  if (pool) await pool.end();
+  console.error(
+    error.code
+      ? `No se pudo iniciar SICE-Local: comprueba la base de datos y el esquema (${error.code}).`
+      : error.message
+  );
+  if (pool) {
+    await pool.end();
+  }
   process.exitCode = 1;
 }
