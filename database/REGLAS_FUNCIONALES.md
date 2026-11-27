@@ -8,7 +8,9 @@ La resolución documental se limita a errores materiales de título/lugar y dupl
 
 Cerrar requiere D/SD o CT dentro del ámbito, motivo, declaración de revisión de actuaciones/plazos y ausencia de solicitudes pendientes; añade una actuación de conclusión. Reabrir exige los mismos permisos y motivo, y añade evidencia. Nunca permite restaurar una anulación lógica. Se registran ambos cambios en historial sin sobrescribir actuaciones.
 
-El usuario autoriza crear estudiantes exclusivamente a Director, Subdirector y Coordinador de Tutoría. Se insertan identidad, perfil estudiantil, matrícula y auditoría atómicamente; código único, aula activa y fecha correspondiente al año lectivo. No se habilitan gestión general de catálogos, DNI inventados ni edición de identidades históricas.
+El alcance autorizado el 27 de noviembre de 2026 comprende registro y edición de estudiantes y apoderados, búsqueda, matrículas y asociación del principal para Director, Subdirector y Coordinador de Tutoría, mediante el permiso existente `estudiantes.crear`. Se insertan identidad, perfil estudiantil, matrícula y auditoría atómicamente; código único y estable, aula activa y fecha correspondiente al año lectivo. Administrador, Docente y Auxiliar no acceden a esta gestión.
+
+Documento opcional: DNI, carnet de extranjería o pasaporte con país emisor; sin documento se usa la identidad provisional y verificación humana. No hay fusión automática. Se conserva la identidad usada en expedientes, cuentas o revisiones; el contacto puede actualizarse. Las nuevas matrículas y sustituciones del principal conservan relaciones anteriores y añaden períodos sin superposición, con reautenticación y auditoría. Las fechas tienen precisión de día y no admiten dos sustituciones en el mismo día. No se habilitan gestión general de catálogos, DNI inventados ni corrección directa de identidades históricas. Las consultas y ediciones respetan la reserva escolar, incluidos apoderados compartidos con estudiantes protegidos.
 
 ## Gestión de cuentas autorizada — 17 de noviembre de 2026
 
@@ -60,7 +62,7 @@ Matriz de acceso para desarrollo, incluida la ampliación del 20 de noviembre. L
 | Aprobar o rechazar solicitud | R | R | — | — | — | — |
 | Anular lógicamente como efecto de aprobación | R | R | — | — | — | — |
 | Generar PDF del contenido autorizado | R | R | I | P | P | — |
-| Crear estudiante y matrícula con reautenticación | S | S | S | — | — | — |
+| Gestionar estudiantes, matrículas y apoderados con reautenticación en escrituras | S | S | S | — | — | — |
 | Autorizar gestión de cuentas/cambios sensibles de permisos | S | S | — | — | — | — |
 | Ejecutar administración de cuentas y permisos autorizados | S | S | — | — | — | S |
 

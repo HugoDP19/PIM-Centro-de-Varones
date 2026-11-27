@@ -35,12 +35,25 @@ El esquema vacío no crea personal, cuentas ni catálogos. Su provisión inicial
 - Seis roles: Director, Subdirector, Coordinador de Tutoría, Docente, Auxiliar y Administrador.
 - Inicio/cierre de sesión, caducidad, revocación y permisos comprobados en el servidor.
 - Cuentas y permisos con autorización independiente, recíproca o doble según el cambio; sin autoaprobación.
-- Estudiantes y matrícula por Director, Subdirector y Coordinador de Tutoría.
+- Registro, búsqueda y edición de estudiantes y apoderados por Director, Subdirector y Coordinador de Tutoría; matrículas y vínculos principales con historial.
 - Seis categorías de incidencias, borradores sin duplicar reintentos, confirmación, búsqueda, seguimiento con plazos y versiones. Selectores de personas con búsqueda y paginación.
 - Rectificación documental, anulación lógica por duplicado, cierre y reapertura motivados.
 - PDF autorizado con logo, autoría histórica, firma y sello. Administrador sin expedientes ni PDF escolares.
 
 La base local conserva seis cuentas activas, tres estudiantes y seis borradores sintéticos de presentación. Las claves permanecen en el archivo privado existente. Para exportar un borrador hay que completar sus campos y confirmarlo. No trasladar estos registros a una instalación con información real. El servidor nunca carga datos sintéticos.
+
+## Estudiantes y apoderados
+
+1. Entra con un rol autorizado y abre **Estudiantes y apoderados**. Busca por nombre, documento o código; el filtro de grado corresponde a la matrícula vigente.
+2. Registra al estudiante con código único. Selecciona año/nivel, grado y sección de las aulas activas; indica la fecha de inicio y confirma con tu contraseña.
+3. El documento es opcional: DNI peruano de ocho dígitos, carnet de extranjería de 9–12 letras/números o pasaporte de 3–40 letras/números. Selecciona el país emisor. Estas son validaciones de formato, no una consulta a registros oficiales. Sin documento conocido, se conserva la identidad provisional mediante el código; no se inventa DNI.
+4. Abre **Consultar y editar** para actualizar la ficha. El código permanece estable. Una identidad usada en expedientes, cuentas o revisiones conserva nombres, documento y nacimiento; se permite actualizar contacto. Las correcciones de identidad histórica requieren un procedimiento institucional fuera de este formulario.
+5. Busca al apoderado antes de crear otra persona. Puede representar a varios estudiantes; el personal existente se selecciona y asocia antes de editarlo como apoderado. Completa vínculo, fecha y contraseña para guardar al principal. Crear un apoderado no crea una cuenta.
+6. Para cambiar de aula, registra una nueva matrícula desde la ficha. Se conserva la anterior y se finaliza el día previo. No se admite retroceder sobre fechas de hechos ya vinculados a esa matrícula.
+
+Los cambios de matrícula y principal requieren un inicio posterior al anterior, sin períodos superpuestos. Las fechas tienen precisión de día: una segunda sustitución el mismo día se rechaza para no reescribir el historial. Los documentos se normalizan a mayúsculas y la base impide duplicar país/tipo/número; sin documento, la revisión humana evita duplicar personas con nombres semejantes. No hay fusión ni eliminación de identidades.
+
+El permiso existente `estudiantes.crear` controla toda esta gestión para D/SD/CT. Administrador, Docente y Auxiliar no acceden a estas rutas. La reserva escolar también filtra resultados, contadores, fichas y apoderados compartidos. No se crean tablas, permisos ni dependencias.
 
 ## Lectura del código
 
@@ -60,7 +73,11 @@ La última orden incluye la integración y añade Chrome a 1280/1024/768 px. Req
 
 La colección de `test/datos.js` solo admite bases temporales. La suite comprueba los seis roles, decisiones, privacidad, integridad, PDF y persistencia tras reiniciar el servidor; compara SICE antes/después y elimina únicamente sus recursos tras verificar su identidad. No utilizar simultáneamente SICE durante esa comparación. No guarda capturas ni PDF.
 
-Revisión de legibilidad del 26 de noviembre de 2026: **7 pruebas básicas y 59 de integración/Chrome aprobadas, cero fallidas**; conserva las 66 comprobaciones anteriores y SICE sin cambios. También se ejecutó `npm run test:sqlserver`: 50 aprobadas, incluidas en la cobertura anterior. La validación final se repitió después de liberar memoria por esperas agotadas en SQL Server y Chrome, sin modificar las pruebas. Tras actualizar el código, reiniciar Node para cargar el backend revisado.
+Verificación de gestión escolar del 27 de noviembre de 2026: **7 pruebas básicas y 76 de integración/Chrome aprobadas, cero fallidas**. Son las 66 comprobaciones anteriores y 17 nuevas. La ejecución SQL independiente aprobó **63/63**: las 50 anteriores y 13 nuevas, incluidas también en la suite con Chrome. Los formularios nuevos se comprobaron a 1280/768/375 px. SICE permaneció sin cambios y se retiraron las bases, cuentas y perfiles temporales.
+
+Los escenarios nuevos se ejecutan después de los anteriores para no cambiar sus datos de referencia. Antes del nuevo bloque SQL se simula otra ventana de reautenticación exclusivamente en la base temporal identificada; la prueba previa conserva la comprobación del bloqueo 429. No se alteraron los límites de la aplicación ni las aserciones existentes.
+
+El servidor local quedó reiniciado en http://127.0.0.1:3000 con SQL Server 2022 y la versión actual. Se compararon las 22 tablas durante el reinicio: sin cambios; no había registros técnicos caducados que retirar.
 
 Resultados y pendientes de la revisión: [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md). Modelo: [database/DISENO.md](database/DISENO.md). Reglas: [database/REGLAS_FUNCIONALES.md](database/REGLAS_FUNCIONALES.md).
 
