@@ -1,53 +1,129 @@
 # Contexto de SICE-Local
 
-## Institución y alcance
+## Estado vigente — 27 de noviembre de 2026
 
-I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; el personal y los reportantes pueden ser hombres o mujeres. Utilizar el escudo oficial de image/.
+Proyecto de la I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; personal y reportantes pueden ser hombres o mujeres. Conservar el logo original de image/, el diseño blanco y guinda y la interfaz responsive.
 
-Repositorio exclusivo: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Fase 1 limitada a estructura, configuración, portada y documentación. Los siguientes requisitos son futuros, no funcionalidades implementadas.
+Rama de trabajo: `feature/incidencias-informes`. Repositorio: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Alcance autorizado: comentar únicamente JavaScript propios que carecían de comentarios, repetir las pruebas y publicar los commits pendientes mediante Pull Request hacia `develop` y después `main`. Sin cambios de lógica, diseño, estructura ni datos de SICE; sin borrar ramas ni usar force push.
 
-## Requisitos funcionales pendientes
+## Motor y datos
 
-- Seis roles: Director, Subdirector, Coordinador de Tutoría, Docente, Auxiliar y Administrador. Director y Subdirector son las máximas autoridades institucionales.
-- El Administrador gestiona usuarios y asigna permisos autorizados, pero no puede editar, eliminar ni aprobar modificaciones de incidencias.
-- Categorías: Convivencia, Disciplina, Salud, Seguridad, Bienes y Protección estudiantil. Formularios dinámicos según categoría.
-- Registrador y reportante pueden ser personas distintas. Obtener nombre, identificador y rol del registrador de la sesión, y fecha y hora del servidor.
-- Permitir correcciones antes de confirmar. Una incidencia confirmada queda protegida y no admite edición directa de los hechos.
-- Permitir actuaciones y observaciones autorizadas. Las rectificaciones importantes exigen solicitud, justificación y aprobación independiente.
-- Las modificaciones delicadas requieren revisión formal y acta cuando corresponda. Director y Subdirector no pueden aprobar sus propias solicitudes. Aplicar restricciones por conflicto de interés.
-- Anulación lógica, nunca eliminación física. Conservar historial y versiones anteriores.
-- Permisos configurables con restricciones por acción; proteger datos confidenciales y auditar modificaciones. Contraseñas con hash seguro, sesiones protegidas y cookies httpOnly.
+- Aplicación exclusivamente con SQL Server 2022 y mssql. Instancia local verificada: Developer 16.0.1000.6, MSSQLSERVER, 127.0.0.1:1433; SSMS 22.
+- Migración terminada: identificadores, contraseñas derivadas, relaciones, versiones e historial conservados y comparados. Las bases anteriores permanecen independientes e intactas; no se eliminan.
+- SICE conserva 22 tablas, 225 columnas, 76 FK y 148 CHECK activos y confiables. NVARCHAR/Latin1_General_100_CI_AI_SC, DATETIME2(6) UTC, identificadores BIGINT positivos hasta 9223372036854775807 e índices únicos filtrados para datos opcionales.
+- Seis cuentas activas, tres estudiantes y seis borradores sintéticos, uno por categoría. No hay 26 expedientes en esta instalación y no deben inventarse. Los borradores requieren completar campos y confirmar antes del PDF.
+- Conexión y claves en archivos privados ignorados por Git. Cuenta SQL limitada a SICE: SELECT/INSERT, UPDATE salvo historial, DELETE solo en sesiones/intentos_acceso/roles_permisos. Sin DDL ni administración.
+- No cargar datos al iniciar. Los fixtures de test/datos.js son exclusivos de bases temporales; no sirven para una instalación con información real.
 
-## Decisiones técnicas
+## Organización y mecanismos conservados
 
-- HTML5, CSS3, Bootstrap 5 y JavaScript vanilla; Node.js y Express; MySQL 8 mediante mysql2 y dotenv. Sin frameworks de interfaz, ORM, TypeScript ni Docker.
-- PDFKit diferido hasta reportes para evitar una dependencia sin uso actual.
-- app.js separado del arranque para probar HTTP en un puerto efímero. Pruebas con node:test.
-- Pool MySQL creado solo cuando se solicita. Sin credenciales predeterminadas, datos ficticios ni persistencia en memoria. db:check ejecuta SELECT 1 y falla explícitamente si falta configuración o conexión.
-- SQL parametrizado; futuras consultas separadas de rutas. Fechas persistidas en UTC y mostradas en America/Lima.
-- Recursos estáticos limitados a public/, image/ y el CSS de Bootstrap. Encabezados básicos de seguridad; autenticación y autorización se implementarán posteriormente.
-- Remoto vacío durante la inspección inicial: no existía image/. Se conservó el archivo local ../images/images.jpg y se copió íntegro a image/images.jpg. No había archivos previos del repositorio que sobrescribir.
-- Carpetas con contenido útil, sin marcadores vacíos ni capas prematuras.
+- public/: login y panel, HTML/CSS/Bootstrap 5 y JavaScript vanilla; sin información técnica innecesaria.
+- src/: Express, autenticación, autorización, cuentas, estudiantes, expedientes, consultas parametrizadas e informes PDFKit. Transacciones reales y comprobación de permisos dentro de operaciones sensibles.
+- database/crear-base.sql: crea SICE solo si no existe. schema.sql: instala las 22 tablas en una base vacía. preparar.js: verifica estructura sin alterarla. administrar.js: sqlcmd con autenticación de Windows para montar y retirar pruebas aisladas.
+- test/: seguridad/HTTP, colección sintética, integración SQL Server, cuentas, cambios de expedientes y Chrome. PDF.js solo verifica informes en pruebas.
+- database/DISENO.md y REGLAS_FUNCIONALES.md conservan modelo, reglas detalladas y decisiones institucionales pendientes.
+- No se usan ORM, Docker, frameworks de interfaz, almacenamiento simulado ni nuevas dependencias para esta limpieza.
 
-## Fases propuestas
+## Reglas institucionales que deben preservarse
 
-1. Estructura, configuración y documentación (actual).
-2. Validación del modelo MySQL, permisos, autenticación y usuarios.
-3. Registro y confirmación de incidencias, categorías y seguimiento.
-4. Solicitudes de rectificación, aprobaciones independientes, conflictos de interés, actas y auditoría.
-5. Reportes PDF con PDFKit y revisión integral de seguridad y accesibilidad.
+Director (D), Subdirector (SD), Coordinador de Tutoría (CT), Docente (DO), Auxiliar (AU) y Administrador (AD). Las prohibiciones prevalecen sobre concesiones configurables.
 
-Las fases posteriores requieren concretar la matriz de permisos, criterios de conflicto de interés y circunstancias de revisión formal y actas con la institución.
+- D/SD consultan internos y restringidos con permiso; CT internos; DO/AU internos propios. AD no consulta estudiantes, expedientes, historial escolar ni PDF. Participar o ser reportante no concede lectura.
+- Salud y Protección estudiantil son restringidas; sensibilidad declarada, testigos confidenciales y violencia también protegen el expediente completo, incluidas versiones y actuaciones. Sin clasificador narrativo automático ni acceso parcial.
+- Todos los roles operativos pueden reportar un caso sensible; quien pierde acceso tras confirmar o aportar recibe solo constancia. El registrador se obtiene de sesión y puede diferir del reportante. Fechas del servidor, identidad y rol históricos conservados.
+- Borradores propios editables mediante nuevas versiones; hechos confirmados sin edición directa. Seguimiento por adición y correcciones enlazadas. Sin eliminación física de incidencias o evidencia.
+- Rectificación/anulación exige solicitud, justificación, versión base y decisión independiente por cuenta y persona. D/SD evalúan y deciden; DO/AU solo solicitan dentro de su ámbito. No autoaprobación, solicitudes duplicadas ni decisiones repetidas.
+- Resolución documental solo para errores materiales de título/lugar y duplicados comprobados. Hechos, participantes, clasificación o reducción de confidencialidad requieren revisión formal, actualmente bloqueada por falta de composición y quórum. Una propuesta sensible protege inmediatamente el expediente.
+- Cierre/reapertura por D/SD/CT dentro del ámbito, motivo y reautenticación. Cerrar requiere revisar actuaciones/plazos y ausencia de solicitudes pendientes; añade conclusión. No se reabren anuladas.
+- D/SD/CT gestionan estudiantes, matrículas y apoderados mediante el permiso existente `estudiantes.crear`. Registro inicial atómico, código estable y único, aula activa y año lectivo coherente. Documento alternativo o identidad provisional; sin DNI inventado ni edición de identidades usadas en expedientes, cuentas o revisiones. Administrador, Docente y Auxiliar no acceden a esta gestión.
+- AD/D/SD solicitan cambios de cuentas. D/SD requieren aprobación recíproca; AD necesita una decisión válida para activación/desactivación/restablecimiento y ambas autoridades para rol/permisos o creación de autoridad/AD.
+- En decisiones dobles: ambas aprueban, aprobada; D rechaza, rechazada tras registrar ambas; D aprueba y SD rechaza, revisión por desacuerdo bloqueada.
+- AD puede crear cuentas operativas inactivas para personal existente y editar su nombre de acceso. Activación independiente. Sin cambios propios, autoasignación de permisos ni decisión y ejecución por la misma persona.
+- Cambios exactos, plazo de 24 horas, fundamento, reautenticación y ejecución única. Conservar al menos una cuenta activa de D/SD/AD y sus permisos esenciales. Revocar sesiones al cambiar cuentas o permisos.
+- Conflicto o ausencia de autoridad independiente bloquea decisiones; AD no sustituye autoridades. No inventar suplencias ni desbloqueo unilateral.
 
-## Estado al 30 de octubre de 2026
+Contraseñas scrypt con sal individual; política actual autorizada de 8–12 caracteres con mayúscula, minúscula, número y signo. Sesiones con token resumido, caducidad absoluta de ocho horas/inactividad de treinta minutos, cookies httpOnly/SameSite y protección de origen. Producción exige HTTPS y cookies Secure.
 
-Estructura inicial, servidor, portada institucional, conexión configurable y pruebas preparados. Sin tablas definitivas, login, administración de usuarios, registro completo, solicitudes, actas ni PDF.
+PDF con autorización separada, sin borradores ni contenido fuera del ámbito; firma del registrador histórico, no del descargador, y espacios físicos de firma/sello. Nunca guardar contraseñas, tokens ni hashes de cuentas locales en auditoría o salidas.
 
-Fase 1 completada con estas verificaciones:
+## Limpieza de entrega
 
-- `npm test`: 2 pruebas aprobadas. HTTP health, portada, logo, CSS y JavaScript disponibles; rutas desconocidas y archivos privados inaccesibles. Validación de configuración MySQL sin conexión simulada.
-- Chrome sin ventana, a 320, 768 y 1280 px: ancho del documento igual al viewport, sin desbordamiento horizontal, logo cargado y dentro de pantalla, Bootstrap aplicado y estado «Servidor disponible.».
-- SHA-256 del logo copiado idéntico al original: 4AF20CD70E5B21972773FC973E52F439D2870CDE75FC9E4F09955E4F290C211B.
-- Instalación npm: 0 vulnerabilidades reportadas en ese momento. package-lock.json conserva las versiones resueltas.
-- `npm run db:check`: fallo esperado por ausencia de DB_HOST, DB_NAME, DB_USER y DB_PASSWORD; confirmar también DB_PORT. No se ha verificado una conexión real ni la versión del servidor MySQL. Repetir la comprobación con los datos reales.
-- Trabajo local, sin push, Pull Request ni publicación. Cambios agrupados en commits de configuración del servidor, portada y documentación.
+- Retirados database/migrar-mariadb.js y su comando, dependencia del conector anterior y variables obsoletas de la plantilla. La migración se verificó antes de retirar su herramienta.
+- Retirado database/datos-prueba.sql: duplicaba datos sintéticos y cuentas desactivadas; la colección aislada existente cubre las pruebas sin carga sobre SICE.
+- .local/, capturas, PDF y respaldos internos ya estaban ausentes. Se conservan configuraciones privadas fuera de Git y todas las bases existentes.
+- Se mantienen crear-base.sql, schema.sql, preparar.js y administrar.js por sus funciones distintas. .gitignore cubre también archivos físicos y respaldos de SQL Server.
+- README y reglas de trabajo actualizados; contexto consolidado para eliminar instrucciones técnicas caducadas. Los detalles de etapas anteriores ya versionados permanecen consultables en Git.
+- Correcciones documentales: tipos DATETIME2, verificador sin creación de tablas, 22 tablas y flujo de autorizaciones realmente implementado.
+
+## Correcciones de auditoría — 24 de noviembre de 2026
+
+1. Operaciones sensibles revalidan cuenta, sesión, credencial, rol y permisos dentro de la transacción. Usan el bloqueo de gestión existente antes de bloquear cuenta y expediente, también en acceso/cierre de sesión. Una escritura termina antes de la desactivación efectiva o se rechaza tras ella; nunca continúa después. La serialización común prioriza consistencia sobre concurrencia de escrituras.
+2. Personas: búsqueda y páginas de 50, identidad seleccionada validada individualmente y reserva compartida entre selector y backend. Edición conserva selecciones fuera de la primera página.
+3. Registro: formulario bloqueado durante el envío y referencia UUID por operación en `X-SICE-Operation`. Reintentos del mismo usuario/contenido devuelven el registro existente, incluso tras reiniciar; referencia reutilizada con otro contenido devuelve 409. Dos referencias distintas admiten hechos legítimos iguales.
+4. Búsqueda parametrizada trata literalmente corchetes, porcentajes, guiones bajos y el escape; conserva código, estudiante, fecha, título, categoría, estado y páginas de 20.
+5. Nombres y apellidos validados coherentemente en navegador y servidor: letras Unicode, tildes, espacios, apóstrofes y guiones; rechazo de números y símbolos ajenos al nombre.
+6. Límite de reautenticación devuelve 429, mensaje de espera y Retry-After de 900 segundos.
+7. Responsables usan la misma consulta para selector y guardado: cuenta/personal activos, consulta y seguimiento, ámbito, reserva y ausencia de conflicto.
+8. Detalle muestra el plazo civil junto a la actuación y su responsable, sin desplazar el día por zona horaria.
+9. Editar/confirmar borrador y retirar solicitud requieren permiso efectivo también para mostrarse. El servidor conserva sus comprobaciones obligatorias.
+
+No se añadieron tablas, dependencias ni archivos. El recibo de registro reutiliza el evento existente de creación en historial: referencia y huella del contenido, ocultas en el detalle escolar. No contiene credenciales ni se usa para ejecutar instrucciones.
+
+## Revisión de legibilidad — 26 de noviembre de 2026
+
+- Reorganizados los 17 JavaScript de aplicación y administración: llaves en condiciones y bucles, bloques separados, consultas SQL en varias líneas y nombres más descriptivos. De 629 líneas mayores de 100 caracteres quedan tres excepciones de 101–108 caracteres en dos consultas SQL y una expresión regular; no quedan ternarios anidados ni `if` sin llaves en esos archivos.
+- Cuentas separa validaciones de cuenta, permiso y solicitante. Incidencias separa tipos de campos y validaciones de identidad/matrícula. Cambios de incidencias reúne los criterios de revisión formal en una función; autenticación y conexión SQL expresan sus comprobaciones por pasos.
+- Formularios e informes conservan textos, controles y presentación. Los cinco bloques de HTML generado se compararon con el original: idénticos. Comentarios breves en español fuera de `public/`; README incluye una guía de lectura para sustentar los flujos.
+- Sin archivos de código nuevos, dependencias del proyecto, cambios de esquema, permisos ni reglas institucionales. Se conservan consultas parametrizadas, transacciones, bloqueos, scrypt, sesiones revocables y auditoría. Pruebas existentes sin modificaciones.
+- Siete commits locales de código separados por responsabilidad y uno de documentación; sin push ni Pull Request. El servidor principal no se reinició durante la revisión.
+
+## Gestión de estudiantes — 27 de noviembre de 2026
+
+- Registro y edición de fichas, nacimiento y contacto; DNI, carnet de extranjería, pasaporte o documento desconocido. Validación de formato y país emisor, normalización a mayúsculas y unicidad SQL por país/tipo/número. No se verifica identidad contra servicios oficiales ni se fusionan personas por coincidencia de nombres.
+- Búsqueda paginada por nombre, documento o código y filtro de grado vigente. Selección dependiente de año/nivel, grado y sección; únicamente aulas activas existentes. Sin gestión adicional de catálogos.
+- Apoderados sobre `personas` y `estudiantes_apoderados`: registro, búsqueda, consulta, edición, reutilización de personal y asociación principal. Un adulto puede representar a varios estudiantes; asociar no crea una cuenta. El personal aún no asociado no se edita mediante estas rutas.
+- Nueva matrícula y sustitución de principal conservan filas e identificadores anteriores, finalizan su vigencia el día previo y añaden una relación nueva con auditoría. Se rechazan períodos superpuestos y sustituciones el mismo día. No se acorta una matrícula dejando fuera hechos ya vinculados a ella.
+- Identidades usadas en expedientes, cuentas o revisiones conservan nombre y documento; en estudiantes también nacimiento. Contacto editable. El código del estudiante no se renombra. La corrección de identidad histórica necesita un procedimiento institucional que este alcance no incorpora.
+- D/SD/CT conservan el permiso existente; AD/DO/AU quedan fuera de esta gestión. Todas las rutas revalidan actor y sesión en transacción, y las escrituras exigen contraseña. La reserva de identidad alcanza fichas, búsquedas, contadores y apoderados compartidos, incluso sus vínculos anteriores.
+- Formulario institucional con mensajes de guardado/error, bloqueo durante el envío y limpieza de contraseñas. Sin comentarios en `public/`. Lógica en `src/estudiantes.js`, consultas en el archivo existente y pruebas ampliadas; sin archivos, tablas, dependencias ni permisos nuevos.
+
+## Comentarios y publicación — 27 de noviembre de 2026
+
+- Revisados los 24 JavaScript propios, excluyendo dependencias y terceros. Solo carecían de comentarios `public/js/main.js`, `public/js/panel.js`, `test/seguridad.test.js` y `test/server.test.js`: se añadieron 40 comentarios `//` breves en español, en el commit separado `8339853`. Los otros 20 archivos quedaron intactos.
+- La instrucción actual del usuario incluye todos los JavaScript sin comentarios y sustituye, para esta revisión, la exclusión anterior de `public/`. Los comentarios explican acceso, peticiones, formularios, validaciones, historial y pruebas. La comparación de los 24 árboles de código confirma lógica idéntica a la versión anterior.
+- Revisados los 39 archivos versionados y los 71 contenidos de archivo pendientes de publicación al comenzar: sin coincidencias con credenciales privadas locales, claves de servicio ni archivos innecesarios detectados. `.env` y `.env.escolar.local` siguen ignorados; la plantilla no contiene credenciales. Los datos de `test/datos.js` son sintéticos y exclusivos de pruebas aisladas.
+- Ruta de publicación autorizada: [PR #4, feature → develop](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/4), seguido del [PR #3, develop → main](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/3). Se reutilizan los PR existentes, actualizando sus descripciones al estado de SQL Server 2022. Las fusiones conservan los commits y las ramas. No hay pipeline CI configurado; la validación se realiza localmente.
+- La publicación de la última versión disponible no habilita producción ni resuelve los procedimientos institucionales pendientes enumerados más abajo.
+- Repetición final tras los comentarios: `npm test` **7/7**, SQL independiente **63/63** y suite con Chrome **76/76**, cero fallos. Se conservan las 83 comprobaciones funcionales; la cobertura SQL está incluida en Chrome. Las suites compararon SICE antes/después sin cambios. El servidor principal se mantuvo funcionando, sin reiniciarlo ni ejecutar limpieza sobre SICE en esta revisión.
+
+## Verificación y límites
+
+Verificación final de gestión escolar, 27 de noviembre de 2026:
+
+- `npm test`: **7/7**; `npm run test:sqlserver`: **63/63**; `node test/interfaz-browser.js`: **76/76**, sin fallos ni omisiones. Total funcional **83**: las 66 anteriores y 17 nuevas. SQL conserva las 50 anteriores y añade 13, incluidas en Chrome; no sumar ambas suites como pruebas distintas.
+- Trece casos nuevos de API/SQL: documentos y provisionales, validaciones, duplicados, seis roles/origen/reautenticación, búsqueda, edición auditada, apoderados compartidos, principal e historial, conservación del expediente, reserva, concurrencia y reutilización de personal. Cuatro casos nuevos de Chrome: alta extranjera y selección dependiente, duplicado/edición, apoderado y vínculo, nueva matrícula/adaptación a 375 px.
+- Se corrigió el rechazo de filtros mal formados. Los casos sensibles nuevos se trasladaron después de la cobertura anterior para no interferir con la elección de duplicado de una prueba antigua. El volumen completo alcanzó el límite real de reautenticación por IP; el nuevo bloque SQL simula otra ventana solo en su base temporal verificada. Se conservan las aserciones anteriores, los límites de seguridad y la prueba 429.
+- Comparación completa de SICE antes/después de las suites: sin cambios. Cero bases, cuentas y perfiles de Chrome temporales restantes; sin capturas, PDF ni archivos de verificación en el proyecto. Sintaxis de los 24 JavaScript válida; sin dependencias, esquema, logo ni archivos privados modificados.
+- Servidor actualizado y funcionando en `http://127.0.0.1:3000`, SQL Server 2022 16.0.1000.6, base SICE. Reinicio comparado sobre las 22 tablas: ninguna cambió; la limpieza habitual autorizada retiró cero sesiones e intentos caducados. Salud HTTP 200, rutas escolares sin sesión 401 y registro de errores vacío. Las pruebas de escritura se hicieron exclusivamente en la copia temporal.
+
+Referencia de la revisión anterior:
+
+- Repetición final del 26 de noviembre: `npm test`, **7 aprobadas, 0 fallidas**; `node test/interfaz-browser.js`, **59 aprobadas, 0 fallidas**. Total: **66**, las 43 originales y 23 regresiones existentes. También se ejecutó `npm run test:sqlserver`: **50 aprobadas**, cobertura incluida en la suite con Chrome.
+- Hubo dos esperas de interfaz agotadas y una ejecución interrumpida por lentitud y tiempos de conexión SQL. El motor informó presión de memoria; el usuario liberó memoria antes de la repetición final satisfactoria. La ejecución detenida requirió retirar sus dos procesos y su base/login propios, verificando servidor, nombre, ID y fecha de creación. No se cambiaron aserciones ni tiempos de espera de las pruebas.
+- Seis roles en Chrome, login/logout/caducidad, permisos, reserva, cuentas y decisiones independientes, seguimiento, estudiantes, rectificación documental, anulación lógica, cierre y reapertura. Chrome a 1280/1024/768 px; diez PDF de cinco roles operativos y seis categorías verificados en memoria, sin descargas a disco.
+- Escenarios reproducidos: ambas secuencias de revocación concurrente, doble confirmación, doble envío, respuesta perdida y reintento, UUID repetido/alterado, búsqueda literal y paginación, nombres inválidos/Unicode, 429, responsable sin permiso de reserva, plazos y botones sin permiso. Catálogo con 260 estudiantes y 260 integrantes del personal adicionales, exclusivamente temporales.
+- Registros, versiones, sesiones y referencia de reintento sobreviven al reinicio de Node contra la base temporal. Pérdida de conexión SQL y recuperación comprobadas mediante un puente temporal; no se reinició el servicio SQL Server ni se interrumpieron otras bases.
+- La suite comparó todas las filas y columnas de SICE antes/después: sin cambios. Eliminó únicamente su base y login temporales tras verificar servidor, nombre, ID y fecha de creación. Perfil temporal de Chrome retirado; sin capturas, PDF ni auxiliares permanentes.
+- Esquema principal verificado: 22 tablas/225 columnas/76 FK/148 CHECK. DBCC CHECKCONSTRAINTS sin infracciones, restricciones activas y confiables, cero bases/cuentas temporales restantes. SQL Server 2022 conservado; sin cambios de esquema, claves locales ni permisos SQL.
+- Sintaxis de los 24 JavaScript revisada. Archivos privados excluidos de Git y sin credenciales incorporadas a los cambios. Logo y dependencias conservados.
+- Al cerrar la revisión de legibilidad del 26 de noviembre no había servicio en el puerto 3000; su arranque se comprobó entonces solo en la base aislada. Posteriormente se autorizó iniciar SICE con su limpieza técnica habitual. El estado actualizado del servidor consta en la verificación del 27 de noviembre anterior.
+- No quedaron fallos en los escenarios ejecutados. Las correcciones y pruebas se entregan mediante commits locales separados, sin push ni PR. Esto no habilita las funciones institucionales pendientes.
+
+Pendientes institucionales y de instalación:
+1. Composición y quórum de revisión formal con acta; aprobación bloqueada hasta definirlos.
+2. Resolución documentada de desacuerdos y doble impedimento.
+3. Gestión general de catálogos, provisión inicial de personal/cuentas/catálogos en una instalación vacía y procedimiento de entrega de credenciales; no usar datos sintéticos como sustituto.
+4. Validación institucional de matriz, formularios, mínimos, confidencialidad y flujo de cuentas.
+5. Conservación, respaldos y despliegue HTTPS. Gestión limitada a NODE_ENV=development; en producción devuelve 503.
+
+Acceso parcial, adjuntos, firmas electrónicas, votaciones, inventario y seguimiento clínico quedan fuera del alcance. No declarar entrega institucional terminada por aprobar pruebas de los flujos implementados.

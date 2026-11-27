@@ -1,8 +1,54 @@
+# Dependencias instaladas
 node_modules/
+
+# Configuración privada; conservar la plantilla sin credenciales
 .env
 .env.*
 !.env.example
+
+# Archivos locales, respaldos de SQL Server y temporales
+.local/
+/backups/
+/respaldos/
+/tmp/
+/temp/
+/exports/
+/dumps/
+/respaldo-*.sql*
+/backup-*.sql*
+/dump-*.sql*
+/SICE.sql*
+/sice.sql*
+*.tmp
+*.bak
+*.trn
+*.mdf
+*.ndf
+*.ldf
+*.swp
+*.swo
+*~
+
+# Registros y cobertura de pruebas
 *.log
+logs/
 coverage/
+.nyc_output/
+/test-results/
+/playwright-report/
+/capturas/
+/screenshots/
+/informe-*.pdf
+/INC-*.pdf
+.cache/
+.node_repl_history
+
+# Configuración personal de editores
+.vscode/
+.idea/
+*.code-workspace
+
+# Archivos del sistema operativo
 .DS_Store
 Thumbs.db
+Desktop.ini

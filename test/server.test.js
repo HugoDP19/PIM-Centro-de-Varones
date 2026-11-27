@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import app from '../src/app.js';
+import { request } from 'node:http';
+import { createApp } from '../src/app.js';
 import { createDatabasePool } from '../src/database.js';
 
 test('servidor, portada y recursos locales', async (t) => {
-  const server = app.listen(0, '127.0.0.1');
+  // Levanta un servidor temporal sin base de datos y lo cierra al terminar la prueba.
+  const server = createApp().listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -22,13 +24,51 @@ test('servidor, portada y recursos locales', async (t) => {
     await response.arrayBuffer();
   }
   for (const path of ['/missing', '/.env', '/src/database.js', '/package.json']) {
+    // El navegador no debe poder descargar configuración privada ni código del servidor.
     const response = await fetch(`${base}${path}`);
     assert.equal(response.status, 404, path);
     await response.text();
   }
 });
 
-test('MySQL exige configuración real y puerto válido', () => {
+test('SQL Server exige configuración real y puerto válido', () => {
+  // Rechaza configuraciones incompletas; los valores de ejemplo no abren una conexión.
   assert.throws(() => createDatabasePool({}), /DB_HOST, DB_NAME, DB_USER, DB_PASSWORD/);
   assert.throws(() => createDatabasePool({ DB_HOST: 'test', DB_NAME: 'test', DB_USER: 'test', DB_PASSWORD: 'test', DB_PORT: 'invalid' }), /DB_PORT/);
+});
+
+test('navegación local usa el origen configurado sin redirigir API ni dominios externos', async () => {
+  // Comprueba los alias locales sin permitir redirecciones hacia otros sitios.
+  for (const [origin, alias, produccion] of [
+    ['http://127.0.0.1:3000', 'localhost:3000', false],
+    ['http://localhost:3000', '127.0.0.1:3000', false],
+    ['https://sice.example', 'localhost:3000', true]
+  ]) {
+    const server = createApp({ origin, produccion }).listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const solicitar = (ruta, host, method = 'GET') => new Promise((resolve, reject) => {
+      const peticion = request(base + ruta, { method, headers: { Host: host } }, (response) => {
+        response.resume();
+        response.on('end', () => resolve(response));
+      });
+      peticion.on('error', reject);
+      peticion.end();
+    });
+    try {
+      for (const ruta of ['/', '/index.html', '/panel.html']) {
+        const response = await solicitar(`${ruta}?sesion=cerrada`, alias);
+        assert.equal(response.statusCode, produccion ? 200 : 302);
+        assert.equal(response.headers.location, produccion ? undefined : `${origin}${ruta}?sesion=cerrada`);
+      }
+      for (const host of ['otro.example:3000', 'localhost:4000']) {
+        const response = await solicitar('/', host);
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.headers.location, undefined);
+      }
+      const api = await solicitar('/api/auth/login', alias, 'POST');
+      assert.equal(api.statusCode, 503);
+      assert.equal(api.headers.location, undefined);
+    } finally { await new Promise(resolve => server.close(resolve)); }
+  }
 });

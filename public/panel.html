@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel institucional | SICE-Local</title>
+  <link rel="stylesheet" href="/vendor/bootstrap.min.css"><link rel="stylesheet" href="/css/styles.css">
+  <script src="/js/panel.js" defer></script>
+</head>
+<body>
+  <header class="site-header px-3 px-md-4 py-3 bg-white">
+    <a class="brand" href="/panel.html">SICE<span>LOCAL</span></a>
+    <div id="session-header" class="d-flex align-items-center gap-3" hidden><span id="user-label" class="small"></span><button id="logout" class="btn btn-sm btn-outline-primary" type="button">Cerrar sesión</button></div>
+  </header>
+  <p id="panel-status" class="container-fluid workspace py-4" role="status">Comprobando tu sesión…</p>
+  <noscript><p class="container">Activa JavaScript para acceder al panel institucional.</p></noscript>
+  <main id="workspace" class="container-fluid workspace py-4 px-3 px-md-4" hidden>
+    <div class="page-heading mb-4"><div><p class="eyebrow mb-1">I.E.P. N.° 20874 Centro de Varones</p><h1 class="h2 mb-1">Gestión institucional</h1><p class="text-secondary mb-0">San Vicente de Cañete</p></div></div>
+    <nav class="d-flex flex-wrap gap-2 mb-4" aria-label="Secciones">
+      <button id="nav-list" class="btn btn-outline-primary" hidden>Incidencias</button>
+      <button id="nav-new" class="btn btn-primary" hidden>Registrar incidencia</button>
+      <button id="nav-student" class="btn btn-outline-primary" hidden>Estudiantes y apoderados</button>
+      <button id="nav-accounts" class="btn btn-outline-primary" hidden>Gestión de cuentas <span id="nav-pending" class="badge text-bg-light" aria-live="polite">Pendientes: …</span></button>
+    </nav>
+    <div id="message" role="status" class="alert" hidden></div>
+    <section id="list-view" class="surface" hidden aria-labelledby="list-title">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4"><h2 id="list-title" class="h4 mb-0">Expedientes de incidencias</h2>
+        <form id="search-form" class="row g-2 align-items-end w-100">
+          <div class="col-lg-5"><label for="search" class="form-label">Código, estudiante, fecha del hecho o título</label><input id="search" class="form-control" type="search" placeholder="INC-000024, nombre o dd/mm/aaaa" maxlength="100"></div>
+          <div class="col-sm-5 col-lg-3"><label for="search-category" class="form-label">Categoría</label><select id="search-category" class="form-select"></select></div>
+          <div class="col-sm-5 col-lg-3"><label for="search-state" class="form-label">Estado</label><select id="search-state" class="form-select"></select></div>
+          <div class="col-sm-2 col-lg-1"><button class="btn btn-outline-primary">Buscar</button></div>
+        </form>
+      </div>
+      <p class="small text-secondary">Solo aparecen los expedientes incluidos en tu permiso y ámbito de consulta.</p>
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Código</th><th>Fecha de registro</th><th>Categoría y título</th><th>Estado</th><th>Prioridad</th><th><span class="visually-hidden">Acción</span></th></tr></thead><tbody id="incident-rows"></tbody></table></div>
+      <p id="list-empty" hidden>No hay expedientes disponibles con estos filtros.</p>
+      <p id="page-summary" class="small text-secondary mt-3" role="status"></p>
+      <nav class="d-flex flex-wrap gap-2 align-items-center" aria-label="Páginas de incidencias">
+        <button id="previous-page" class="btn btn-sm btn-outline-primary" disabled>Anterior</button>
+        <div id="page-numbers" class="d-flex flex-wrap gap-2"></div>
+        <button id="next-page" class="btn btn-sm btn-outline-primary" disabled>Siguiente</button>
+      </nav>
+    </section>
+    <section id="form-view" class="surface" hidden aria-labelledby="form-title">
+      <h2 id="form-title" class="h4">Registrar incidencia</h2>
+      <p class="text-secondary">Guarda el borrador, revisa su contenido y confirma cuando los datos sean correctos. Después de confirmar, los hechos quedan protegidos.</p>
+      <form id="incident-form">
+        <fieldset class="mb-4"><legend class="section-legend">Datos generales</legend><div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="category">Categoría</label><select id="category" class="form-select" required></select></div>
+          <div class="col-md-6"><label class="form-label" for="incident-type">Tipo de incidencia</label><select id="incident-type" class="form-select" required></select><div id="minimum" class="form-text"></div></div>
+          <div class="col-12"><label class="form-label" for="incident-title">Título</label><input id="incident-title" class="form-control" maxlength="200" required></div>
+          <div class="col-md-6"><label class="form-label" for="occurred">Fecha y hora del hecho (Lima)</label><input id="occurred" class="form-control" type="datetime-local"><div class="form-text">Puede quedar sin precisar si se desconoce.</div></div>
+          <div class="col-md-6"><label class="form-label" for="place">Lugar</label><select id="place" class="form-select"></select></div>
+          <div id="place-classroom-group" class="col-md-6" hidden><label class="form-label" for="place-classroom">Aula: nivel, grado y sección</label><select id="place-classroom" class="form-select"></select></div>
+          <div id="place-other-group" class="col-md-6" hidden><label class="form-label" for="place-other">Especifica el otro lugar</label><input id="place-other" class="form-control" maxlength="255"></div>
+          <div class="col-12"><label class="form-label" for="description">Descripción objetiva de los hechos</label><textarea id="description" class="form-control" rows="5" maxlength="20000" required></textarea><div class="form-text">Diferencia lo observado de lo reportado. Evita diagnósticos o atribuir responsabilidad sin verificación.</div></div>
+          <div class="col-md-4"><label class="form-label" for="priority">Prioridad de atención</label><select id="priority" class="form-select"><option value="normal">Normal</option><option value="baja">Baja</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select></div>
+          <div class="col-md-4"><label class="form-label" for="confidentiality">Confidencialidad</label><select id="confidentiality" class="form-select"><option value="interna">Interna</option><option value="restringida">Restringida</option></select></div>
+          <div class="col-md-4"><label class="form-label" for="sensitive">¿Contiene información sensible?</label><select id="sensitive" class="form-select" required><option value="">Seleccionar</option><option value="true">Sí</option><option value="false">No</option></select><div class="form-text">Incluye testigos confidenciales, presunta violencia o vulneración de derechos.</div></div>
+        </div></fieldset>
+        <fieldset class="mb-4"><legend class="section-legend">Datos de la categoría</legend><div id="specific-fields" class="row g-3"></div></fieldset>
+        <fieldset class="mb-4"><legend class="section-legend">Reportante y registrador</legend><div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="reporter">Persona que reporta el hecho</label><select id="reporter" class="form-select" required></select></div>
+          <div class="col-md-6"><label class="form-label" for="reporter-condition">Condición del reportante</label><select id="reporter-condition" class="form-select" required></select></div>
+          <div class="col-12"><label class="form-label" for="registrar">Registrador (de tu sesión)</label><input id="registrar" class="form-control" readonly disabled></div>
+        </div></fieldset>
+        <fieldset class="mb-4"><legend class="section-legend">Personas involucradas</legend><p class="small text-secondary">El mínimo de estudiantes depende del tipo. Una persona adulta puede figurar como testigo sin matrícula. Las identidades reservadas no se ofrecen en catálogos de accesos sin permiso.</p><div id="involved-rows"></div><button id="add-person" class="btn btn-sm btn-outline-primary mt-2" type="button">Añadir persona</button></fieldset>
+        <div class="d-flex flex-wrap gap-2"><button id="save-draft" class="btn btn-primary" type="submit">Guardar borrador y revisar</button><button id="cancel-form" class="btn btn-outline-primary" type="button">Volver al listado</button></div>
+      </form>
+    </section>
+    <section id="student-view" class="surface" hidden aria-labelledby="student-title">
+      <h2 id="student-title" class="h4">Estudiantes y apoderados</h2>
+      <form id="student-search-form" class="row g-3 mb-3">
+        <div class="col-md-7">
+          <label for="student-search" class="form-label">Nombre, documento o código</label>
+          <input id="student-search" class="form-control" type="search" maxlength="100">
+        </div>
+        <div class="col-md-3">
+          <label for="student-search-grade" class="form-label">Grado actual</label>
+          <select id="student-search-grade" class="form-select"></select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-outline-primary">Buscar</button>
+        </div>
+      </form>
+      <div id="student-results" aria-live="polite"></div>
+      <div id="student-pages" class="d-flex gap-2 align-items-center my-3"></div>
+      <button id="student-new" type="button" class="btn btn-outline-primary mb-3">
+        Nuevo estudiante
+      </button>
+      <h3 id="student-form-title" class="h5">Registrar estudiante y matrícula</h3>
+      <p id="student-identity-note" class="small text-secondary">
+        El documento es opcional. Si se desconoce, usa el código del estudiante sin inventar un DNI.
+      </p>
+      <form id="student-form" class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="student-names">Nombres</label><input id="student-names" name="nombres" class="form-control" maxlength="100" required></div>
+        <div class="col-md-6"><label class="form-label" for="student-surnames">Apellidos</label><input id="student-surnames" name="apellidos" class="form-control" maxlength="150" required></div>
+        <div class="col-md-4"><label class="form-label" for="student-code">Código de estudiante</label><input id="student-code" name="codigo_estudiante" class="form-control" maxlength="20" pattern="[A-Za-z0-9-]+" required></div>
+        <div class="col-md-4">
+          <label for="student-birth" class="form-label">Fecha de nacimiento, si se conoce</label>
+          <input id="student-birth" name="fecha_nacimiento" type="date" class="form-control">
+        </div>
+        <div id="student-person-fields" class="row g-3 m-0 p-0"></div>
+        <fieldset id="student-enrollment" class="col-12 row g-3 m-0 p-0">
+          <legend class="section-legend">Matrícula inicial</legend>
+          <div id="student-classroom-fields" class="row g-3 m-0 p-0"></div>
+          <div class="col-md-4">
+            <label class="form-label" for="student-date">Inicio de matrícula</label>
+            <input id="student-date" name="fecha_inicio" type="date" class="form-control" required>
+          </div>
+        </fieldset>
+        <div class="col-md-6"><label class="form-label" for="student-password">Confirma tu contraseña</label><input id="student-password" name="contrasena" type="password" autocomplete="current-password" class="form-control" required maxlength="256"></div>
+        <div class="col-12"><button id="student-save" class="btn btn-primary">Guardar estudiante y matrícula</button></div>
+      </form>
+      <div id="student-history" class="mt-4" hidden>
+        <h3 class="h5">Historial de matrículas</h3>
+        <div id="student-enrollments"></div>
+        <form id="enrollment-form" class="row g-3 mt-2">
+          <h4 class="h6">Registrar cambio de aula o nueva matrícula</h4>
+          <p class="small text-secondary mb-0">
+            Se conserva la matrícula anterior y se finaliza el día previo al nuevo inicio.
+          </p>
+          <div id="enrollment-classroom-fields" class="row g-3 m-0 p-0"></div>
+          <div class="col-md-4">
+            <label for="enrollment-date" class="form-label">Nueva fecha de inicio</label>
+            <input id="enrollment-date" name="fecha_inicio" type="date" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label for="enrollment-password" class="form-label">Confirma tu contraseña</label>
+            <input id="enrollment-password" name="contrasena" type="password"
+              autocomplete="current-password" class="form-control" required maxlength="256">
+          </div>
+          <div class="col-12"><button class="btn btn-outline-primary">Registrar matrícula</button></div>
+        </form>
+        <h3 class="h5 mt-4">Apoderados del estudiante</h3>
+        <div id="student-guardians"></div>
+        <form id="guardian-link-form" class="row g-3 mt-2">
+          <p id="guardian-selected" class="mb-0">Busca o registra un apoderado para seleccionarlo.</p>
+          <input id="guardian-selected-id" name="id_apoderado" type="hidden">
+          <div class="col-md-4">
+            <label for="guardian-relationship" class="form-label">Vínculo con el estudiante</label>
+            <input id="guardian-relationship" name="vinculo" class="form-control"
+              placeholder="Madre, padre, tutor…" maxlength="30" required>
+          </div>
+          <div class="col-md-4">
+            <label for="guardian-since" class="form-label">Inicio del vínculo principal</label>
+            <input id="guardian-since" name="vigente_desde" type="date" class="form-control" required>
+          </div>
+          <div class="col-md-4">
+            <label for="guardian-link-password" class="form-label">Confirma tu contraseña</label>
+            <input id="guardian-link-password" name="contrasena" type="password"
+              autocomplete="current-password" class="form-control" required maxlength="256">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-primary">Guardar apoderado principal</button>
+          </div>
+        </form>
+      </div>
+      <h3 class="h5 mt-4">Consultar y registrar apoderados</h3>
+      <p class="small text-secondary">
+        Busca antes de registrar: una persona puede representar a varios estudiantes.
+        También puedes seleccionar personal existente. No se crea una cuenta de usuario.
+      </p>
+      <form id="guardian-search-form" class="d-flex gap-2 align-items-end mb-3">
+        <div class="flex-grow-1">
+          <label for="guardian-search" class="form-label">Nombre, documento o código del apoderado</label>
+          <input id="guardian-search" type="search" class="form-control" maxlength="100">
+        </div>
+        <button class="btn btn-outline-primary">Buscar</button>
+      </form>
+      <div id="guardian-results" aria-live="polite"></div>
+      <div id="guardian-pages" class="d-flex gap-2 align-items-center my-3"></div>
+      <button id="guardian-new" type="button" class="btn btn-outline-primary mb-3">
+        Nuevo apoderado
+      </button>
+      <form id="guardian-form" class="row g-3" hidden>
+        <h4 id="guardian-form-title" class="h6">Registrar apoderado</h4>
+        <p id="guardian-identity-note" class="small text-secondary mb-0"></p>
+        <div class="col-md-6">
+          <label for="guardian-names" class="form-label">Nombres</label>
+          <input id="guardian-names" name="nombres" class="form-control" maxlength="100" required>
+        </div>
+        <div class="col-md-6">
+          <label for="guardian-surnames" class="form-label">Apellidos</label>
+          <input id="guardian-surnames" name="apellidos" class="form-control" maxlength="150" required>
+        </div>
+        <div id="guardian-person-fields" class="row g-3 m-0 p-0"></div>
+        <div class="col-md-6">
+          <label for="guardian-password" class="form-label">Confirma tu contraseña</label>
+          <input id="guardian-password" name="contrasena" type="password"
+            autocomplete="current-password" class="form-control" required maxlength="256">
+        </div>
+        <div class="col-12"><button class="btn btn-primary">Guardar apoderado</button></div>
+      </form>
+    </section>
+    <section id="detail-view" class="surface" hidden aria-labelledby="detail-title"><div id="detail-content"></div></section>
+    <section id="accounts-view" class="surface" hidden aria-labelledby="accounts-title">
+      <h2 id="accounts-title" class="h4">Gestión de cuentas</h2>
+      <p class="text-secondary">Administra el acceso del personal del colegio. Los cambios sensibles requieren aprobación independiente y tienen una vigencia de 24 horas. No se permiten cambios sobre la propia cuenta.</p>
+      <div class="d-flex flex-wrap gap-2 mb-3"><button id="create-account" class="btn btn-primary" type="button">Crear cuenta</button><button id="request-account-change" class="btn btn-outline-primary" type="button">Solicitar cambio o permiso</button></div>
+      <div class="table-responsive"><table class="table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Cargo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="account-rows"></tbody></table></div>
+      <form id="authorization-form" class="my-4 border rounded p-3" hidden><h3 class="h5">Datos de la operación</h3><div class="row g-3">
+        <div class="col-md-6"><label for="account-action" class="form-label">Acción</label><select id="account-action" class="form-select"><option value="crear_cuenta">Crear cuenta</option><option value="editar_cuenta">Editar nombre de usuario</option><option value="activar_cuenta">Activar cuenta</option><option value="desactivar_cuenta">Desactivar cuenta</option><option value="restablecer_clave">Restablecer contraseña</option><option value="cambiar_rol">Cambiar rol</option><option value="asignar_permiso">Asignar permiso a un rol</option><option value="retirar_permiso">Retirar permiso de un rol</option></select></div>
+        <div id="authorization-fields" class="row g-3 m-0 p-0"></div>
+        <p id="account-mode" class="small text-secondary mb-0"></p>
+        <div id="initial-password-group" class="col-md-6" hidden><label for="initial-password" class="form-label">Contraseña inicial</label><input id="initial-password" class="form-control" type="password" autocomplete="new-password" minlength="8" maxlength="12"><p class="form-text">Entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo.</p></div>
+        <div class="col-12"><label for="authorization-reason" class="form-label">Motivo del cambio</label><textarea id="authorization-reason" class="form-control" maxlength="500" required></textarea></div>
+        <div class="col-12"><p id="account-error" class="alert alert-danger mb-0" role="alert" hidden></p></div>
+        <div class="col-12 d-flex gap-2"><button id="submit-account-change" class="btn btn-primary">Enviar solicitud</button><button id="cancel-account-change" class="btn btn-outline-primary" type="button">Cancelar</button></div>
+      </div></form>
+      <section id="account-history" class="my-4 border rounded p-3" hidden aria-labelledby="account-history-title"><h3 id="account-history-title" class="h5">Historial de la cuenta</h3><div id="account-history-rows"></div></section>
+      <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-4 mb-3"><h3 class="h5 mb-0">Solicitudes y autorizaciones</h3><span class="small">Solicitudes pendientes: <strong id="pending-accounts">0</strong></span><button id="refresh-accounts" class="btn btn-sm btn-outline-primary" type="button">Actualizar</button></div>
+      <div id="authorization-list"></div>
+      <form id="decision-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Decisión de la autoridad</h3><p id="decision-summary"></p><label class="form-label" for="decision-reason">Fundamento de la decisión</label><textarea id="decision-reason" class="form-control mb-3" maxlength="500" required></textarea><label class="form-label" for="decision-password">Confirma tu contraseña actual</label><input id="decision-password" class="form-control mb-3" type="password" autocomplete="current-password" maxlength="256" required><div class="form-check mb-3"><input id="decision-independent" class="form-check-input" type="checkbox" required><label class="form-check-label" for="decision-independent">Declaro que no tengo conflicto de interés para decidir esta solicitud.</label></div><button id="submit-decision" class="btn btn-primary">Confirmar decisión</button></form>
+      <form id="execution-form" class="mt-4 border rounded p-3" hidden><h3 class="h5">Ejecutar autorización seleccionada</h3><p id="execution-summary"></p><div id="execution-password-group"><label for="new-password" class="form-label">Nueva contraseña</label><input id="new-password" class="form-control" type="password" autocomplete="new-password" minlength="8" maxlength="12" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,12}" aria-describedby="password-rules"><p id="password-rules" class="form-text">Entre 8 y 12 caracteres, con mayúscula, minúscula, número y signo. Se almacena con hash.</p></div><button class="btn btn-primary mt-3">Ejecutar el cambio autorizado</button></form>
+    </section>
+  </main>
+  <footer class="site-footer px-4 py-3"><span>Centro de Varones · San Vicente de Cañete</span><span>Uso institucional autorizado</span></footer>
+</body>
+</html>

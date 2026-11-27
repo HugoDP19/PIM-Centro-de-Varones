@@ -1,6 +1,98 @@
-:root { color-scheme: light; }
-body { background: #f5f4f1; color: #252525; }
-.welcome { max-width: 48rem; background: #fff; border-top: 0.35rem solid #a91e23; border-radius: 0.75rem; box-shadow: 0 0.5rem 2rem #2525250d; }
-.school-logo { width: 8rem; height: auto; }
-h1 { color: #a91e23; }
-.school-name { overflow-wrap: anywhere; }
+:root { color-scheme: light; --school-red: #981c27; --ink: #26272b; --muted: #646970; }
+body { margin: 0; background: #f5f3ef; color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
+[hidden] { display: none !important; }
+.site-header, .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.site-header { border-bottom: 1px solid #dedbd5; }
+.brand { color: var(--school-red); text-decoration: none; font-size: 1.25rem; font-weight: 800; letter-spacing: .08em; }
+.brand span { color: var(--ink); margin-left: .5rem; font-size: .75rem; font-weight: 500; letter-spacing: .15em; }
+.header-note { font-size: .8rem; color: var(--muted); }
+.access-layout { flex: 1; display: flex; align-items: center; max-width: 1120px; padding-top: 3.5rem; padding-bottom: 3.5rem; }
+.identity { padding-right: 3rem; }
+.school-logo { width: 110px; height: auto; display: block; mix-blend-mode: multiply; }
+.eyebrow { color: var(--school-red); text-transform: uppercase; font-size: .72rem; font-weight: 700; letter-spacing: .12em; }
+h1 { font-size: clamp(2.3rem, 5vw, 4rem); line-height: 1.07; font-weight: 750; letter-spacing: -.045em; margin-bottom: 1.25rem; }
+.institution { max-width: 28rem; font-size: 1rem; line-height: 1.7; color: var(--muted); }
+.identity-rule { background: #bd8e37; width: 3rem; height: 3px; margin: 1.5rem 0; }
+.identity-description { font-size: 1rem; line-height: 1.7; max-width: 24rem; color: var(--muted); }
+.access-card { background: #fff; padding: 2.5rem; border: 1px solid #e7e3dc; border-radius: 1.1rem; box-shadow: 0 14px 45px #30251a08; }
+h2 { font-size: 1.85rem; font-weight: 700; letter-spacing: -.04em; margin-bottom: .75rem; }
+.form-label { font-size: .88rem; font-weight: 650; }
+.form-control { min-height: 3.15rem; border-color: #d8d7d3; border-radius: .5rem; font-size: .95rem; padding: .7rem .9rem; }
+.form-control::placeholder { color: #787b80; }
+.form-control:focus { border-color: var(--school-red); box-shadow: 0 0 0 .2rem #981c271c; }
+.password-field { position: relative; }
+.password-field input { padding-right: 5.5rem; }
+.password-toggle { position: absolute; inset: 0 .35rem 0 auto; background: none; border: 0; padding: .5rem; font-size: .8rem; font-weight: 600; color: var(--school-red); }
+.access-help { color: var(--muted); font-size: .8rem; line-height: 1.6; }
+.btn { min-height: 3.1rem; font-size: .95rem; font-weight: 600; border-radius: .5rem; }
+.btn-primary { --bs-btn-bg: var(--school-red); --bs-btn-border-color: var(--school-red); --bs-btn-hover-bg: #7b1520; --bs-btn-hover-border-color: #7b1520; --bs-btn-active-bg: #64111a; --bs-btn-active-border-color: #64111a; --bs-btn-disabled-bg: #a66b72; --bs-btn-disabled-border-color: #a66b72; }
+.btn-primary span { float: right; font-size: 1.2rem; line-height: 1; }
+.btn-outline-primary { --bs-btn-color: var(--school-red); --bs-btn-border-color: var(--school-red); --bs-btn-hover-bg: var(--school-red); --bs-btn-hover-border-color: var(--school-red); --bs-btn-active-bg: var(--school-red); }
+.privacy-note { padding-top: 1.4rem; margin-top: 1.7rem; border-top: 1px solid #eeeae4; font-size: .75rem; line-height: 1.6; color: var(--muted); }
+.site-footer { border-top: 1px solid #dedbd5; font-size: .75rem; color: var(--muted); }
+:focus-visible { outline: 3px solid #b0812f; outline-offset: 3px; }
+.workspace { flex: 1; max-width: 1280px; }
+.workspace h1 { font-size: 1.8rem; letter-spacing: -.035em; }
+.surface { background: white; padding: 1.75rem; border: 1px solid #e3ded7; border-radius: .8rem; }
+.section-legend { font-size: 1.05rem; font-weight: 700; color: var(--school-red); padding-bottom: .5rem; border-bottom: 1px solid #ece5e5; }
+.form-select { min-height: 3.15rem; }
+.workspace .btn-sm { min-height: 2.5rem; }
+.involved-row { padding: .75rem; border: 1px solid #eee7e0; border-radius: .5rem; margin-bottom: .75rem; }
+.record-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; }
+.record-block { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid #ece5e5; }
+.record-block h3 { font-size: 1.08rem; color: var(--school-red); }
+.record-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+.record-meta dt { font-size: .75rem; color: var(--muted); font-weight: 500; }
+.record-meta dd { overflow-wrap: anywhere; }
+.history-entry { border-left: 2px solid #cdb8bd; padding: .3rem 0 .3rem 1rem; margin-bottom: .75rem; }
+.table { font-size: .9rem; }
+.workspace .table-responsive { max-width: 100%; overflow-x: auto; }
+.table th { color: var(--school-red); font-size: .78rem; white-space: nowrap; }
+.status-label { display: inline-block; padding: .2rem .6rem; border-radius: 2rem; font-size: .75rem; background: #f1ece8; white-space: nowrap; }
+/* Presentación exclusiva del Administrador; los permisos se validan en el servidor. */
+.admin-panel { background: #f4f5f7; }
+.admin-panel #accounts-view .table td { vertical-align: middle; }
+.account-status { padding: .3rem .7rem; font-weight: 650; }
+.account-active { background: #e8f3ec; color: #215c38; }
+.account-inactive { background: #fbeaea; color: #922d32; }
+#accounts-view #authorization-list { display: grid; gap: 1rem; margin-top: 1rem; }
+#authorization-list > section { display: grid; gap: 1rem; }
+.account-actions { display: flex; flex-wrap: wrap; gap: .35rem; min-width: 14rem; }
+.account-actions .btn { min-height: 2rem; padding: .25rem .5rem; font-size: .75rem; }
+.authorization-decisions { border-top: 1px solid #e5e7eb; margin-top: .85rem; padding-top: .85rem; font-size: .85rem; }
+.authorization-decisions p:last-child { margin-bottom: 0; }
+.authorization-card { padding: 1.15rem 1.25rem; border: 1px solid #dfe2e6; border-radius: .65rem; background: #fff; overflow-wrap: anywhere; min-width: 0; }
+.authorization-title { margin: 0 0 .5rem; color: var(--school-red); font-size: 1rem; font-weight: 650; }
+.authorization-reason { margin-bottom: .85rem; font-size: .9rem; line-height: 1.6; white-space: pre-wrap; }
+.authorization-target { padding: .65rem .85rem; border-radius: .4rem; background: #f5f6f7; font-size: .85rem; }
+.authorization-meta { display: flex; flex-wrap: wrap; gap: .75rem 2rem; margin: .85rem 0 0; font-size: .8rem; }
+.authorization-meta dt { margin-bottom: .2rem; color: var(--muted); font-size: .72rem; font-weight: 500; }
+.authorization-meta dd { margin: 0; }
+.authorization-card > .btn { margin-top: 1rem; }
+@media (max-width: 575.98px) {
+  .surface { padding: 1rem; }
+  .site-header #user-label { font-size: .72rem; max-width: 8rem; }
+  .workspace .table, .workspace .table tbody, .workspace .table tr, .workspace .table td { display: block; width: 100%; min-width: 0; }
+  .workspace .table thead { display: none; }
+  .workspace .table tr { border: 1px solid #e3ded7; border-radius: .5rem; padding: .5rem; margin-bottom: .8rem; }
+  .workspace .table td { border: 0; padding: .3rem; overflow-wrap: anywhere; }
+  .workspace .table td[data-label]::before { content: attr(data-label); display: block; font-size: .7rem; color: var(--muted); }
+  #search-form { width: 100%; }
+  #search { min-width: 0; }
+}
+@media (max-width: 991.98px) {
+  .access-layout { max-width: 600px; padding-top: 2rem; padding-bottom: 2rem; }
+  .identity { padding-right: .75rem; text-align: center; }
+  .school-logo { width: 75px; margin-inline: auto; }
+  .institution { margin-inline: auto; font-size: .9rem; }
+  .identity-rule, .identity-description { display: none; }
+  h1 { font-size: 2.4rem; margin-bottom: .75rem; }
+}
+@media (max-width: 575.98px) {
+  .access-layout { padding-inline: .5rem; }
+  .access-card { padding: 1.5rem 1.2rem; }
+  .header-note { font-size: .7rem; }
+  .site-footer { flex-direction: column; gap: .3rem; text-align: center; }
+  h1 { font-size: 2rem; }
+  h2 { font-size: 1.6rem; }
+}
