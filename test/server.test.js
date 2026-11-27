@@ -6,6 +6,7 @@ import { createApp } from '../src/app.js';
 import { createDatabasePool } from '../src/database.js';
 
 test('servidor, portada y recursos locales', async (t) => {
+  // Levanta un servidor temporal sin base de datos y lo cierra al terminar la prueba.
   const server = createApp().listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
@@ -23,6 +24,7 @@ test('servidor, portada y recursos locales', async (t) => {
     await response.arrayBuffer();
   }
   for (const path of ['/missing', '/.env', '/src/database.js', '/package.json']) {
+    // El navegador no debe poder descargar configuración privada ni código del servidor.
     const response = await fetch(`${base}${path}`);
     assert.equal(response.status, 404, path);
     await response.text();
@@ -30,11 +32,13 @@ test('servidor, portada y recursos locales', async (t) => {
 });
 
 test('SQL Server exige configuración real y puerto válido', () => {
+  // Rechaza configuraciones incompletas; los valores de ejemplo no abren una conexión.
   assert.throws(() => createDatabasePool({}), /DB_HOST, DB_NAME, DB_USER, DB_PASSWORD/);
   assert.throws(() => createDatabasePool({ DB_HOST: 'test', DB_NAME: 'test', DB_USER: 'test', DB_PASSWORD: 'test', DB_PORT: 'invalid' }), /DB_PORT/);
 });
 
 test('navegación local usa el origen configurado sin redirigir API ni dominios externos', async () => {
+  // Comprueba los alias locales sin permitir redirecciones hacia otros sitios.
   for (const [origin, alias, produccion] of [
     ['http://127.0.0.1:3000', 'localhost:3000', false],
     ['http://localhost:3000', '127.0.0.1:3000', false],

@@ -19,6 +19,7 @@ function mostrarError(mensaje) {
 }
 
 function abrirPanel() {
+  // Evita abrir el panel varias veces y borra la contraseña del formulario.
   if (redirigiendo) {
     return;
   }
@@ -29,6 +30,7 @@ function abrirPanel() {
 }
 
 function mostrarAcceso() {
+  // Explica por qué terminó la sesión y deja el acceso listo para otro usuario.
   limpiarAvisos();
   formulario.reset();
   contrasena.type = 'password';
@@ -51,6 +53,7 @@ function mostrarAcceso() {
 }
 
 async function solicitar(ruta, datos) {
+  // Envía las credenciales al servidor y limita la espera si se pierde la conexión.
   const respuesta = await fetch(`/api/auth/${ruta}`, {
     method: datos ? 'POST' : 'GET',
     credentials: 'same-origin',
@@ -63,6 +66,7 @@ async function solicitar(ruta, datos) {
 }
 
 formulario.addEventListener('submit', async (evento) => {
+  // Bloquea envíos repetidos mientras el servidor comprueba el acceso.
   evento.preventDefault();
   if (botonAcceso.disabled || redirigiendo) {
     return;
@@ -99,6 +103,7 @@ document.getElementById('show-password').addEventListener('click', (evento) => {
 });
 
 async function recuperarSesion() {
+  // Consulta la sesión antes de mostrar el panel, también al volver con el navegador.
   redirigiendo = false;
   formulario.hidden = true;
   avisoAcceso.hidden = true;

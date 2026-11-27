@@ -106,6 +106,7 @@ const estado = (valor) => String(valor).replaceAll('_', ' ');
 const codigo = (id) => `INC-${String(id).padStart(6, '0')}`;
 
 function elemento(etiqueta, contenido, clase) {
+  // Muestra los datos como texto para que no se interpreten como etiquetas HTML.
   const el = document.createElement(etiqueta);
   if (contenido !== undefined) {
     el.textContent = contenido;
@@ -152,6 +153,7 @@ function volverAlAcceso(motivo) {
 }
 
 async function api(ruta, method = 'GET', datos, cabeceras = {}) {
+  // Centraliza las peticiones y vuelve al acceso cuando la sesión deja de ser válida.
   let response;
   try {
     response = await fetch(`/api/${ruta}`, {
@@ -216,6 +218,7 @@ function incorporarPersonas(resultado) {
 }
 
 function selectorPersonas(select) {
+  // Busca personas por páginas sin perder la identidad que ya está seleccionada.
   const grupo = select.closest('label')?.parentElement || select.parentElement;
   grupo.querySelector('[data-person-search]')?.remove();
   const controles = elemento('div', undefined, 'mt-2');
@@ -296,6 +299,7 @@ function selectorPersonas(select) {
 }
 
 async function listar(pagina = paginaActual) {
+  // Solicita al servidor los resultados permitidos con los filtros de la pantalla.
   const revision = ++revisionLista;
   mostrar('list-view');
   const parametros = new URLSearchParams({ ...filtrosActuales, pagina });
@@ -356,6 +360,7 @@ function mostrarPaginacion({ pagina, paginas, total, desde, hasta }) {
 }
 
 function camposCategoria(valores = {}) {
+  // Cada categoría muestra solamente los campos que le corresponden.
   porId('specific-fields').replaceChildren();
   for (const [nombre, etiqueta, tipo] of campos[porId('category').value] || []) {
     const grupo = elemento('div', undefined, tipo === 'area' ? 'col-12' : 'col-md-6');
@@ -440,6 +445,7 @@ function condicion(valor = '') {
 }
 
 function involucrado(valores = {}) {
+  // Relaciona a cada participante con su identidad y, si es estudiante, su matrícula.
   const fila = elemento('div', undefined, 'row g-2 involved-row align-items-end');
   function selector(etiqueta, clase) {
     const grupo = elemento('div', undefined, clase);
@@ -491,6 +497,7 @@ function involucrado(valores = {}) {
 }
 
 async function formulario(datos) {
+  // Prepara un registro nuevo o recupera los datos de un borrador para editarlo.
   rectificacionId = null;
   porId('correction-fields')?.remove();
   porId('save-draft').textContent = 'Guardar borrador y revisar';
@@ -599,6 +606,7 @@ function actualizarLugar() {
 }
 
 function contenidoFormulario() {
+  // Reúne los campos y convierte fechas, números y respuestas antes del envío.
   let lugar = porId('place').value;
   if (lugar === 'Aula') {
     lugar = porId('place-classroom').value;
@@ -658,6 +666,7 @@ function metadatos(destino, pares) {
 }
 
 function mostrarEncabezado(datos, destino) {
+  // Ofrece acciones según el estado y los permisos; el servidor vuelve a autorizarlas.
   const { incidencia, version } = datos;
   destino.append(
     elemento(
@@ -831,6 +840,7 @@ function mostrarHechos(datos, destino) {
 }
 
 function mostrarSeguimiento(datos, destino) {
+  // Presenta las actuaciones, responsables y plazos sin reemplazar los hechos registrados.
   const { incidencia, actuaciones, responsables } = datos;
   const seguimiento = bloque('Actuaciones y seguimiento', destino);
   actuaciones.forEach((actuacion) => {
@@ -946,6 +956,7 @@ function mostrarSeguimiento(datos, destino) {
 }
 
 function mostrarDocumentos(datos, destino) {
+  // Muestra las solicitudes y sus decisiones para seguir cada cambio del expediente.
   if (datos.solicitudes.length) {
     const seccion = bloque('Solicitudes conservadas', destino);
     for (const solicitud of datos.solicitudes) {
@@ -1053,6 +1064,7 @@ function mostrarDocumentos(datos, destino) {
 }
 
 function operacionSensible(titulo, tarea, extras = '') {
+  // Pide fundamento y contraseña para confirmar una operación que requiere más cuidado.
   porId('sensitive-operation')?.remove();
   const form = elemento('form', undefined, 'record-block');
   form.id = 'sensitive-operation';
@@ -1096,6 +1108,7 @@ function operacionSensible(titulo, tarea, extras = '') {
 }
 
 function mostrarHistorial(historial, destino) {
+  // Permite consultar qué ocurrió, quién intervino y cuándo quedó registrado.
   const seccion = bloque('Historial del expediente', destino);
   for (const evento of historial) {
     const descripcion =
@@ -1147,6 +1160,7 @@ function campoCuenta(nombre, etiqueta, filas, valor, mostrar) {
 }
 
 function camposAutorizacion() {
+  // Cambia los datos solicitados según la operación de cuenta elegida.
   limpiarAviso();
   porId('authorization-fields').replaceChildren();
   const tipo = porId('account-action').value;
@@ -1270,6 +1284,7 @@ async function verHistorialCuenta(cuenta) {
 }
 
 function mostrarCuentas() {
+  // Presenta las cuentas y las acciones disponibles para el usuario actual.
   porId('account-rows').replaceChildren();
   for (const cuenta of cuentaCatalogo.usuarios) {
     const fila = elemento('tr');
@@ -1323,6 +1338,7 @@ function mostrarCuentas() {
 }
 
 function tarjetaAutorizacion(autorizacion, resumen) {
+  // Reúne el cambio solicitado y las decisiones pendientes en una misma tarjeta.
   const tarjeta = elemento('article', undefined, 'authorization-card');
   tarjeta.dataset.solicitud = autorizacion.id;
   tarjeta.append(elemento('p', autorizacion.codigo, 'small text-secondary mb-1'));
@@ -1509,6 +1525,7 @@ function mostrarAutorizaciones() {
 }
 
 async function actualizarSolicitudes() {
+  // Actualiza los pendientes al recuperar el foco sin superponer consultas.
   if (
     !usuario ||
     redirigiendo ||
@@ -1550,6 +1567,7 @@ porId('add-person').addEventListener('click', () => involucrado());
 porId('account-action').addEventListener('change', camposAutorizacion);
 
 porId('incident-form').addEventListener('submit', async (e) => {
+  // Conserva la referencia del envío para que un reintento no cree otro borrador.
   e.preventDefault();
   if (porId('save-draft').disabled) {
     return;
@@ -1653,6 +1671,7 @@ function prepararCamposPersona(prefijo) {
 }
 
 function actualizarDocumento(prefijo) {
+  // Ajusta el número y el país según el documento; permite dejarlo desconocido.
   const tipo = porId(`${prefijo}-document-type`).value;
   const numero = porId(`${prefijo}-document-number`);
   const pais = porId(`${prefijo}-document-country`);
@@ -1693,6 +1712,7 @@ function claveNivel(aula) {
 }
 
 function cargarNiveles(prefijo) {
+  // Ordena la elección de año y nivel, después grado y finalmente sección.
   const niveles = [...new Map(aulasEscolares.map((aula) => [claveNivel(aula), aula])).values()];
   opciones(
     porId(`${prefijo}-level`),
@@ -1736,6 +1756,7 @@ function cargarSecciones(prefijo) {
 }
 
 function completarPersona(prefijo, persona = {}) {
+  // Recupera la ficha y protege los campos de identidad que ya tienen historial.
   const formulario = porId(`${prefijo}-form`);
   for (const campo of [
     'nombres',
@@ -1841,6 +1862,7 @@ async function buscarEstudiantesEscolares(pagina = 1) {
 }
 
 async function abrirEstudiante(id) {
+  // Muestra la ficha junto con las matrículas y los vínculos de apoderados anteriores.
   const ficha = await json(`estudiantes/${id}`);
   nuevoEstudiante();
   estudianteActual = ficha.estudiante;
@@ -1907,6 +1929,7 @@ async function abrirApoderado(id) {
 }
 
 async function buscarApoderadosEscolares(pagina = 1) {
+  // Ayuda a reutilizar una persona existente antes de registrar otro apoderado.
   const filtros = new URLSearchParams({ buscar: porId('guardian-search').value, pagina });
   const resultado = await json(`estudiantes/apoderados?${filtros}`);
   const lista = porId('guardian-results');
@@ -1939,6 +1962,7 @@ async function buscarApoderadosEscolares(pagina = 1) {
 }
 
 function alEnviarEscolar(id, guardar) {
+  // Bloquea el formulario durante el guardado y limpia la contraseña al terminar.
   const formulario = porId(id);
   formulario.addEventListener('submit', async (evento) => {
     evento.preventDefault();
@@ -2075,6 +2099,7 @@ alEnviarEscolar('guardian-link-form', async (cuerpo) => {
 });
 
 function validarNombresEscolares(prefijo) {
+  // Acepta tildes y nombres compuestos; señala números o signos que no corresponden.
   return [`${prefijo}-names`, `${prefijo}-surnames`]
     .map((id) => {
       const input = porId(id);
@@ -2111,6 +2136,7 @@ porId('refresh-accounts').addEventListener('click', async () => {
   }
 });
 porId('authorization-form').addEventListener('submit', async (event) => {
+  // Confirma los valores antes de solicitar o ejecutar un cambio de cuenta permitido.
   event.preventDefault();
   const boton = porId('submit-account-change');
   if (boton.disabled || !confirm('¿Confirmas esta operación y los valores indicados?')) {
@@ -2277,6 +2303,7 @@ for (const [id, tarea] of [
 }
 
 async function iniciar() {
+  // Carga la sesión y muestra las secciones correspondientes al rol y sus permisos.
   redirigiendo = false;
   porId('workspace').hidden = true;
   porId('session-header').hidden = true;
