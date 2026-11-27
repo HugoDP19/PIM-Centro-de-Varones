@@ -114,6 +114,519 @@ export async function verificarCambios({ t, pool, datos, peticion, claves, cuerp
 }
 
 
+// Las nuevas gestiones comparten la base aislada y la comparación completa de SICE de la suite.
+export async function verificarEstudiantes({ t, pool, datos, peticion, claves, cuerpo }) {
+  const prueba = (nombre, comprobar) => t.test('Gestión escolar: ' + nombre, comprobar);
+  const clave = { contrasena: claves.DIRECTOR_PASSWORD };
+  const aulas = await datos('estudiantes/aulas', 'director');
+  const persona = { nombres: 'Álvaro José', apellidos: 'Extranjero Escolar' };
+  const inicial = {
+    ...persona,
+    codigo_estudiante: 'GEST-01',
+    id_aula: aulas[0].id,
+    fecha_inicio: '2026-03-02',
+    ...clave
+  };
+  const documento = {
+    tipo_documento: 'PASAPORTE',
+    numero_documento: 'ab123456',
+    pais_documento: 've'
+  };
+  let estudiante, apoderado, segundoApoderado, incidencia, versionAnterior;
+
+  await prueba('DNI, carnet, pasaporte y registro provisional sin DNI', async () => {
+    for (const [indice, identidad] of [
+      { tipo_documento: 'DNI', numero_documento: '01234567', pais_documento: 'PE' },
+      { tipo_documento: 'CE', numero_documento: '001234567', pais_documento: 'PE' },
+      documento,
+      {}
+    ].entries()) {
+      const nuevo = await datos(
+        'estudiantes',
+        'director',
+        'POST',
+        {
+          ...inicial,
+          ...identidad,
+          codigo_estudiante: `GEST-${indice + 1}`
+        },
+        201
+      );
+      const ficha = await datos(`estudiantes/${nuevo.id}`, 'director');
+      assert.equal(ficha.matriculas.length, 1);
+      if (indice === 2) {
+        estudiante = nuevo;
+        assert.equal(ficha.estudiante.numero_documento, 'AB123456');
+        assert.equal(ficha.estudiante.pais_documento, 'VE');
+      }
+      if (indice === 3) {
+        assert.equal(ficha.estudiante.numero_documento, null);
+        assert.equal(ficha.estudiante.tipo_documento, null);
+        assert.equal(ficha.estudiante.pais_documento, null);
+      }
+    }
+  });
+  await prueba(
+    'documentos inválidos, fechas, campos ajenos y duplicados no dejan filas parciales',
+    async () => {
+      const [[antes]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM personas');
+      const invalidos = [
+        { tipo_documento: 'DNI', numero_documento: '1234', pais_documento: 'PE' },
+        { tipo_documento: 'DNI', numero_documento: '12345678', pais_documento: 'VE' },
+        { tipo_documento: 'CE', numero_documento: '123', pais_documento: 'PE' },
+        { tipo_documento: 'PASAPORTE', numero_documento: 'A<1234', pais_documento: 'VE' },
+        { tipo_documento: 'PASAPORTE' },
+        { numero_documento: 'A1234' },
+        { ...documento, pais_documento: 'VEN' },
+        { ...documento, pais_documento: 'ZZ' },
+        { tipo_documento: 'OTRO' },
+        { activo: 0 },
+        { fecha_nacimiento: '2026-02-30' },
+        { fecha_nacimiento: '2026-05-01' },
+        { id_aula: '9223372036854775807' },
+        { correo: 'sin-arroba' },
+        { telefono: '<script>' }
+      ];
+      for (const invalido of invalidos) {
+        const respuesta = await peticion('estudiantes', 'director', 'POST', {
+          ...inicial,
+          codigo_estudiante: 'GEST-INVALIDO',
+          ...invalido
+        });
+        assert.equal(respuesta.status, 400);
+      }
+      assert.equal(
+        (
+          await peticion('estudiantes', 'director', 'POST', {
+            ...inicial,
+            ...documento,
+            codigo_estudiante: 'GEST-DUPLICADO'
+          })
+        ).status,
+        409
+      );
+      const [[despues]] = await pool.execute('SELECT COUNT(*) AS cantidad FROM personas');
+      assert.equal(despues.cantidad, antes.cantidad);
+    }
+  );
+  await prueba(
+    'los seis roles, autenticación y origen en consultas y escrituras nuevas',
+    async () => {
+      const rutas = [
+        'estudiantes',
+        `estudiantes/${estudiante.id}`,
+        'estudiantes/apoderados',
+        'estudiantes/apoderados/1'
+      ];
+      for (const rol of ['docente', 'auxiliar', 'administrador']) {
+        for (const ruta of rutas) {
+          assert.equal((await peticion(ruta, rol)).status, 403);
+        }
+        for (const [ruta, metodo] of [
+          [`estudiantes/${estudiante.id}`, 'PUT'],
+          ['estudiantes/apoderados', 'POST'],
+          ['estudiantes/apoderados/1', 'PUT'],
+          [`estudiantes/${estudiante.id}/matriculas`, 'POST'],
+          [`estudiantes/${estudiante.id}/apoderado-principal`, 'POST']
+        ]) {
+          assert.equal((await peticion(ruta, rol, metodo, {})).status, 403);
+        }
+      }
+      for (const rol of ['director', 'subdirector', 'coordinador_tutoria']) {
+        assert.equal((await peticion(`estudiantes/${estudiante.id}`, rol)).status, 200);
+      }
+      assert.equal((await peticion('estudiantes', null)).status, 401);
+      assert.equal(
+        (
+          await peticion(
+            `estudiantes/${estudiante.id}`,
+            'director',
+            'PUT',
+            {},
+            { Origin: 'https://otro.example' }
+          )
+        ).status,
+        403
+      );
+      assert.equal(
+        (
+          await peticion(`estudiantes/${estudiante.id}`, 'director', 'PUT', {
+            ...persona,
+            ...documento,
+            contrasena: 'incorrecta'
+          })
+        ).status,
+        403
+      );
+    }
+  );
+  await prueba(
+    'edición con auditoría, búsqueda por nombre/documento/grado y comodines literales',
+    async () => {
+      await datos(`estudiantes/${estudiante.id}`, 'director', 'PUT', {
+        ...persona,
+        ...documento,
+        nombres: 'Álvaro Andrés',
+        fecha_nacimiento: '2014-06-03',
+        telefono: '+51 999 111 222',
+        ...clave
+      });
+      const ficha = await datos(`estudiantes/${estudiante.id}`, 'director');
+      assert.equal(ficha.estudiante.nombres, 'Álvaro Andrés');
+      for (const buscar of ['Álvaro Andrés', 'AB123456', 'GEST-3']) {
+        const resultado = await datos(
+          'estudiantes?buscar=' + encodeURIComponent(buscar),
+          'director'
+        );
+        assert.ok(resultado.estudiantes.some((fila) => fila.id === estudiante.id));
+      }
+      const resultado = await datos(
+        `estudiantes?buscar=AB123456&grado=${aulas[0].grado}`,
+        'director'
+      );
+      assert.equal(resultado.paginacion.total, 1);
+      assert.equal((await datos('estudiantes?buscar=%25%5B%5D_', 'director')).paginacion.total, 0);
+      for (const filtro of ['pagina=0', 'pagina=1x', 'grado=abc', 'buscar[x]=1']) {
+        assert.equal((await peticion(`estudiantes?${filtro}`, 'director')).status, 400);
+      }
+      const [auditoria] = await pool.execute(
+        "SELECT valor_nuevo FROM historial WHERE id_persona = ? AND accion = 'persona_escolar_editada'",
+        [estudiante.id]
+      );
+      assert.equal(auditoria.length, 1);
+      assert.equal(JSON.parse(auditoria[0].valor_nuevo).nombres, 'Álvaro Andrés');
+      assert.ok(!auditoria[0].valor_nuevo.includes(clave.contrasena));
+    }
+  );
+  await prueba(
+    'apoderados: registrar, consultar, editar y reutilizar sin duplicar identidad',
+    async () => {
+      apoderado = await datos(
+        'estudiantes/apoderados',
+        'director',
+        'POST',
+        {
+          nombres: 'María Elena',
+          apellidos: 'Apoderada Escolar',
+          tipo_documento: 'DNI',
+          numero_documento: '11234567',
+          pais_documento: 'PE',
+          ...clave
+        },
+        201
+      );
+      const ficha = await datos(`estudiantes/apoderados/${apoderado.id}`, 'director');
+      const editado = {
+        nombres: ficha.nombres,
+        apellidos: ficha.apellidos,
+        tipo_documento: ficha.tipo_documento,
+        numero_documento: ficha.numero_documento,
+        pais_documento: ficha.pais_documento,
+        correo: 'apoderada@example.test',
+        ...clave
+      };
+      await datos(`estudiantes/apoderados/${apoderado.id}`, 'director', 'PUT', editado);
+      assert.equal(
+        (await datos(`estudiantes/apoderados/${apoderado.id}`, 'director')).correo,
+        'apoderada@example.test'
+      );
+      assert.equal(
+        (await peticion('estudiantes/apoderados', 'director', 'POST', editado)).status,
+        409
+      );
+      const resultado = await datos('estudiantes/apoderados?buscar=11234567', 'director');
+      assert.equal(resultado.apoderados[0].id, apoderado.id);
+      assert.equal(resultado.paginacion.total, 1);
+      assert.equal(
+        (await datos('estudiantes/apoderados?buscar=%25%5B%5D_', 'director')).paginacion.total,
+        0
+      );
+    }
+  );
+  await prueba(
+    'principal único, fechas, sustitución y conservación del vínculo anterior',
+    async () => {
+      const ruta = `estudiantes/${estudiante.id}/apoderado-principal`;
+      const asociacion = {
+        id_apoderado: apoderado.id,
+        vinculo: 'Madre',
+        vigente_desde: '2026-03-02',
+        ...clave
+      };
+      const primero = await datos(ruta, 'director', 'POST', asociacion, 201);
+      assert.equal((await datos(ruta, 'director', 'POST', asociacion, 201)).id, primero.id);
+      assert.equal(
+        (
+          await peticion(ruta, 'director', 'POST', {
+            ...asociacion,
+            id_apoderado: estudiante.id
+          })
+        ).status,
+        400
+      );
+      segundoApoderado = await datos(
+        'estudiantes/apoderados',
+        'director',
+        'POST',
+        {
+          nombres: 'Juan Carlos',
+          apellidos: 'Tutor Escolar',
+          ...clave
+        },
+        201
+      );
+      assert.equal(
+        (
+          await peticion(ruta, 'director', 'POST', {
+            ...asociacion,
+            id_apoderado: segundoApoderado.id
+          })
+        ).status,
+        409
+      );
+      await datos(
+        ruta,
+        'director',
+        'POST',
+        {
+          ...asociacion,
+          id_apoderado: segundoApoderado.id,
+          vinculo: 'Tutor',
+          vigente_desde: '2026-04-01'
+        },
+        201
+      );
+      const ficha = await datos(`estudiantes/${estudiante.id}`, 'director');
+      assert.equal(ficha.apoderados.length, 2);
+      assert.equal(ficha.apoderados.filter((fila) => !fila.vigente_hasta).length, 1);
+      const anterior = ficha.apoderados.find((fila) => fila.id_vinculo === primero.id);
+      assert.equal(anterior.vigente_hasta.slice(0, 10), '2026-03-31');
+      assert.equal(anterior.es_principal, 1);
+    }
+  );
+  await prueba(
+    'el mismo apoderado puede representar a otro estudiante sin otra persona',
+    async () => {
+      const otro = (await datos('estudiantes?buscar=GEST-4', 'director')).estudiantes[0];
+      await datos(
+        `estudiantes/${otro.id}/apoderado-principal`,
+        'director',
+        'POST',
+        {
+          id_apoderado: segundoApoderado.id,
+          vinculo: 'Tutor',
+          vigente_desde: '2026-04-01',
+          ...clave
+        },
+        201
+      );
+      const [[total]] = await pool.execute(
+        'SELECT COUNT(*) AS cantidad FROM estudiantes_apoderados WHERE id_apoderado = ?',
+        [segundoApoderado.id]
+      );
+      assert.equal(total.cantidad, 2);
+    }
+  );
+  await prueba(
+    'historial de expediente impide reescribir identidad, permite contacto',
+    async () => {
+      const caso = cuerpo('seguridad');
+      incidencia = await datos(
+        'incidencias',
+        'director',
+        'POST',
+        {
+          ...caso,
+          involucrados: [
+            {
+              id_persona: estudiante.id,
+              id_matricula: estudiante.matricula,
+              participacion: 'afectado'
+            }
+          ]
+        },
+        201
+      );
+      await datos(`incidencias/${incidencia.id}/confirmar`, 'director', 'POST', {});
+      versionAnterior = await datos(`incidencias/${incidencia.id}`, 'director');
+      assert.equal(
+        (
+          await peticion(`estudiantes/${estudiante.id}`, 'director', 'PUT', {
+            ...persona,
+            ...documento,
+            nombres: 'Identidad cambiada',
+            ...clave
+          })
+        ).status,
+        409
+      );
+      await datos(`estudiantes/${estudiante.id}`, 'director', 'PUT', {
+        ...persona,
+        ...documento,
+        nombres: 'Álvaro Andrés',
+        fecha_nacimiento: '2014-06-03',
+        telefono: '999222333',
+        ...clave
+      });
+      const despues = await datos(`incidencias/${incidencia.id}`, 'director');
+      assert.deepEqual(despues.version, versionAnterior.version);
+      assert.deepEqual(despues.involucrados, versionAnterior.involucrados);
+    }
+  );
+  await prueba('nueva matrícula mantiene IDs, aula histórica y expediente existente', async () => {
+    const otra = aulas.find((aula) => aula.id !== aulas[0].id);
+    assert.equal(
+      (
+        await peticion(`estudiantes/${estudiante.id}/matriculas`, 'director', 'POST', {
+          id_aula: otra.id,
+          fecha_inicio: '2026-04-01',
+          ...clave
+        })
+      ).status,
+      409
+    );
+    await datos(
+      `estudiantes/${estudiante.id}/matriculas`,
+      'director',
+      'POST',
+      {
+        id_aula: otra.id,
+        fecha_inicio: '2026-11-26',
+        ...clave
+      },
+      201
+    );
+    const ficha = await datos(`estudiantes/${estudiante.id}`, 'director');
+    assert.equal(ficha.matriculas.length, 2);
+    const anterior = ficha.matriculas.find((fila) => fila.id === estudiante.matricula);
+    assert.equal(anterior.id_aula, aulas[0].id);
+    assert.equal(anterior.fecha_inicio.slice(0, 10), '2026-03-02');
+    assert.equal(anterior.fecha_fin.slice(0, 10), '2026-11-25');
+    const despues = await datos(`incidencias/${incidencia.id}`, 'director');
+    assert.deepEqual(despues.version, versionAnterior.version);
+    assert.deepEqual(despues.involucrados, versionAnterior.involucrados);
+    assert.equal(
+      (
+        await peticion(`estudiantes/${estudiante.id}/matriculas`, 'director', 'POST', {
+          id_aula: aulas[0].id,
+          fecha_inicio: '2026-11-26',
+          ...clave
+        })
+      ).status,
+      409
+    );
+  });
+  await prueba(
+    'reserva en listas, fichas y apoderados compartidos sin filtraciones al coordinador',
+    async () => {
+      const sensible = await datos(
+        'incidencias',
+        'director',
+        'POST',
+        {
+          ...cuerpo('salud'),
+          involucrados: [
+            {
+              id_persona: estudiante.id,
+              id_matricula: estudiante.matricula,
+              participacion: 'afectado'
+            }
+          ]
+        },
+        201
+      );
+      await datos(`incidencias/${sensible.id}/confirmar`, 'director', 'POST', {});
+      for (const ruta of [
+        `estudiantes/${estudiante.id}`,
+        `estudiantes/apoderados/${segundoApoderado.id}`
+      ]) {
+        assert.equal((await peticion(ruta, 'coordinador_tutoria')).status, 404);
+        assert.equal((await peticion(ruta, 'director')).status, 200);
+      }
+      assert.equal(
+        (await datos('estudiantes?buscar=AB123456', 'coordinador_tutoria')).paginacion.total,
+        0
+      );
+      assert.equal(
+        (await datos('estudiantes/apoderados?buscar=Tutor%20Escolar', 'coordinador_tutoria'))
+          .paginacion.total,
+        0
+      );
+      const otro = (await datos('estudiantes?buscar=GEST-4', 'coordinador_tutoria')).estudiantes[0];
+      assert.equal(
+        (await datos(`estudiantes/${otro.id}`, 'coordinador_tutoria')).apoderados.length,
+        0
+      );
+    }
+  );
+  await prueba('registros simultáneos impiden duplicados entre roles autorizados', async () => {
+    const solicitudes = ['director', 'subdirector', 'coordinador_tutoria'].map((rol, indice) =>
+      peticion('estudiantes', rol, 'POST', {
+        ...inicial,
+        codigo_estudiante: `GEST-SIM-${indice}`,
+        tipo_documento: 'PASAPORTE',
+        numero_documento: 'SIM123456',
+        pais_documento: 'CO',
+        contrasena: claves[`${rol.toUpperCase()}_PASSWORD`]
+      })
+    );
+    const respuestas = await Promise.all(solicitudes);
+    assert.deepEqual(respuestas.map((respuesta) => respuesta.status).sort(), [201, 409, 409]);
+    const [[fila]] = await pool.execute(
+      "SELECT COUNT(*) AS cantidad FROM personas WHERE numero_documento = 'SIM123456'"
+    );
+    assert.equal(fila.cantidad, 1);
+  });
+  await prueba('personal existente se asocia sin duplicarlo ni editarlo antes del vínculo', async () => {
+    const [[personal]] = await pool.execute(
+      "SELECT id, nombres, apellidos FROM personas WHERE codigo_interno = 'PER-2026-101'"
+    );
+    const ruta = `estudiantes/apoderados/${personal.id}`;
+    const cambios = { nombres: personal.nombres, apellidos: personal.apellidos,
+      telefono: '999222111', ...clave };
+    assert.equal((await peticion(ruta, 'director')).status, 409);
+    assert.equal((await peticion(ruta, 'director', 'PUT', cambios)).status, 409);
+    const nuevo = await datos('estudiantes', 'director', 'POST', {
+      ...inicial, codigo_estudiante: 'GEST-PERSONAL'
+    }, 201);
+    await datos(`estudiantes/${nuevo.id}/apoderado-principal`, 'director', 'POST', {
+      id_apoderado: personal.id, vinculo: 'Tutor', vigente_desde: '2026-03-02', ...clave
+    }, 201);
+    await datos(ruta, 'director', 'PUT', cambios);
+    assert.equal((await datos(ruta, 'director')).telefono, '999222111');
+  });
+  await prueba('dos sustituciones simultáneas conservan un único principal vigente', async () => {
+    const tercero = await datos(
+      'estudiantes/apoderados',
+      'director',
+      'POST',
+      {
+        nombres: 'Rosa Isabel',
+        apellidos: 'Otra Tutora',
+        ...clave
+      },
+      201
+    );
+    const respuestas = await Promise.all(
+      [apoderado.id, tercero.id].map((idApoderado) =>
+        peticion(`estudiantes/${estudiante.id}/apoderado-principal`, 'director', 'POST', {
+          id_apoderado: idApoderado,
+          vinculo: 'Tutor',
+          vigente_desde: '2026-05-01',
+          ...clave
+        })
+      )
+    );
+    assert.deepEqual(respuestas.map((respuesta) => respuesta.status).sort(), [201, 409]);
+    const [[fila]] = await pool.execute(
+      `SELECT COUNT(*) AS cantidad FROM estudiantes_apoderados
+       WHERE id_estudiante = ? AND es_principal = 1 AND vigente_hasta IS NULL`,
+      [estudiante.id]
+    );
+    assert.equal(fila.cantidad, 1);
+  });
+}
+
 // Reproduce los escenarios de auditoría con datos y cuentas de la base temporal.
 export async function verificarRegresiones({ t, pool, datos, peticion, claves, cuerpo, usuarios, alumnos, copia, cookies, renovarSesiones }) {
   await renovarSesiones();

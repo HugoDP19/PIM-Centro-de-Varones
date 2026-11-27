@@ -178,6 +178,195 @@ function filtroPersonas(usuario) {
   };
 }
 
+// La gestión escolar tampoco revela apoderados de estudiantes con identidad reservada.
+function filtroGestionEscolar(usuario) {
+  const persona = filtroPersonas(usuario);
+  const estudiante = persona.sql.replaceAll('p.', 'alumno.');
+  return {
+    sql: `${persona.sql} AND NOT EXISTS (
+      SELECT 1
+      FROM estudiantes_apoderados vinculo
+      JOIN personas alumno ON alumno.id = vinculo.id_estudiante
+      WHERE vinculo.id_apoderado = p.id AND NOT (${estudiante})
+    )`,
+    valores: [...persona.valores, ...persona.valores]
+  };
+}
+
+const camposPersonaEscolar = `
+  p.id, p.nombres, p.apellidos, p.tipo_documento, p.numero_documento,
+  p.pais_documento, p.telefono, p.correo, p.codigo_interno
+`;
+
+export async function buscarEstudiantes(db, usuario, { buscar, grado, pagina }) {
+  const filtro = filtroGestionEscolar(usuario);
+  const condiciones = [filtro.sql, 'e.activo = 1'];
+  const valores = [...filtro.valores];
+  if (buscar) {
+    condiciones.push(`(
+      CONCAT(p.nombres, ' ', p.apellidos) LIKE ? ESCAPE '!'
+      OR p.numero_documento LIKE ? ESCAPE '!'
+      OR e.codigo_estudiante LIKE ? ESCAPE '!'
+    )`);
+    const patron = `%${escaparBusqueda(buscar)}%`;
+    valores.push(patron, patron, patron);
+  }
+  if (grado) {
+    condiciones.push('a.grado = ?');
+    valores.push(Number(grado));
+  }
+  const origen = `
+    FROM personas p
+    JOIN estudiantes e ON e.id_persona = p.id
+    OUTER APPLY (
+      SELECT TOP (1) m.id_aula
+      FROM matriculas m
+      WHERE m.id_estudiante = p.id AND m.fecha_fin IS NULL
+      ORDER BY m.fecha_inicio DESC, m.id DESC
+    ) actual
+    LEFT JOIN aulas a ON a.id = actual.id_aula
+    WHERE ${condiciones.join(' AND ')}
+  `;
+  const [[{ total }]] = await db.execute(`SELECT COUNT(*) AS total ${origen}`, valores);
+  const paginas = Math.max(1, Math.ceil(total / 20));
+  pagina = Math.min(pagina, paginas);
+  const [estudiantes] = await db.execute(
+    `SELECT ${camposPersonaEscolar}, e.codigo_estudiante,
+      a.anio_lectivo, a.nivel, a.grado, a.seccion
+     ${origen}
+     ORDER BY p.apellidos, p.nombres, p.id
+     OFFSET ? ROWS FETCH NEXT 20 ROWS ONLY`,
+    [...valores, (pagina - 1) * 20]
+  );
+  return { estudiantes, paginacion: { pagina, paginas, total } };
+}
+
+export async function personaEscolar(db, usuario, id) {
+  const filtro = filtroGestionEscolar(usuario);
+  const [[persona]] = await db.execute(
+    `SELECT ${camposPersonaEscolar}, e.codigo_estudiante, e.fecha_nacimiento,
+      e.activo AS estudiante_activo,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM estudiantes_apoderados WHERE id_apoderado = p.id
+      ) OR EXISTS (
+        SELECT 1 FROM historial WHERE id_persona = p.id AND accion = 'apoderado_creado'
+      ) THEN 1 ELSE 0 END AS es_apoderado,
+      CASE WHEN EXISTS (SELECT 1 FROM involucrados WHERE id_persona = p.id)
+        OR EXISTS (SELECT 1 FROM versiones_incidencia WHERE id_reportante = p.id)
+        OR EXISTS (SELECT 1 FROM usuarios WHERE id_persona = p.id)
+        OR EXISTS (SELECT 1 FROM participantes_revision WHERE id_persona = p.id)
+      THEN 1 ELSE 0 END AS identidad_historica
+     FROM personas p
+     LEFT JOIN estudiantes e ON e.id_persona = p.id
+     WHERE p.id = ? AND ${filtro.sql}`,
+    [id, ...filtro.valores]
+  );
+  return persona;
+}
+
+export async function matriculasEstudiante(db, id) {
+  const [matriculas] = await db.execute(
+    `SELECT m.id, m.id_aula, m.fecha_inicio, m.fecha_fin,
+      a.anio_lectivo, a.nivel, a.grado, a.seccion
+     FROM matriculas m
+     JOIN aulas a ON a.id = m.id_aula
+     WHERE m.id_estudiante = ?
+     ORDER BY m.fecha_inicio DESC, m.id DESC`,
+    [id]
+  );
+  return matriculas;
+}
+
+export async function apoderadosEstudiante(db, usuario, id) {
+  const filtro = filtroGestionEscolar(usuario);
+  const [apoderados] = await db.execute(
+    `SELECT ${camposPersonaEscolar}, v.id AS id_vinculo, v.vinculo,
+      v.es_principal, v.vigente_desde, v.vigente_hasta
+     FROM estudiantes_apoderados v
+     JOIN personas p ON p.id = v.id_apoderado
+     WHERE v.id_estudiante = ? AND ${filtro.sql}
+     ORDER BY v.vigente_desde DESC, v.id DESC`,
+    [id, ...filtro.valores]
+  );
+  return apoderados;
+}
+
+export async function buscarApoderados(db, usuario, buscar, pagina) {
+  const filtro = filtroGestionEscolar(usuario);
+  const patron = `%${escaparBusqueda(buscar)}%`;
+  const origen = `FROM personas p WHERE ${filtro.sql} AND (
+    CONCAT(p.nombres, ' ', p.apellidos) LIKE ? ESCAPE '!'
+    OR p.numero_documento LIKE ? ESCAPE '!'
+    OR p.codigo_interno LIKE ? ESCAPE '!'
+  ) AND NOT EXISTS (SELECT 1 FROM estudiantes e WHERE e.id_persona = p.id)`;
+  const valores = [...filtro.valores, patron, patron, patron];
+  const [[{ total }]] = await db.execute(`SELECT COUNT(*) AS total ${origen}`, valores);
+  const paginas = Math.max(1, Math.ceil(total / 20));
+  pagina = Math.min(pagina, paginas);
+  const [apoderados] = await db.execute(
+    `SELECT p.id, p.nombres, p.apellidos, p.codigo_interno,
+       p.tipo_documento, p.numero_documento, p.pais_documento
+     ${origen}
+     ORDER BY p.apellidos, p.nombres, p.id
+     OFFSET ? ROWS FETCH NEXT 20 ROWS ONLY`,
+    [...valores, (pagina - 1) * 20]
+  );
+  return { apoderados, paginacion: { pagina, paginas, total } };
+}
+
+export async function actualizarPersonaEscolar(db, id, persona) {
+  await db.execute(
+    `UPDATE personas
+     SET nombres = ?, apellidos = ?, tipo_documento = ?, numero_documento = ?,
+       pais_documento = ?, telefono = ?, correo = ?
+     WHERE id = ?`,
+    [
+      persona.nombres,
+      persona.apellidos,
+      persona.tipo_documento,
+      persona.numero_documento,
+      persona.pais_documento,
+      persona.telefono,
+      persona.correo,
+      id
+    ]
+  );
+}
+
+export async function guardarNacimiento(db, id, fecha) {
+  await db.execute('UPDATE estudiantes SET fecha_nacimiento = ? WHERE id_persona = ?', [fecha, id]);
+}
+
+export async function cerrarMatricula(db, id, fecha) {
+  await db.execute('UPDATE matriculas SET fecha_fin = ? WHERE id = ?', [fecha, id]);
+}
+
+export async function matriculaConHechosPosteriores(db, id, fechaFin) {
+  const [[resultado]] = await db.execute(
+    `SELECT COUNT(*) AS cantidad
+     FROM involucrados inv
+     JOIN versiones_incidencia v ON v.id = inv.id_version
+     WHERE inv.id_matricula = ?
+       AND CAST(DATEADD(HOUR, -5, v.ocurrida_en) AS DATE) > CAST(? AS DATE)`,
+    [id, fechaFin]
+  );
+  return resultado.cantidad > 0;
+}
+
+export async function principalEstudiante(db, id) {
+  const [vinculos] = await db.execute(
+    `SELECT id, id_apoderado, vinculo, vigente_desde, vigente_hasta
+     FROM estudiantes_apoderados
+     WHERE id_estudiante = ? AND es_principal = 1`,
+    [id]
+  );
+  return vinculos;
+}
+
+export async function cerrarVinculo(db, id, fecha) {
+  await db.execute('UPDATE estudiantes_apoderados SET vigente_hasta = ? WHERE id = ?', [fecha, id]);
+}
+
 const identidadPersona = `
     p.id, p.nombres, p.apellidos, p.es_personal, CASE
     WHEN EXISTS(SELECT 1

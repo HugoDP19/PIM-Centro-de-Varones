@@ -16,7 +16,7 @@ import { detalleIncidencia, buscarIncidencia, auditar } from '../src/consultas-i
 import { generarInforme } from '../src/informes.js';
 import { cargarPermisos } from '../src/consultas-auth.js';
 import { verificarGestionCuentas } from './cuentas.integration.js';
-import { verificarCambios, verificarRegresiones } from './cambios.integration.js';
+import { verificarCambios, verificarRegresiones, verificarEstudiantes } from './cambios.integration.js';
 
 async function leerEstadoOrigen(pool) {
   const [tablas] = await pool.execute('SELECT name FROM sys.tables ORDER BY name');
@@ -570,4 +570,13 @@ test('Desarrollo real: cuentas, seis formularios, confidencialidad, seguimiento 
       }, () => regresiones(navegador));
     });
   } else await regresiones(t);
+  // Abre otra ventana de prueba en la copia; la regresión anterior ya comprobó el bloqueo 429.
+  const [[basePrueba]] = await pool.execute('SELECT DB_NAME() AS nombre');
+  assert.equal(basePrueba.nombre, copia.nombre);
+  await pool.execute(
+    'UPDATE intentos_acceso SET vence_en = DATEADD(SECOND, -1, SYSUTCDATETIME()) WHERE clave = ?',
+    [resumir('ip:reauth:127.0.0.1')]
+  );
+  await renovarSesiones();
+  await verificarEstudiantes({ t, pool, datos, peticion, claves, cuerpo });
 });
