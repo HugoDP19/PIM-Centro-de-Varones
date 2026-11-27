@@ -61,6 +61,12 @@ Para sustentar un flujo, sigue este orden: formulario en `public/js/`, ruta y va
 
 En `cuentas.js`, las validaciones de cuenta, permiso y solicitante están separadas. En `incidencias.js`, cada grupo de campos tiene su validación; `cambios-incidencias.js` distingue la revisión documental de la formal. `database.js` vincula los parámetros SQL y confirma o revierte la operación completa. Las funciones permanecen en los archivos actuales, sin capas adicionales.
 
+La revisión de comentarios del 27 de noviembre examinó los 24 JavaScript propios. Añadió explicaciones breves únicamente a los cuatro que no tenían comentarios: `public/js/main.js`, `public/js/panel.js`, `test/seguridad.test.js` y `test/server.test.js`. Los otros archivos quedaron intactos y se comprobó que la lógica no cambió.
+
+La repetición posterior aprobó 7/7 pruebas básicas, 63/63 SQL y 76/76 de integración/Chrome, sin fallos y con SICE intacta. Son 83 comprobaciones funcionales; las 63 SQL también están incluidas en la suite con Chrome. El servidor principal permaneció funcionando durante esta revisión.
+
+La integración autorizada sigue `feature/incidencias-informes` → `develop` mediante el [PR #4](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/4), y `develop` → `main` mediante el [PR #3](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/3), conservando ramas e historial. La versión disponible mantiene los límites institucionales descritos al final.
+
 ## Pruebas
 
 ```text

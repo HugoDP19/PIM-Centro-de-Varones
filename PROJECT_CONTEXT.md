@@ -4,7 +4,7 @@
 
 Proyecto de la I.E.P. N.° 20874 Centro de Varones, San Vicente de Cañete. Los estudiantes son varones; personal y reportantes pueden ser hombres o mujeres. Conservar el logo original de image/, el diseño blanco y guinda y la interfaz responsive.
 
-Rama: `feature/incidencias-informes`. Repositorio: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Alcance autorizado: completar estudiantes, matrículas y apoderados sobre las tablas existentes, con pruebas aisladas y commits locales. Sin push ni Pull Request; no alterar expedientes de SICE ni ampliar otros módulos.
+Rama de trabajo: `feature/incidencias-informes`. Repositorio: https://github.com/HugoDP19/PIM-Centro-de-Varones.git. Alcance autorizado: comentar únicamente JavaScript propios que carecían de comentarios, repetir las pruebas y publicar los commits pendientes mediante Pull Request hacia `develop` y después `main`. Sin cambios de lógica, diseño, estructura ni datos de SICE; sin borrar ramas ni usar force push.
 
 ## Motor y datos
 
@@ -86,6 +86,15 @@ No se añadieron tablas, dependencias ni archivos. El recibo de registro reutili
 - Identidades usadas en expedientes, cuentas o revisiones conservan nombre y documento; en estudiantes también nacimiento. Contacto editable. El código del estudiante no se renombra. La corrección de identidad histórica necesita un procedimiento institucional que este alcance no incorpora.
 - D/SD/CT conservan el permiso existente; AD/DO/AU quedan fuera de esta gestión. Todas las rutas revalidan actor y sesión en transacción, y las escrituras exigen contraseña. La reserva de identidad alcanza fichas, búsquedas, contadores y apoderados compartidos, incluso sus vínculos anteriores.
 - Formulario institucional con mensajes de guardado/error, bloqueo durante el envío y limpieza de contraseñas. Sin comentarios en `public/`. Lógica en `src/estudiantes.js`, consultas en el archivo existente y pruebas ampliadas; sin archivos, tablas, dependencias ni permisos nuevos.
+
+## Comentarios y publicación — 27 de noviembre de 2026
+
+- Revisados los 24 JavaScript propios, excluyendo dependencias y terceros. Solo carecían de comentarios `public/js/main.js`, `public/js/panel.js`, `test/seguridad.test.js` y `test/server.test.js`: se añadieron 40 comentarios `//` breves en español, en el commit separado `8339853`. Los otros 20 archivos quedaron intactos.
+- La instrucción actual del usuario incluye todos los JavaScript sin comentarios y sustituye, para esta revisión, la exclusión anterior de `public/`. Los comentarios explican acceso, peticiones, formularios, validaciones, historial y pruebas. La comparación de los 24 árboles de código confirma lógica idéntica a la versión anterior.
+- Revisados los 39 archivos versionados y los 71 contenidos de archivo pendientes de publicación al comenzar: sin coincidencias con credenciales privadas locales, claves de servicio ni archivos innecesarios detectados. `.env` y `.env.escolar.local` siguen ignorados; la plantilla no contiene credenciales. Los datos de `test/datos.js` son sintéticos y exclusivos de pruebas aisladas.
+- Ruta de publicación autorizada: [PR #4, feature → develop](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/4), seguido del [PR #3, develop → main](https://github.com/HugoDP19/PIM-Centro-de-Varones/pull/3). Se reutilizan los PR existentes, actualizando sus descripciones al estado de SQL Server 2022. Las fusiones conservan los commits y las ramas. No hay pipeline CI configurado; la validación se realiza localmente.
+- La publicación de la última versión disponible no habilita producción ni resuelve los procedimientos institucionales pendientes enumerados más abajo.
+- Repetición final tras los comentarios: `npm test` **7/7**, SQL independiente **63/63** y suite con Chrome **76/76**, cero fallos. Se conservan las 83 comprobaciones funcionales; la cobertura SQL está incluida en Chrome. Las suites compararon SICE antes/después sin cambios. El servidor principal se mantuvo funcionando, sin reiniciarlo ni ejecutar limpieza sobre SICE en esta revisión.
 
 ## Verificación y límites
 
